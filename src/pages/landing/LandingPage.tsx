@@ -17,6 +17,7 @@ import {
     Linkedin,
 } from 'lucide-react';
 import '../../styles/landing.css';
+import BrandLogo from '../../components/common/BrandLogo';
 
 /**
  * Landing Page Component
@@ -37,34 +38,39 @@ export default function LandingPage() {
             icon: Heart,
             title: 'Personalized Care',
             description: 'Treatment plans tailored to your unique needs, goals, and preferences for optimal mental wellness.',
+            bgStyle: 'var(--accent-500)',
         },
         {
             icon: Video,
             title: 'Virtual Sessions',
             description: 'Connect with licensed therapists from the comfort of your home through secure video calls.',
+            bgStyle: 'var(--secondary-500)',
         },
         {
             icon: Shield,
             title: 'HIPAA Compliant',
             description: 'Your privacy matters. All sessions and data are protected with enterprise-grade security.',
+            bgStyle: 'var(--success-500)',
         },
         {
             icon: Calendar,
             title: 'Flexible Scheduling',
             description: 'Book sessions that fit your schedule with easy online booking and reminders.',
+            bgStyle: 'var(--warning-500)',
         },
         {
             icon: MessageSquare,
             title: 'Secure Messaging',
             description: 'Stay connected with your care team through encrypted messaging between sessions.',
+            bgStyle: 'var(--primary-500)',
         },
         {
             icon: Users,
             title: 'Group Therapy',
             description: 'Join supportive group sessions led by experienced therapists to share and grow together.',
+            bgStyle: 'var(--secondary-700)',
         },
     ];
-
     const steps = [
         { number: 1, title: 'Sign Up', description: 'Create your account in minutes' },
         { number: 2, title: 'Get Matched', description: 'We match you with the right therapist' },
@@ -97,22 +103,9 @@ export default function LandingPage() {
         <div className="landing-page">
             {/* Navbar */}
             <nav className={`landing-navbar ${scrolled ? 'scrolled' : ''}`}>
+
                 <Link to="/" className="navbar-logo">
-                    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
-                        <circle cx="20" cy="20" r="18" stroke="url(#navGrad)" strokeWidth="2" fill="none" />
-                        <path
-                            d="M20 8C20 8 10 14 10 22C10 28.075 14.925 33 21 33C27.075 33 32 28.075 32 22C32 14 20 8 20 8Z"
-                            fill="url(#navGrad)"
-                        />
-                        <circle cx="20" cy="20" r="4" fill="white" />
-                        <defs>
-                            <linearGradient id="navGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-                                <stop stopColor="#667eea" />
-                                <stop offset="1" stopColor="#764ba2" />
-                            </linearGradient>
-                        </defs>
-                    </svg>
-                    <span>Treat Health</span>
+                    <BrandLogo size="md" />
                 </Link>
 
                 <div className="navbar-links">
@@ -232,7 +225,12 @@ export default function LandingPage() {
                     <div className="features-grid">
                         {features.map((feature) => (
                             <div key={feature.title} className="feature-card">
-                                <div className="feature-icon">
+                                <div
+                                    className="feature-icon"
+                                    style={{
+                                        background: feature.bgStyle
+                                    }}
+                                >
                                     <feature.icon size={28} />
                                 </div>
                                 <h3 className="feature-title">{feature.title}</h3>
@@ -324,16 +322,8 @@ export default function LandingPage() {
                 <div className="footer-container">
                     <div className="footer-grid">
                         <div className="footer-brand">
-                            <Link to="/" className="navbar-logo" style={{ color: 'white' }}>
-                                <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
-                                    <circle cx="20" cy="20" r="18" stroke="white" strokeWidth="2" fill="none" />
-                                    <path
-                                        d="M20 8C20 8 10 14 10 22C10 28.075 14.925 33 21 33C27.075 33 32 28.075 32 22C32 14 20 8 20 8Z"
-                                        fill="white"
-                                    />
-                                    <circle cx="20" cy="20" r="4" fill="#667eea" />
-                                </svg>
-                                <span style={{ WebkitTextFillColor: 'white' }}>Treat Health</span>
+                            <Link to="/" className="navbar-logo">
+                                <BrandLogo variant="light" size="md" />
                             </Link>
                             <p>
                                 Empowering your journey to mental wellness with compassionate,
@@ -373,7 +363,7 @@ export default function LandingPage() {
                     </div>
 
                     <div className="footer-bottom">
-                        <p>© 2024 Treat Health. All rights reserved.</p>
+                        <p>© 2026 Treat Health. All rights reserved.</p>
                         <div className="footer-social">
                             <a href="#" aria-label="Twitter"><Twitter size={18} /></a>
                             <a href="#" aria-label="Facebook"><Facebook size={18} /></a>
@@ -383,6 +373,6 @@ export default function LandingPage() {
                     </div>
                 </div>
             </footer>
-        </div>
+        </div >
     );
 }

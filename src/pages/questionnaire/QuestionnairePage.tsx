@@ -19,6 +19,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 import '../../styles/questionnaire.css';
+import BrandLogo from '../../components/common/BrandLogo';
 
 // Question step definitions
 const TOTAL_STEPS = 6;
@@ -368,22 +369,9 @@ export default function QuestionnairePage() {
         <div className="questionnaire-page">
             {/* Header */}
             <header className="questionnaire-header">
+
                 <Link to="/" className="questionnaire-logo">
-                    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-                        <circle cx="20" cy="20" r="18" stroke="url(#qGrad)" strokeWidth="2" fill="none" />
-                        <path
-                            d="M20 8C20 8 10 14 10 22C10 28.075 14.925 33 21 33C27.075 33 32 28.075 32 22C32 14 20 8 20 8Z"
-                            fill="url(#qGrad)"
-                        />
-                        <circle cx="20" cy="20" r="4" fill="white" />
-                        <defs>
-                            <linearGradient id="qGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-                                <stop stopColor="#667eea" />
-                                <stop offset="1" stopColor="#764ba2" />
-                            </linearGradient>
-                        </defs>
-                    </svg>
-                    <span>Treat Health</span>
+                    <BrandLogo size="sm" />
                 </Link>
                 <Link to="/login" className="btn btn-ghost">Login</Link>
             </header>

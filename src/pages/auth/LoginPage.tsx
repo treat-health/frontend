@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Heart, Shield, Users, Clock } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import toast from 'react-hot-toast';
+import BrandLogo from '../../components/common/BrandLogo';
 
 /**
  * Login Page Component
@@ -36,31 +37,7 @@ export default function LoginPage() {
                 <div className="auth-sidebar-content">
                     {/* Logo - Clickable */}
                     <Link to="/" style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <svg
-                            className="auth-sidebar-logo"
-                            viewBox="0 0 80 80"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <circle cx="40" cy="40" r="38" stroke="white" strokeWidth="2" fill="rgba(255,255,255,0.1)" />
-                            <path
-                                d="M40 20C40 20 25 30 25 42C25 50.284 31.716 57 40 57C48.284 57 55 50.284 55 42C55 30 40 20 40 20Z"
-                                fill="white"
-                            />
-                            <path
-                                d="M40 24C40 24 29 32 29 42C29 48.075 33.925 53 40 53C46.075 53 51 48.075 51 42C51 32 40 24 40 24Z"
-                                fill="rgba(102, 126, 234, 0.8)"
-                            />
-                            <circle cx="40" cy="40" r="6" fill="white" />
-                            <path
-                                d="M37 40H43M40 37V43"
-                                stroke="rgba(102, 126, 234, 0.9)"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                            />
-                        </svg>
-
-                        <h1 style={{ color: 'white' }}>Treat Health</h1>
+                        <BrandLogo variant="light" size="xl" className="mb-lg" />
                     </Link>
                     <p>
                         Empowering your journey to mental wellness with compassionate,

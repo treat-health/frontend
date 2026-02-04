@@ -14,6 +14,7 @@ import {
 import { useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useChatStore } from '../../stores/chatStore';
+import BrandLogo from '../common/BrandLogo';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -55,15 +56,7 @@ export default function Layout({ children }: LayoutProps) {
                 {/* Logo */}
                 <div className="sidebar-header">
                     <Link to="/dashboard" className="sidebar-logo">
-                        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-                            <circle cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="2" fill="var(--primary-100)" />
-                            <path
-                                d="M20 8C20 8 10 14 10 22C10 28.075 14.925 33 21 33C27.075 33 32 28.075 32 22C32 14 20 8 20 8Z"
-                                fill="var(--primary-500)"
-                            />
-                            <circle cx="20" cy="20" r="4" fill="white" />
-                        </svg>
-                        {sidebarOpen && <span>Treat Health</span>}
+                        <BrandLogo size="sm" />
                     </Link>
                     <button
                         className="sidebar-toggle btn btn-icon btn-ghost"

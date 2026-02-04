@@ -1,60 +1,79 @@
 /* ==================== CSS VARIABLES ==================== */
 :root {
-    /* Primary Colors - Teal/Healthcare */
-    --primary-50: #e6fffa;
-    --primary-100: #b2f5ea;
-    --primary-200: #81e6d9;
-    --primary-300: #4fd1c5;
-    --primary-400: #38b2ac;
-    --primary-500: #319795;
-    --primary-600: #2c7a7b;
-    --primary-700: #285e61;
-    --primary-800: #234e52;
-    --primary-900: #1d4044;
+    /* Brand Colors */
+    --primary-color: #CA9E6C;
+    --secondary-color: #598C8F;
+    --accent-color: #C07574;
+    --background-color: #DFD9D3;
+    --success-color: #8A9C66;
 
-    /* Accent Colors - Purple */
-    --accent-50: #faf5ff;
-    --accent-100: #e9d8fd;
-    --accent-200: #d6bcfa;
-    --accent-300: #b794f4;
-    --accent-400: #9f7aea;
-    --accent-500: #805ad5;
-    --accent-600: #6b46c1;
-    --accent-700: #553c9a;
-    --accent-800: #44337a;
-    --accent-900: #322659;
+    /* Primary Colors - Gold/Earthy derived from #CA9E6C */
+    --primary-50: #FDF9F0;
+    --primary-100: #F4ECE1;
+    --primary-200: #EADBC8;
+    --primary-300: #E0C7AB;
+    --primary-400: #D5B48E;
+    --primary-500: #CA9E6C; /* Main Primary */
+    --primary-600: #A88258;
+    --primary-700: #856644;
+    --primary-800: #624B31;
+    --primary-900: #3F301F;
 
-    /* Neutral Colors */
-    --gray-50: #f7fafc;
-    --gray-100: #edf2f7;
-    --gray-200: #e2e8f0;
-    --gray-300: #cbd5e0;
-    --gray-400: #a0aec0;
-    --gray-500: #718096;
-    --gray-600: #4a5568;
-    --gray-700: #2d3748;
-    --gray-800: #1a202c;
-    --gray-900: #171923;
+    /* Secondary Colors - Teal derived from #598C8F */
+    --secondary-50: #F0FAFA;
+    --secondary-100: #D8F2F2;
+    --secondary-200: #BDEAEB;
+    --secondary-300: #9EDFDF;
+    --secondary-400: #7CD2D3;
+    --secondary-500: #598C8F; /* Main Secondary */
+    --secondary-600: #467174;
+    --secondary-700: #35565A;
+    --secondary-800: #253D41;
+    --secondary-900: #162629;
+
+    /* Accent Colors - Red/Rose derived from #C07574 */
+    --accent-50: #FCF4F4;
+    --accent-100: #F7E5E5;
+    --accent-200: #EFCBCB;
+    --accent-300: #E4ADAD;
+    --accent-400: #D88E90;
+    --accent-500: #C07574; /* Main Accent */
+    --accent-600: #9E5E5E;
+    --accent-700: #7C4849;
+    --accent-800: #5A3233;
+    --accent-900: #381C1E;
+
+    /* Neutral Colors - Warm Grays derived from Background #DFD9D3 */
+    --gray-50: #F7F5F3;
+    --gray-100: #EFECE9;
+    --gray-200: #DFD9D3; /* Main Background */
+    --gray-300: #C6C0BA;
+    --gray-400: #ADA7A1;
+    --gray-500: #948E88;
+    --gray-600: #7B7570;
+    --gray-700: #625C58;
+    --gray-800: #494440;
+    --gray-900: #302C28;
 
     /* Status Colors */
-    --success-500: #38a169;
-    --warning-500: #dd6b20;
-    --error-500: #e53e3e;
-    --info-500: #3182ce;
+    --success-500: #8A9C66;
+    --warning-500: #ED9637; /* Adjusted to match warm palette */
+    --error-500: #C07574; /* Using Accent for Error */
+    --info-500: #598C8F; /* Using Secondary for Info */
 
     /* Shadows */
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    --shadow-sm: 0 1px 2px 0 rgb(73 68 64 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(73 68 64 / 0.1), 0 2px 4px -2px rgb(73 68 64 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(73 68 64 / 0.1), 0 4px 6px -4px rgb(73 68 64 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(73 68 64 / 0.1), 0 8px 10px -6px rgb(73 68 64 / 0.1);
 
     /* Glass effect */
-    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-bg: rgba(223, 217, 211, 0.7);
     --glass-border: rgba(255, 255, 255, 0.5);
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, var(--primary-500) 0%, var(--accent-500) 100%);
-    --gradient-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --gradient-primary: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+    --gradient-bg: linear-gradient(135deg, var(--secondary-600) 0%, var(--secondary-800) 100%);
 
     /* Spacing */
     --spacing-xs: 0.25rem;
@@ -93,10 +112,12 @@ html {
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    /* Primary Font: Samsung Sans Bold (fallback to Inter/System) */
+    /* Secondary Font: Ambit Regular (fallback to System) */
+    font-family: 'Ambit', 'Samsung Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     line-height: 1.6;
-    color: var(--gray-800);
-    background-color: var(--gray-50);
+    color: var(--gray-900);
+    background-color: var(--background-color);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
