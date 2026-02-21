@@ -38,7 +38,7 @@ export default function BrandLogo({ variant = 'dark', size = 'md', className = '
             />
             <img
                 src={logoText}
-                alt="Treat Mental Health Texas"
+                alt="Treat Mental Health"
                 style={{
                     ...textSizes[size],
                     objectFit: 'contain',

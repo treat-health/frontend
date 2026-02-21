@@ -44,6 +44,7 @@ export interface UserStatusEvent {
 export interface SocketEventHandlers {
     onMessageNew?: (message: MessageData) => void;
     onMessageSent?: (data: { messageId: string; tempId: string }) => void;
+    onMessageError?: (data: { error: string, tempId?: string }) => void;
     onMessageEdited?: (message: MessageData) => void;
     onMessageDeleted?: (data: { messageId: string }) => void;
     onConversationRead?: (data: ReadReceiptEvent) => void;
@@ -51,6 +52,7 @@ export interface SocketEventHandlers {
     onTypingStop?: (data: TypingEvent) => void;
     onUserOnline?: (data: UserStatusEvent) => void;
     onUserOffline?: (data: UserStatusEvent) => void;
+    onUsersOnlineList?: (userIds: string[]) => void;
     onConnect?: () => void;
     onDisconnect?: () => void;
     onError?: (error: Error) => void;
@@ -69,8 +71,15 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
         return null;
     }
 
-    if (socket?.connected) {
-        console.log('[Socket] Already connected');
+    if (socket) {
+        console.log('[Socket] Instance exists');
+        if (handlers) {
+            updateSocketHandlers(handlers);
+        }
+        if (!socket.connected) {
+            socket.auth = { token };
+            socket.connect();
+        }
         return socket;
     }
 
@@ -113,6 +122,10 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
         eventHandlers.onMessageSent?.(data);
     });
 
+    socket.on('message:error', (data: { error: string; tempId?: string }) => {
+        eventHandlers.onMessageError?.(data);
+    });
+
     socket.on('message:edited', (message: MessageData) => {
         eventHandlers.onMessageEdited?.(message);
     });
@@ -142,6 +155,10 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
 
     socket.on('user:offline', (data: UserStatusEvent) => {
         eventHandlers.onUserOffline?.(data);
+    });
+
+    socket.on('users:online:list', (userIds: string[]) => {
+        eventHandlers.onUsersOnlineList?.(userIds);
     });
 
     return socket;
@@ -193,12 +210,14 @@ export function sendMessage(data: {
     content: string;
     contentType?: 'TEXT' | 'FILE' | 'IMAGE';
     replyToId?: string;
+    tempId?: string;
 }): void {
     socket?.emit('message:send', {
         conversationId: data.conversationId,
         content: data.content,
         contentType: data.contentType || 'TEXT',
         replyToId: data.replyToId,
+        tempId: data.tempId,
     });
 }
 

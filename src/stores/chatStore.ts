@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import toast from 'react-hot-toast';
 import api from '../lib/api';
+import { useAuthStore } from './authStore';
 import type { ApiResponse } from '../lib/api';
 import {
     connectSocket,
@@ -87,6 +89,7 @@ interface ChatState {
     startTyping: () => void;
     stopTyping: () => void;
     clearChat: () => void;
+    fetchUnreadMessagesCount: () => Promise<void>;
 }
 
 /**
@@ -105,6 +108,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     error: null,
     isConnected: false,
     totalUnread: 0,
+    fetchUnreadMessagesCount: async () => {
+        try {
+            const response = await api.get<ApiResponse<{ count: number }>>('/chat/unread');
+            if (response.data.success && response.data.data) {
+                set({ totalUnread: response.data.data.count });
+            }
+        } catch (error) {
+            console.error('[ChatStore] Failed to fetch unread count:', error);
+        }
+    },
 
     /**
      * Initialize socket connection with event handlers
@@ -114,12 +127,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
         connectSocket({
             onConnect: () => {
-                set({ isConnected: true });
-                // Rejoin current conversation if any
+                set({ isConnected: true, error: null });
+                // Rejoin current conversation if any and refresh data
                 const current = get().currentConversation;
                 if (current) {
                     joinConversation(current.id);
+                    get().fetchMessages(current.id);
                 }
+
+                // Refresh conversations and unread count on reconnect
+                get().fetchConversations();
+                get().fetchUnreadMessagesCount();
             },
             onDisconnect: () => {
                 set({ isConnected: false });
@@ -142,13 +160,32 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                     ),
                 });
 
-                // Update unread count if not current conversation
-                if (!isCurrentConversation) {
+                // Update unread count if not current conversation AND message is from someone else
+                const currentUser = useAuthStore.getState().user;
+                if (!isCurrentConversation && message.senderId !== currentUser?.id) {
                     set({ totalUnread: state.totalUnread + 1 });
+
+                    toast(`${message.sender?.firstName || 'Someone'} sent you a message`, {
+                        icon: '💬',
+                        position: 'top-right'
+                    });
                 }
             },
-            onMessageSent: () => {
-                set({ isSending: false });
+            onMessageSent: ({ messageId, tempId }) => {
+                set((state) => ({
+                    isSending: false,
+                    messages: state.messages.map((m) =>
+                        m.id === tempId ? { ...m, id: messageId } : m
+                    ),
+                }));
+            },
+            onMessageError: ({ error, tempId }) => {
+                set((state) => ({
+                    isSending: false,
+                    error,
+                    messages: tempId ? state.messages.filter((m) => m.id !== tempId) : state.messages
+                }));
+                toast.error(error || 'Failed to send message');
             },
             onMessageEdited: (message: MessageData) => {
                 set({
@@ -201,6 +238,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 onlineUsers.delete(userId);
                 set({ onlineUsers });
             },
+            onUsersOnlineList: (userIds: string[]) => {
+                set({ onlineUsers: new Set(userIds) });
+            },
             onError: (error) => {
                 set({ error: error.message });
             },
@@ -224,6 +264,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             const response = await api.get<ApiResponse<{ conversations: Conversation[] }>>('/chat/conversations');
             if (response.data.success && response.data.data) {
                 set({ conversations: response.data.data.conversations, isLoading: false });
+                get().fetchUnreadMessagesCount();
             }
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Failed to fetch conversations';
@@ -291,7 +332,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             const response = await api.post<ApiResponse<Conversation>>('/chat/conversations/direct', {
-                participantId: userId,
+                userId: userId,
             });
             if (response.data.success && response.data.data) {
                 const conversation = response.data.data;
@@ -340,13 +381,39 @@ export const useChatStore = create<ChatState>()((set, get) => ({
      */
     sendMessage: (content: string, replyToId?: string) => {
         const conversation = get().currentConversation;
-        if (!conversation || !content.trim()) return;
+        const currentUser = useAuthStore.getState().user;
+        if (!conversation || !content.trim() || !currentUser) return;
 
-        set({ isSending: true });
+        const tempId = `temp-${Date.now()}`;
+
+        // Optimistic UI update
+        const tempMessage: Message = {
+            id: tempId,
+            conversationId: conversation.id,
+            senderId: currentUser.id,
+            content: content.trim(),
+            contentType: 'TEXT',
+            replyToId,
+            isEdited: false,
+            isDeleted: false,
+            createdAt: new Date().toISOString(),
+            sender: {
+                id: currentUser.id,
+                firstName: currentUser.firstName,
+                lastName: currentUser.lastName,
+            }
+        };
+
+        set((state) => ({
+            isSending: true,
+            messages: [...state.messages, tempMessage]
+        }));
+
         socketSendMessage({
             conversationId: conversation.id,
             content: content.trim(),
             replyToId,
+            tempId
         });
     },
 
@@ -360,6 +427,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         try {
             socketMarkRead(conversation.id);
             await api.post(`/chat/conversations/${conversation.id}/read`);
+
+            // Re-fetch the global unread count to sync the sidebar badge
+            get().fetchUnreadMessagesCount();
         } catch (error) {
             console.error('Failed to mark as read:', error);
         }

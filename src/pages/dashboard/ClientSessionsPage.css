@@ -1,0 +1,506 @@
+.client-sessions-layout {
+    display: flex;
+    height: 100%;
+    gap: 0;
+}
+
+/* ── Therapist Sub-Sidebar ── */
+.therapist-sidebar {
+    width: 240px;
+    border-right: 1px solid var(--gray-200);
+    background: var(--gray-50);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.therapist-sidebar-header {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.therapist-sidebar-header h4 {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-500);
+}
+
+.therapist-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+}
+
+.therapist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 2px;
+}
+
+.therapist-item:hover {
+    background: var(--gray-100);
+}
+
+.therapist-item.active {
+    background: var(--primary-50);
+    box-shadow: inset 3px 0 0 var(--primary-500);
+}
+
+.therapist-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--primary-100);
+    color: var(--primary-700);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.therapist-item.active .therapist-avatar {
+    background: var(--primary-500);
+    color: white;
+}
+
+.therapist-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--gray-800);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.therapist-sidebar-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--gray-400);
+    font-size: 0.85rem;
+    gap: 8px;
+}
+
+/* ── "All therapists" button ── */
+.therapist-item.all-item {
+    border-bottom: 1px solid var(--gray-200);
+    margin-bottom: 6px;
+    padding-bottom: 12px;
+}
+
+.therapist-item.all-item .therapist-avatar {
+    background: var(--gray-200);
+    color: var(--gray-600);
+}
+
+.therapist-item.all-item.active .therapist-avatar {
+    background: var(--primary-500);
+    color: white;
+}
+
+/* ── Calendar Area ── */
+.client-calendar-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    overflow: visible;
+    position: relative;
+}
+
+.client-calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.client-calendar-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--gray-900);
+    margin: 0;
+}
+
+/* ── Legend ── */
+.calendar-legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 14px;
+    padding: 8px 12px;
+    background: var(--gray-50);
+    border-radius: 8px;
+    border: 1px solid var(--gray-100);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--gray-600);
+    font-weight: 500;
+}
+
+.legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.legend-dot.scheduled {
+    background: var(--primary-500);
+}
+
+.legend-dot.completed {
+    background: var(--success-500);
+}
+
+.legend-dot.cancelled {
+    background: var(--error-500);
+}
+
+/* ── Grid (reuse from SessionCalendar) ── */
+.client-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    flex: 1;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.client-day-header {
+    padding: 10px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--gray-500);
+    background: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+    border-right: 1px solid var(--gray-200);
+    font-size: 0.85rem;
+}
+
+.client-day-header:nth-child(7) {
+    border-right: none;
+}
+
+.client-day {
+    position: relative;
+    border-right: 1px solid var(--gray-200);
+    border-bottom: 1px solid var(--gray-200);
+    min-height: 85px;
+    padding: 8px;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+}
+
+.client-day:nth-child(7n + 7) {
+    border-right: none;
+}
+
+.client-day:hover:not(.empty) {
+    background: var(--primary-50);
+}
+
+.client-day.empty {
+    background: var(--gray-50);
+    cursor: default;
+}
+
+.client-day.today {
+    background: #f0f9ff;
+}
+
+.client-day.today .client-day-number {
+    background: var(--primary-600);
+    color: white;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+}
+
+.client-day.has-sessions {
+    background: #f0f9ff;
+}
+
+.client-day.has-sessions:hover {
+    background: #dbeafe;
+}
+
+.client-day.selected {
+    background: var(--primary-50);
+    box-shadow: inset 0 0 0 2px var(--primary-500);
+}
+
+.client-day-number {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--gray-700);
+    margin-bottom: 4px;
+    display: block;
+}
+
+.client-day-dots {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+.client-session-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.client-session-dot.scheduled {
+    background: var(--primary-500);
+}
+
+.client-session-dot.completed {
+    background: var(--success-500);
+}
+
+.client-session-dot.cancelled {
+    background: var(--error-500);
+}
+
+.client-count-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary-500);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ── Popover (read-only, view session details) ── */
+.client-popover {
+    position: fixed;
+    z-index: 1000;
+    width: 340px;
+    max-height: 420px;
+    background: rgba(255, 255, 255, 0.97);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--gray-200);
+    border-radius: 14px;
+    box-shadow:
+        0 20px 60px -15px rgba(0, 0, 0, 0.15),
+        0 8px 24px -8px rgba(0, 0, 0, 0.08);
+    overflow-y: auto;
+    animation: popoverSlideIn 0.2s ease-out;
+}
+
+@keyframes popoverSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.client-popover-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--gray-100);
+}
+
+.client-popover-header h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--gray-900);
+}
+
+.client-popover-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--gray-400);
+    padding: 4px;
+    border-radius: 6px;
+    transition: all 0.15s;
+    display: flex;
+}
+
+.client-popover-close:hover {
+    background: var(--gray-100);
+    color: var(--gray-700);
+}
+
+.client-popover-sessions {
+    padding: 10px 16px 16px;
+}
+
+.client-popover-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-500);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.client-popover-session {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--gray-50);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+}
+
+.client-popover-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.client-popover-dot.scheduled {
+    background: var(--primary-500);
+}
+
+.client-popover-dot.completed {
+    background: var(--success-500);
+}
+
+.client-popover-dot.cancelled {
+    background: var(--error-500);
+}
+
+.client-popover-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.client-popover-time {
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.client-popover-meta {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    text-transform: capitalize;
+}
+
+.client-popover-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: capitalize;
+    flex-shrink: 0;
+}
+
+.client-popover-badge.scheduled {
+    background: var(--primary-100);
+    color: var(--primary-700);
+}
+
+.client-popover-badge.completed {
+    background: var(--success-100);
+    color: var(--success-700);
+}
+
+.client-popover-badge.cancelled {
+    background: var(--error-100);
+    color: var(--error-700);
+}
+
+.client-popover-empty {
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--gray-400);
+    font-size: 0.85rem;
+}
+
+/* ── Loading ── */
+.client-calendar-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.7);
+    z-index: 5;
+    border-radius: 12px;
+}
+
+.client-spin {
+    animation: clientSpin 0.8s linear infinite;
+}
+
+@keyframes clientSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Zoom link in popover ── */
+.client-popover-zoom {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    padding: 3px 8px;
+    background: var(--primary-50);
+    color: var(--primary-600);
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: background 0.15s;
+}
+
+.client-popover-zoom:hover {
+    background: var(--primary-100);
+}

@@ -2,12 +2,20 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
-import LandingPage from './pages/landing/LandingPage';
 import QuestionnairePage from './pages/questionnaire/QuestionnairePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
-import DashboardPage from './pages/dashboard/DashboardPage';
+import InvitePage from './pages/auth/InvitePage';
+import RoleBasedDashboard from './pages/RoleBasedDashboard';
 import MessagesPage from './pages/messages/MessagesPage';
+import UsersPage from './pages/admin/UsersPage';
+import SessionListPage from './pages/admin/sessions/SessionListPage';
+import ClientSessionsPage from './pages/dashboard/ClientSessionsPage';
+import TherapistAppointmentsPage from './pages/therapist/appointments/TherapistAppointmentsPage';
+import TherapistClientsPage from './pages/therapist/clients/TherapistClientsPage';
+import ClientsPage from './pages/admin/clients/ClientsPage';
+import ReportsPage from './pages/admin/reports/ReportsPage';
+import SettingsPage from './pages/settings/SettingsPage';
 import Layout from './components/layout/Layout';
 
 /**
@@ -88,15 +96,8 @@ export default function App() {
             />
 
             <Routes>
-                {/* Landing Page */}
-                <Route
-                    path="/"
-                    element={
-                        <PublicRoute>
-                            <LandingPage />
-                        </PublicRoute>
-                    }
-                />
+                {/* Redirect root to login (landing page handled by separate project) */}
+                <Route path="/" element={<Navigate to="/login" replace />} />
 
                 {/* Questionnaire / Get Started */}
                 <Route
@@ -131,7 +132,7 @@ export default function App() {
                     path="/dashboard"
                     element={
                         <ProtectedRoute>
-                            <DashboardPage />
+                            <RoleBasedDashboard />
                         </ProtectedRoute>
                     }
                 />
@@ -143,6 +144,83 @@ export default function App() {
                         </ProtectedRoute>
                     }
                 />
+                <Route
+                    path="/appointments"
+                    element={
+                        <ProtectedRoute>
+                            <ClientSessionsPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Therapist Routes */}
+                <Route
+                    path="/therapist/appointments"
+                    element={
+                        <ProtectedRoute>
+                            <TherapistAppointmentsPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/therapist/clients"
+                    element={
+                        <ProtectedRoute>
+                            <TherapistClientsPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Admin Routes */}
+                <Route
+                    path="/admin/users"
+                    element={
+                        <ProtectedRoute>
+                            <UsersPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/admin/sessions"
+                    element={
+                        <ProtectedRoute>
+                            <SessionListPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Admin Clients Route */}
+                <Route
+                    path="/clients"
+                    element={
+                        <ProtectedRoute>
+                            <ClientsPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Reports Route */}
+                <Route
+                    path="/reports"
+                    element={
+                        <ProtectedRoute>
+                            <ReportsPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Settings Route (all roles) */}
+                <Route
+                    path="/settings"
+                    element={
+                        <ProtectedRoute>
+                            <SettingsPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Public Invite Accept Route */}
+                <Route path="/invite/:token" element={<InvitePage />} />
 
                 {/* Catch-all redirect */}
                 <Route path="*" element={<Navigate to="/" replace />} />

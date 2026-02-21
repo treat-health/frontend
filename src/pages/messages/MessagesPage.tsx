@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { KeyboardEvent } from 'react';
-import { MessageSquare, Send, Search, Plus, MoreVertical, Phone, Video } from 'lucide-react';
+import { MessageSquare, Send, Search, Plus, MoreVertical, Phone, Video, X } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useAuthStore } from '../../stores/authStore';
 import '../../styles/chat.css';
+import NewChatModal from './NewChatModal';
 
 /**
  * Format time for display
@@ -50,10 +51,12 @@ export default function MessagesPage() {
         sendMessage,
         startTyping,
         stopTyping,
+        clearChat,
     } = useChatStore();
 
     const [messageInput, setMessageInput] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
+    const [showNewChatModal, setShowNewChatModal] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -150,11 +153,14 @@ export default function MessagesPage() {
 
     return (
         <div className="chat-layout">
-            {/* Conversation List Sidebar */}
             <aside className="chat-sidebar">
                 <div className="chat-sidebar-header">
                     <h2>Messages</h2>
-                    <button className="btn btn-icon btn-ghost">
+                    <button
+                        className="btn btn-icon btn-ghost"
+                        onClick={() => setShowNewChatModal(true)}
+                        title="New Message"
+                    >
                         <Plus size={20} />
                     </button>
                 </div>
@@ -246,7 +252,6 @@ export default function MessagesPage() {
             <main className="chat-main">
                 {currentConversation ? (
                     <>
-                        {/* Chat Header */}
                         <header className="chat-header">
                             <div className={`conversation-avatar ${isUserOnline(currentConversation) ? 'online' : ''}`}>
                                 {getConversationInitials(currentConversation)}
@@ -259,18 +264,15 @@ export default function MessagesPage() {
                                     {isUserOnline(currentConversation) ? 'Online' : 'Offline'}
                                 </div>
                             </div>
-                            <button className="btn btn-icon btn-ghost">
-                                <Phone size={20} />
-                            </button>
-                            <button className="btn btn-icon btn-ghost">
-                                <Video size={20} />
-                            </button>
-                            <button className="btn btn-icon btn-ghost">
-                                <MoreVertical size={20} />
+                            <button
+                                className="btn btn-icon btn-ghost"
+                                onClick={() => clearChat()}
+                                title="Close Chat"
+                            >
+                                <X size={20} />
                             </button>
                         </header>
 
-                        {/* Messages */}
                         <div className="chat-messages">
                             {messages.map((message, index) => {
                                 const isSent = message.senderId === user?.id;
@@ -317,7 +319,6 @@ export default function MessagesPage() {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Message Input */}
                         <div className="chat-input-area">
                             <div className="chat-input-container">
                                 <textarea
@@ -339,7 +340,6 @@ export default function MessagesPage() {
                         </div>
                     </>
                 ) : (
-                    /* Empty State */
                     <div className="chat-empty">
                         <div className="chat-empty-icon">
                             <MessageSquare size={32} />
@@ -349,6 +349,11 @@ export default function MessagesPage() {
                     </div>
                 )}
             </main>
+
+            {/* New Chat Modal */}
+            {showNewChatModal && (
+                <NewChatModal onClose={() => setShowNewChatModal(false)} />
+            )}
         </div>
     );
 }

@@ -1,0 +1,207 @@
+.admin-page-full {
+    height: calc(100vh - 64px);
+    /* Subtract header height approx */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.session-page-layout {
+    display: flex;
+    gap: 20px;
+    flex: 1;
+    overflow: hidden;
+    padding: 0 20px 20px 20px;
+}
+
+.session-sidebar {
+    width: 300px;
+    min-width: 300px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--gray-200);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.sidebar-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.sidebar-tab {
+    flex: 1;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--gray-500);
+    background: var(--gray-50);
+    border: none;
+    transition: all 0.2s;
+}
+
+.sidebar-tab.active {
+    background: var(--bg-surface);
+    color: var(--primary-600);
+    border-bottom: 2px solid var(--primary-600);
+}
+
+.sidebar-search {
+    padding: 12px;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.user-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.user-list-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--gray-100);
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-list-item:hover {
+    background: var(--gray-50);
+}
+
+.user-list-item.selected {
+    background: var(--primary-50);
+    border-left: 3px solid var(--primary-600);
+}
+
+.user-list-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary-100);
+    color: var(--primary-700);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.user-list-info {
+    flex: 1;
+    overflow: hidden;
+}
+
+.user-list-name {
+    font-weight: 500;
+    color: var(--gray-900);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-list-email {
+    font-size: 12px;
+    color: var(--gray-500);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow: hidden;
+    height: 100%;
+}
+
+.session-header-filters {
+    background: var(--bg-surface);
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.selected-user-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--primary-50);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border: 1px solid var(--primary-100);
+}
+
+.clear-selection-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--gray-500);
+    padding: 4px;
+}
+
+.clear-selection-btn:hover {
+    color: var(--gray-700);
+}
+
+.limit-selection-area {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--gray-100);
+    display: flex;
+    justify-content: flex-end;
+    background: var(--bg-surface);
+}
+
+.limit-select-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.limit-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    padding: 4px 24px 4px 8px;
+    font-size: 11px;
+    color: var(--gray-600);
+    cursor: pointer;
+    transition: all 0.2s;
+    line-height: normal;
+}
+
+.limit-select:hover {
+    border-color: var(--gray-300);
+    background: var(--gray-50);
+    color: var(--gray-900);
+}
+
+.limit-select:focus {
+    outline: none;
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
+
+.limit-select-icon {
+    position: absolute;
+    right: 6px;
+    pointer-events: none;
+    color: var(--gray-400);
+    width: 12px;
+    height: 12px;
+}

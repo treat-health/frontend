@@ -1,3 +1,9 @@
+/* Import additional stylesheets */
+@import './styles/layout.css';
+@import './styles/chat.css';
+@import './styles/landing.css';
+@import './styles/questionnaire.css';
+
 /* ==================== CSS VARIABLES ==================== */
 :root {
     /* Brand Colors */
@@ -7,14 +13,16 @@
     --background-color: #DFD9D3;
     --success-color: #8A9C66;
 
-    /* Primary Colors - Gold/Earthy derived from #CA9E6C */
+    /* Primary Colors - Elegant Gold (Deployed Match) */
     --primary-50: #FDF9F0;
     --primary-100: #F4ECE1;
     --primary-200: #EADBC8;
     --primary-300: #E0C7AB;
     --primary-400: #D5B48E;
-    --primary-500: #CA9E6C; /* Main Primary */
+    --primary-500: #C59D5F;
+    /* Elegant Gold */
     --primary-600: #A88258;
+    /* Bronzed Gold */
     --primary-700: #856644;
     --primary-800: #624B31;
     --primary-900: #3F301F;
@@ -25,7 +33,8 @@
     --secondary-200: #BDEAEB;
     --secondary-300: #9EDFDF;
     --secondary-400: #7CD2D3;
-    --secondary-500: #598C8F; /* Main Secondary */
+    --secondary-500: #598C8F;
+    /* Main Secondary */
     --secondary-600: #467174;
     --secondary-700: #35565A;
     --secondary-800: #253D41;
@@ -37,7 +46,8 @@
     --accent-200: #EFCBCB;
     --accent-300: #E4ADAD;
     --accent-400: #D88E90;
-    --accent-500: #C07574; /* Main Accent */
+    --accent-500: #C07574;
+    /* Main Accent */
     --accent-600: #9E5E5E;
     --accent-700: #7C4849;
     --accent-800: #5A3233;
@@ -46,7 +56,8 @@
     /* Neutral Colors - Warm Grays derived from Background #DFD9D3 */
     --gray-50: #F7F5F3;
     --gray-100: #EFECE9;
-    --gray-200: #DFD9D3; /* Main Background */
+    --gray-200: #DFD9D3;
+    /* Main Background */
     --gray-300: #C6C0BA;
     --gray-400: #ADA7A1;
     --gray-500: #948E88;
@@ -57,9 +68,16 @@
 
     /* Status Colors */
     --success-500: #8A9C66;
-    --warning-500: #ED9637; /* Adjusted to match warm palette */
-    --error-500: #C07574; /* Using Accent for Error */
-    --info-500: #598C8F; /* Using Secondary for Info */
+    --warning-500: #ED9637;
+    /* Adjusted to match warm palette */
+    --error-500: #C07574;
+    /* Using Accent for Error */
+    --info-500: #598C8F;
+    /* Using Secondary for Info */
+
+    /* Aliases for convenience */
+    --primary: var(--primary-500);
+    --primary-dark: var(--primary-600);
 
     /* Shadows */
     --shadow-sm: 0 1px 2px 0 rgb(73 68 64 / 0.05);
@@ -72,7 +90,8 @@
     --glass-border: rgba(255, 255, 255, 0.5);
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+    /* Gradients - High Contrast Shine */
+    --gradient-primary: linear-gradient(135deg, #E6CFA3 0%, #C59D5F 50%, #8B6508 100%);
     --gradient-bg: linear-gradient(135deg, var(--secondary-600) 0%, var(--secondary-800) 100%);
 
     /* Spacing */
@@ -95,6 +114,125 @@
     --transition-fast: 150ms ease;
     --transition-normal: 250ms ease;
     --transition-slow: 350ms ease;
+
+    /* Surface Backgrounds */
+    --bg-surface: #ffffff;
+}
+
+/* ==================== DARK MODE ==================== */
+[data-theme="dark"] {
+    --background-color: #121416;
+    --bg-surface: #1E2022;
+
+    /* Invert Neutral Grays */
+    --gray-50: #1E2022;
+    --gray-100: #26282A;
+    --gray-200: #2F3134;
+    --gray-300: #3B3E42;
+    --gray-400: #4B4E52;
+    --gray-500: #626569;
+    --gray-600: #888C91;
+    --gray-700: #A9ACAF;
+    --gray-800: #C8CBCF;
+    --gray-900: #E6E8EA;
+
+    /* Darker Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.6);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.7);
+
+    /* Adapt primary tints for dark mode visibility */
+    --primary-50: rgba(197, 157, 95, 0.1);
+    --primary-100: rgba(197, 157, 95, 0.2);
+
+    /* Glass in dark mode */
+    --glass-bg: rgba(30, 32, 34, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.08);
+
+    color-scheme: dark;
+}
+
+/* Dark mode — SessionCalendar Overrides */
+[data-theme="dark"] .calendar-popover,
+[data-theme="dark"] .calendar-loading-overlay {
+    background: var(--bg-surface);
+}
+
+[data-theme="dark"] .calendar-readonly-notice,
+[data-theme="dark"] .popover-readonly:not(.past),
+[data-theme="dark"] .popover-error {
+    background: rgba(245, 158, 11, 0.15);
+    /* amber */
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fcd34d;
+}
+
+[data-theme="dark"] .popover-readonly.past,
+[data-theme="dark"] .availability-invalid {
+    background: rgba(239, 68, 68, 0.15);
+    /* red */
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .availability-valid {
+    background: rgba(34, 197, 94, 0.15);
+    /* green */
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+}
+
+[data-theme="dark"] .calendar-day.today,
+[data-theme="dark"] .calendar-day-list-item.today {
+    background: rgba(14, 165, 233, 0.15);
+    /* sky blue */
+}
+
+[data-theme="dark"] .calendar-day-list-item.selected {
+    background: rgba(37, 99, 235, 0.15);
+    /* blue */
+}
+
+/* Dark mode — global form element overrides */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+    background-color: var(--bg-surface);
+    color: var(--gray-900);
+    border-color: var(--gray-300);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+    color: var(--gray-500);
+}
+
+/* Dark mode — modal content background */
+[data-theme="dark"] .modal-content {
+    background: var(--bg-surface);
+    border: 1px solid var(--gray-200);
+}
+
+/* Dark mode — notification dot border */
+[data-theme="dark"] .notification-dot {
+    border-color: var(--bg-surface);
+}
+
+/* Dark mode — status badges that use light backgrounds */
+[data-theme="dark"] .state-badge {
+    background: rgba(3, 105, 161, 0.2);
+    color: #7dd3fc;
+}
+
+[data-theme="dark"] .status-badge.status-active {
+    background: rgba(34, 197, 94, 0.15);
+    color: #86efac;
+}
+
+[data-theme="dark"] .status-badge.status-inactive {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
 }
 
 /* ==================== RESET ==================== */
@@ -179,9 +317,10 @@ h6 {
     align-items: center;
     justify-content: center;
     gap: var(--spacing-sm);
-    padding: 0.75rem 1.5rem;
-    font-size: 0.9375rem;
-    font-weight: 500;
+    padding: 1rem 2rem;
+    /* Balanced Size */
+    font-size: 1rem;
+    font-weight: 600;
     border-radius: var(--radius-lg);
     border: none;
     cursor: pointer;
@@ -206,7 +345,7 @@ h6 {
 }
 
 .btn-secondary {
-    background: white;
+    background: var(--bg-surface);
     color: var(--gray-700);
     border: 1px solid var(--gray-300);
 }
@@ -227,8 +366,10 @@ h6 {
 }
 
 .btn-lg {
-    padding: 1rem 2rem;
-    font-size: 1rem;
+    padding: 1.25rem 3rem;
+    /* Much larger for landing page */
+    font-size: 1.25rem;
+    font-weight: 700;
 }
 
 .btn-sm {
@@ -259,8 +400,9 @@ h6 {
     font-size: 1rem;
     border: 1px solid var(--gray-300);
     border-radius: var(--radius-lg);
-    background: white;
+    background: var(--bg-surface);
     transition: all var(--transition-fast);
+    color: var(--gray-900);
 }
 
 .input-field:focus {
@@ -313,7 +455,7 @@ h6 {
 
 /* ==================== CARDS ==================== */
 .card {
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-md);
     padding: var(--spacing-xl);
@@ -520,16 +662,76 @@ h6 {
 }
 
 /* ==================== RESPONSIVE ==================== */
-@media (max-width: 1024px) {
+
+/* Mobile banner — hidden by default, shown when sidebar is hidden */
+.auth-mobile-banner {
+    display: none;
+    justify-content: center;
+    padding: var(--spacing-2xl) var(--spacing-lg);
+    background: var(--gradient-bg);
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-mobile-banner::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -25%;
+    width: 150%;
+    height: 150%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 60%);
+}
+
+/* Tablet landscape — stack vertically, show compact sidebar banner */
+@media (max-width: 1100px) {
+    .auth-layout {
+        flex-direction: column;
+    }
+
     .auth-sidebar {
-        display: none;
+        flex: none;
+        padding: var(--spacing-xl) var(--spacing-lg);
+    }
+
+    .auth-sidebar-content {
+        max-width: 100%;
+    }
+
+    .features-list {
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: var(--spacing-md);
     }
 
     .auth-main {
+        flex: 1;
         padding: var(--spacing-xl);
     }
 }
 
+/* Tablet portrait — hide sidebar, show mobile banner */
+@media (max-width: 768px) {
+    .auth-sidebar {
+        display: none;
+    }
+
+    .auth-mobile-banner {
+        display: flex;
+    }
+
+    .auth-main {
+        min-height: 100vh;
+        padding: 0;
+    }
+
+    .auth-form-container {
+        padding: var(--spacing-xl) var(--spacing-lg);
+    }
+}
+
+/* Mobile */
 @media (max-width: 480px) {
     .auth-main {
         padding: var(--spacing-md);
@@ -621,8 +823,4 @@ h6 {
     margin-bottom: var(--spacing-lg);
 }
 
-/* Import additional stylesheets */
-@import './styles/layout.css';
-@import './styles/chat.css';
-@import './styles/landing.css';
-@import './styles/questionnaire.css';
+/* End of global styles */

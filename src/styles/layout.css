@@ -9,7 +9,7 @@
 /* Sidebar */
 .app-sidebar {
     width: 260px;
-    background: white;
+    background: var(--bg-surface);
     border-right: 1px solid var(--gray-200);
     display: flex;
     flex-direction: column;
@@ -53,9 +53,17 @@
     padding: var(--spacing-md);
 }
 
-.app-sidebar.collapsed .sidebar-logo span,
-.app-sidebar.collapsed .sidebar-toggle {
+.app-sidebar.collapsed .sidebar-logo img:nth-child(2),
+/* Hide logo text image */
+.app-sidebar.collapsed .sidebar-toggle,
+.app-sidebar.collapsed .sidebar-logo span {
+    /* Fallback if text was span */
     display: none;
+}
+
+/* Ensure Logo gap is removed or handled */
+.app-sidebar.collapsed .sidebar-logo>div {
+    gap: 0 !important;
 }
 
 /* Navigation */
@@ -78,6 +86,12 @@
     font-weight: 500;
     font-size: 0.9375rem;
     transition: all var(--transition-fast);
+}
+
+.nav-item svg {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
 }
 
 .nav-item:hover {
@@ -203,14 +217,14 @@
     transition: margin-left var(--transition-normal);
 }
 
-.app-sidebar.collapsed+.app-main {
+.app-sidebar.collapsed~.app-main {
     margin-left: 72px;
 }
 
 /* Header */
 .app-header {
     height: 65px;
-    background: white;
+    background: var(--bg-surface);
     border-bottom: 1px solid var(--gray-200);
     display: flex;
     align-items: center;
@@ -276,7 +290,7 @@
     top: 100%;
     right: 0;
     margin-top: var(--spacing-sm);
-    background: white;
+    background: var(--bg-surface);
     border: 1px solid var(--gray-200);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
@@ -328,5 +342,50 @@
 
     .app-main {
         margin-left: 0;
+    }
+}
+
+/* Floating Sidebar Toggle */
+.sidebar-floating-toggle {
+    position: fixed;
+    top: 24px;
+    z-index: 110;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--bg-surface);
+    border: 1px solid var(--gray-200, #e5e7eb);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--gray-500, #6b7280);
+    transition: left var(--transition-normal, 0.3s ease), transform 0.2s, color 0.2s;
+    left: 247px;
+    /* 260px width - 13px (half button width) to center on border */
+}
+
+.sidebar-floating-toggle.collapsed {
+    left: 59px;
+    /* 72px width - 13px */
+}
+
+.sidebar-floating-toggle:hover {
+    color: var(--primary-600, #d97706);
+    border-color: var(--primary-200, #fde68a);
+    transform: scale(1.1);
+}
+
+@media (max-width: 1024px) {
+    .sidebar-floating-toggle {
+        left: 247px;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .app-sidebar.open~.sidebar-floating-toggle {
+        opacity: 1;
+        pointer-events: auto;
     }
 }

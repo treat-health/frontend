@@ -1,12 +1,35 @@
-import { Calendar, MessageSquare, FileText, Users } from 'lucide-react';
+import { Calendar, MessageSquare, Settings } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { Link } from 'react-router-dom';
 
 /**
  * Dashboard Page Component
  */
+import { useEffect, useState } from 'react';
+import { schedulingService } from '../../services/scheduling.service';
+import type { Appointment } from '../../services/scheduling.service';
+
 export default function DashboardPage() {
     const { user } = useAuthStore();
+    const [appointments, setAppointments] = useState<Appointment[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        fetchAppointments();
+    }, []);
+
+    const fetchAppointments = async () => {
+        try {
+            const data = await schedulingService.getMyAppointments(false);
+            // Sort by earliest first
+            const sorted = data.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+            setAppointments(sorted.slice(0, 5)); // Show next 5
+        } catch (error) {
+            console.error('Failed to fetch appointments:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <div className="page-content">
@@ -32,10 +55,8 @@ export default function DashboardPage() {
                 marginBottom: 'var(--spacing-xl)',
             }}>
                 {[
-                    { label: 'Upcoming Sessions', value: '3', icon: Calendar, color: 'var(--primary-500)' },
+                    { label: 'Upcoming Sessions', value: appointments.length.toString(), icon: Calendar, color: 'var(--primary-500)' },
                     { label: 'Unread Messages', value: '5', icon: MessageSquare, color: 'var(--accent-500)' },
-                    { label: 'Resources Viewed', value: '12', icon: FileText, color: 'var(--success-500)' },
-                    { label: 'Days Active', value: '28', icon: Users, color: 'var(--warning-500)' },
                 ].map((stat) => (
                     <div key={stat.label} className="card" style={{
                         display: 'flex',
@@ -71,52 +92,59 @@ export default function DashboardPage() {
                 {/* Upcoming Sessions */}
                 <div className="card">
                     <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Upcoming Sessions</h3>
-                    {[
-                        { title: 'Individual Therapy', time: 'Tomorrow, 10:00 AM', therapist: 'Dr. Sarah Johnson' },
-                        { title: 'Group Session: Anxiety', time: 'Wed, 2:00 PM', therapist: 'Dr. Michael Chen' },
-                        { title: 'Check-in Call', time: 'Fri, 11:30 AM', therapist: 'Care Coordinator' },
-                    ].map((session, i) => (
-                        <div key={i} style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: 'var(--spacing-md) 0',
-                            borderBottom: i < 2 ? '1px solid var(--gray-100)' : 'none',
-                        }}>
-                            <div>
-                                <p style={{ fontWeight: 500 }}>{session.title}</p>
-                                <p style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
-                                    {session.therapist}
-                                </p>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <p style={{ fontSize: '0.875rem', color: 'var(--primary-600)' }}>
-                                    {session.time}
-                                </p>
-                                <button className="btn btn-sm btn-primary" style={{ marginTop: 'var(--spacing-xs)' }}>
-                                    Join
-                                </button>
-                            </div>
+                    {isLoading ? (
+                        <p>Loading sessions...</p>
+                    ) : appointments.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            <Calendar size={32} className="mx-auto mb-2 opacity-50" />
+                            <p>No upcoming sessions.</p>
                         </div>
-                    ))}
+                    ) : (
+                        appointments.map((session) => (
+                            <div key={session.id} style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: 'var(--spacing-md) 0',
+                                borderBottom: '1px solid var(--gray-100)',
+                            }}>
+                                <div>
+                                    <p style={{ fontWeight: 500 }}>{session.type.replace(/_/g, ' ')}</p>
+                                    <p style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
+                                        with {session.therapist.firstName} {session.therapist.lastName}
+                                    </p>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <p style={{ fontSize: '0.875rem', color: 'var(--primary-600)' }}>
+                                        {new Date(session.scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                                    </p>
+                                    {session.zoomJoinUrl && (
+                                        <a href={session.zoomJoinUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-primary" style={{ marginTop: 'var(--spacing-xs)', display: 'inline-block' }}>
+                                            Join Zoom
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
 
                 {/* Quick Actions */}
                 <div className="card">
                     <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Quick Actions</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
-                        <button className="btn btn-secondary w-full">
+                        <Link to="/appointments" className="btn btn-secondary w-full">
                             <Calendar size={18} />
-                            Schedule Appointment
-                        </button>
+                            My Appointments
+                        </Link>
                         <Link to="/messages" className="btn btn-secondary w-full">
                             <MessageSquare size={18} />
                             Message Therapist
                         </Link>
-                        <button className="btn btn-secondary w-full">
-                            <FileText size={18} />
-                            View Resources
-                        </button>
+                        <Link to="/settings" className="btn btn-secondary w-full">
+                            <Settings size={18} />
+                            Settings
+                        </Link>
                     </div>
                 </div>
             </div>

@@ -121,6 +121,11 @@ export default function RegisterPage() {
 
             {/* Right Main Content */}
             <div className="auth-main">
+                {/* Mobile Logo Banner - visible only when sidebar is hidden */}
+                <div className="auth-mobile-banner">
+                    <BrandLogo variant="light" size="md" />
+                </div>
+
                 <div className="auth-form-container">
                     <div className="auth-header">
                         <h2>Create your account</h2>

@@ -1,0 +1,246 @@
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background: var(--bg-surface);
+    border-radius: var(--radius-xl, 1rem);
+    width: 800px;
+    max-width: 95vw;
+    max-height: 90vh;
+    max-height: 90vh;
+    overflow-y: auto;
+    /* Keep auto in case, but aim to fit */
+    /* Hide scrollbar if content fits */
+    scrollbar-width: thin;
+    box-shadow: var(--shadow-xl, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04));
+    animation: modal-enter 0.2s ease-out;
+}
+
+@keyframes modal-enter {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 1rem 0.25rem;
+    /* Reduced top padding */
+    border-bottom: none;
+    /* User asked to move line upward - maybe remove border or reduce */
+    /* User said "move the line below it upward" -> this refers to border-bottom? */
+    /* I'll reduce padding and keep border but tighter */
+    border-bottom: 1px solid var(--gray-100, #f3f4f6);
+}
+
+.modal-title {
+    font-size: 1.25rem;
+    /* Revert to smaller size for compactness */
+    font-weight: 700;
+    color: var(--primary-600, #A88258);
+    margin: 0;
+}
+
+.modal-subtitle {
+    font-size: 0.8125rem;
+    /* Smaller subtitle */
+    color: var(--gray-500, #6b7280);
+    margin-top: 0.125rem;
+}
+
+.close-button {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--gray-400, #9ca3af);
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.close-button:hover {
+    color: var(--gray-600, #4b5563);
+    background: var(--gray-100, #f3f4f6);
+}
+
+.modal-body {
+    .modal-body {
+        padding: 1rem 1.5rem;
+        /* Reduced vertical padding */
+    }
+}
+
+.error-banner {
+    background: #fef2f2;
+    color: #b91c1c;
+    padding: 1rem;
+    border-radius: var(--radius-lg, 0.5rem);
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.success-state {
+    text-align: center;
+    padding: 3rem 0;
+}
+
+.success-icon {
+    width: 4rem;
+    height: 4rem;
+    background: #dcfce7;
+    color: #16a34a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    /* Tighter gap */
+}
+
+@media (min-width: 640px) {
+    .form-grid-2 {
+        grid-template-columns: 1fr 1fr;
+        align-items: flex-start;
+    }
+
+    .form-grid-3 {
+        grid-template-columns: 1fr 1fr 1fr;
+        align-items: flex-end;
+        /* Align inputs to the bottom so differing label heights don't break row */
+    }
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    /* Tighter label gap */
+}
+
+.form-label {
+    font-size: 0.8125rem;
+    /* Smaller label */
+    font-weight: 500;
+    color: var(--gray-700, #374151);
+}
+
+.input-wrapper {
+    position: relative;
+}
+
+.input-icon {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--primary-500, #C59D5F);
+    /* Use brand color for icons */
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    /* Standard padding for reliable rendering */
+    border: 1px solid var(--gray-200, #e5e7eb);
+    border-radius: var(--radius-lg, 0.5rem);
+    background: var(--gray-50, #f9fafb);
+    font-size: 0.8125rem;
+    /* 13px */
+    color: var(--gray-900, #111827);
+    transition: all 0.2s;
+    box-sizing: border-box;
+    display: block;
+    height: auto;
+    /* Let content + padding determine height */
+    line-height: 1.5;
+    /* Default line height */
+}
+
+.text-gray-500 {
+    color: var(--gray-500, #6b7280) !important;
+}
+
+textarea.form-input {
+    height: auto;
+    min-height: 80px;
+    padding: 0.5rem 0.75rem;
+    line-height: 1.5;
+}
+
+.form-input.with-icon {
+    padding-left: 2.75rem;
+}
+
+/* Fix for Select elements to handle padding correctly and avoid double arrows */
+select.form-input {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-500, #3b82f6);
+    box-shadow: 0 0 0 2px var(--primary-100, #dbeafe);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--gray-100, #f3f4f6);
+}
+
+.btn-cancel {
+    background: var(--gray-100, #f3f4f6);
+    color: var(--gray-600, #4b5563);
+}
+
+.btn-submit {
+    background: var(--primary-600, #2563eb);
+    color: white;
+}
+
+.btn-submit:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}

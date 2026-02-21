@@ -1,0 +1,455 @@
+/* ============================================
+   Admin Dashboard Styles
+   ============================================ */
+
+.admin-dashboard {
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Welcome Section */
+.dashboard-welcome {
+    background: linear-gradient(135deg, var(--secondary-600) 0%, var(--secondary-700) 100%);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+}
+
+.welcome-content h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem;
+}
+
+.welcome-content p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95rem;
+}
+
+.welcome-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.welcome-actions .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    border: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    min-width: 180px;
+    /* Ensure equal width */
+    height: 48px;
+    padding: 0 1.5rem;
+}
+
+.welcome-actions .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--bg-surface);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    border: 1px solid var(--gray-200);
+    position: relative;
+    transition: all 0.2s;
+}
+
+.stat-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.stat-icon.users {
+    background: #dbeafe;
+    color: #2563eb;
+}
+
+.stat-icon.active {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.stat-icon.pending {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.stat-icon.appointments {
+    background: #ede9fe;
+    color: #7c3aed;
+}
+
+.stat-content {
+    flex: 1;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--gray-500);
+}
+
+.stat-trend {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 999px;
+}
+
+.stat-trend.positive {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.stat-trend.negative {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.dashboard-card {
+    background: var(--bg-surface);
+    border-radius: 12px;
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+}
+
+.card-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--gray-100);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--gray-900);
+}
+
+.card-link {
+    font-size: 0.875rem;
+    color: var(--primary-600);
+    text-decoration: none;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.card-link:hover {
+    text-decoration: underline;
+}
+
+.card-body {
+    padding: 1rem 1.5rem;
+}
+
+/* User List */
+.user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.user-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+
+.user-row:hover {
+    background: var(--gray-50);
+}
+
+.user-avatar-sm {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.user-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.user-details .user-name {
+    display: block;
+    font-weight: 500;
+    color: var(--gray-900);
+    font-size: 0.875rem;
+}
+
+.user-details .user-meta {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Role Badges */
+.role-badge {
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: var(--gray-100);
+    color: var(--gray-700);
+    text-transform: capitalize;
+}
+
+.role-admin {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.role-therapist {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.role-client {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.role-case_manager {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.role-program_director {
+    background: #fce7f3;
+    color: #9d174d;
+}
+
+/* Quick Actions */
+.quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.quick-action {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--gray-900);
+    transition: all 0.2s;
+    border: 1px solid var(--gray-100);
+}
+
+.quick-action:hover {
+    background: var(--gray-50);
+    border-color: var(--gray-200);
+}
+
+.action-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.action-icon.users {
+    background: #dbeafe;
+    color: #2563eb;
+}
+
+.action-icon.appointments {
+    background: #ede9fe;
+    color: #7c3aed;
+}
+
+.action-icon.reports {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.action-content {
+    flex: 1;
+}
+
+.action-title {
+    display: block;
+    font-weight: 600;
+    font-size: 0.9375rem;
+}
+
+.action-desc {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--gray-500);
+}
+
+.quick-action svg:last-child {
+    color: var(--gray-400);
+}
+
+/* Loading States */
+.loading-placeholder {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.skeleton-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 50%, var(--gray-100) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+.skeleton-text {
+    height: 16px;
+    flex: 1;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 50%, var(--gray-100) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Empty State */
+.empty-state-mini {
+    padding: 2rem;
+    text-align: center;
+    color: var(--gray-400);
+}
+
+.empty-state-mini svg {
+    margin-bottom: 0.5rem;
+}
+
+.empty-state-mini p {
+    margin: 0;
+    font-size: 0.875rem;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 900px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .admin-dashboard {
+        padding: 1rem;
+    }
+
+    .dashboard-welcome {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stat-card {
+        padding: 1.25rem;
+    }
+}

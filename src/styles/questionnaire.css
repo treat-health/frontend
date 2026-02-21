@@ -11,7 +11,7 @@
     justify-content: space-between;
     align-items: center;
     padding: var(--spacing-md) var(--spacing-xl);
-    background: white;
+    background: var(--bg-surface);
     border-bottom: 1px solid var(--gray-200);
 }
 
@@ -34,7 +34,7 @@
 /* Progress Bar */
 .progress-container {
     padding: var(--spacing-lg) var(--spacing-xl);
-    background: white;
+    background: var(--bg-surface);
 }
 
 .progress-steps {
@@ -89,7 +89,7 @@
 
 /* Question Card */
 .question-card {
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-md);
     padding: var(--spacing-xl);
@@ -136,7 +136,7 @@
     width: 48px;
     height: 48px;
     border-radius: var(--radius-lg);
-    background: white;
+    background: var(--bg-surface);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -213,7 +213,7 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: white;
+    background: var(--bg-surface);
     margin: 0 auto var(--spacing-sm);
     display: flex;
     align-items: center;
@@ -247,7 +247,7 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: white;
+    background: var(--bg-surface);
     display: flex;
     align-items: center;
     justify-content: center;

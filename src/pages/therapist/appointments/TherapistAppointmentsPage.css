@@ -1,0 +1,274 @@
+/* Reuse client calendar layout patterns — therapist-specific overrides */
+
+.therapist-appointments-layout {
+    display: flex;
+    height: 100%;
+    gap: 0;
+}
+
+/* ── Client Sub-Sidebar ── */
+.client-sidebar {
+    width: 240px;
+    border-right: 1px solid var(--gray-200);
+    background: var(--gray-50);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.client-sidebar-header {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.client-sidebar-header h4 {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-500);
+}
+
+.client-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+}
+
+.client-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 2px;
+}
+
+.client-item:hover {
+    background: var(--gray-100);
+}
+
+.client-item.active {
+    background: var(--primary-50);
+    box-shadow: inset 3px 0 0 var(--primary-500);
+}
+
+.client-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--accent-100);
+    color: var(--accent-700);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.client-item.active .client-avatar {
+    background: var(--primary-500);
+    color: white;
+}
+
+.client-item-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--gray-800);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.client-sidebar-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--gray-400);
+    font-size: 0.85rem;
+    gap: 8px;
+}
+
+.client-item.all-item {
+    border-bottom: 1px solid var(--gray-200);
+    margin-bottom: 6px;
+    padding-bottom: 12px;
+}
+
+.client-item.all-item .client-avatar {
+    background: var(--gray-200);
+    color: var(--gray-600);
+}
+
+.client-item.all-item.active .client-avatar {
+    background: var(--primary-500);
+    color: white;
+}
+
+/* ── Calendar Area (shared with client page) ── */
+.therapist-calendar-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    overflow: visible;
+    position: relative;
+}
+
+.therapist-calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.therapist-calendar-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--gray-900);
+    margin: 0;
+}
+
+/* ── Popover action buttons ── */
+.popover-action-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.popover-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.popover-action-btn.complete {
+    background: var(--success-50);
+    color: var(--success-700);
+}
+
+.popover-action-btn.complete:hover {
+    background: var(--success-100);
+}
+
+.popover-action-btn.no-show {
+    background: var(--error-50);
+    color: var(--error-700);
+}
+
+.popover-action-btn.no-show:hover {
+    background: var(--error-100);
+}
+
+/* ── Complete modal (inline in appointments page) ── */
+.complete-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    animation: fadeIn 0.15s;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.complete-modal {
+    background: var(--bg-surface);
+    border-radius: 16px;
+    padding: 24px;
+    width: 440px;
+    max-width: 90vw;
+    box-shadow: 0 24px 80px -20px rgba(0, 0, 0, 0.25);
+}
+
+.complete-modal h3 {
+    margin: 0 0 6px;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.complete-modal p {
+    margin: 0 0 16px;
+    font-size: 0.85rem;
+    color: var(--gray-500);
+}
+
+.complete-modal textarea {
+    width: 100%;
+    min-height: 140px;
+    border: 1px solid var(--gray-300);
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.complete-modal textarea:focus {
+    border-color: var(--primary-500);
+}
+
+.complete-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.complete-modal-actions .btn-cancel {
+    padding: 8px 16px;
+    border: 1px solid var(--gray-300);
+    background: var(--bg-surface);
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.85rem;
+}
+
+.complete-modal-actions .btn-cancel:hover {
+    background: var(--gray-50);
+}
+
+.complete-modal-actions .btn-save {
+    padding: 8px 16px;
+    border: none;
+    background: var(--success-500);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.complete-modal-actions .btn-save:hover {
+    background: var(--success-600);
+}

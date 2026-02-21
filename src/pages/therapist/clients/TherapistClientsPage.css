@@ -1,0 +1,106 @@
+.therapist-clients-page {
+    padding: 24px;
+    max-width: 900px;
+}
+
+.therapist-clients-page h2 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 0 0 6px;
+    color: var(--gray-900);
+}
+
+.therapist-clients-subtitle {
+    color: var(--gray-500);
+    font-size: 0.9rem;
+    margin: 0 0 24px;
+}
+
+.clients-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.client-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.client-card:hover {
+    border-color: var(--primary-200);
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.08);
+}
+
+.client-card-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--primary-100);
+    color: var(--primary-700);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.client-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.client-card-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--gray-800);
+    margin: 0 0 2px;
+}
+
+.client-card-email {
+    font-size: 0.8rem;
+    color: var(--gray-400);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+
+.clients-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--gray-400);
+    gap: 10px;
+}
+
+.clients-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+}
+
+.tc-spin {
+    animation: tcSpin 0.8s linear infinite;
+}
+
+@keyframes tcSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}

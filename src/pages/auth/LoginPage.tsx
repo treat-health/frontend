@@ -76,7 +76,13 @@ export default function LoginPage() {
 
             {/* Right Main Content */}
             <div className="auth-main">
+                {/* Mobile Logo Banner - visible only when sidebar is hidden */}
+                <div className="auth-mobile-banner">
+                    <BrandLogo variant="light" size="md" />
+                </div>
+
                 <div className="auth-form-container">
+
                     <div className="auth-header">
                         <h2>Welcome back</h2>
                         <p>Sign in to continue your wellness journey</p>
@@ -170,7 +176,8 @@ export default function LoginPage() {
 
                     <div className="auth-footer">
                         Don't have an account?{' '}
-                        <Link to="/register">Create one now</Link>
+                        <span style={{ fontWeight: 500 }}>Contact your administrator</span>
+                        {/* <Link to="/register">Create one now</Link> */}
                     </div>
                 </div>
             </div>

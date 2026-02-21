@@ -187,7 +187,7 @@
 
 .hero-image-float {
     position: absolute;
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-lg);
     padding: var(--spacing-md);
@@ -221,7 +221,7 @@
 /* Features Section */
 .features-section {
     padding: 100px var(--spacing-xl);
-    background: white;
+    background: var(--bg-surface);
 }
 
 .section-container {
@@ -273,7 +273,7 @@
 }
 
 .feature-card:hover {
-    background: white;
+    background: var(--bg-surface);
     border-color: var(--gray-200);
     box-shadow: var(--shadow-lg);
     transform: translateY(-4px);
@@ -338,7 +338,7 @@
     width: 80px;
     height: 80px;
     margin: 0 auto var(--spacing-lg);
-    background: white;
+    background: var(--bg-surface);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -389,7 +389,7 @@
 }
 
 .testimonial-card {
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-xl);
     padding: var(--spacing-xl);
     box-shadow: var(--shadow-lg);
@@ -444,7 +444,7 @@
 /* CTA Section */
 .cta-section {
     padding: 100px var(--spacing-xl);
-    background: white;
+    background: var(--bg-surface);
     text-align: center;
 }
 
