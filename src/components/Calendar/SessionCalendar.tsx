@@ -437,16 +437,53 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
                                     {/* Time */}
                                     <div className="popover-form-row">
                                         <label>Time</label>
-                                        <select value={formTime} onChange={e => setFormTime(e.target.value)}>
-                                            {Array.from({ length: 40 }, (_, i) => {
-                                                const totalMins = 7 * 60 + i * 15;
-                                                const h = Math.floor(totalMins / 60);
-                                                const m = totalMins % 60;
-                                                const v = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-                                                const label = new Date(2000, 0, 1, h, m).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                                                return <option key={v} value={v}>{label}</option>;
-                                            })}
-                                        </select>
+                                        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                                            <select
+                                                value={parseInt(formTime.split(':')[0], 10) % 12 || 12}
+                                                onChange={e => {
+                                                    const h12 = parseInt(e.target.value, 10);
+                                                    const m = formTime.split(':')[1];
+                                                    const isPM = parseInt(formTime.split(':')[0], 10) >= 12;
+                                                    let h24 = h12;
+                                                    if (isPM && h12 < 12) h24 += 12;
+                                                    if (!isPM && h12 === 12) h24 = 0;
+                                                    setFormTime(`${String(h24).padStart(2, '0')}:${m}`);
+                                                }}
+                                                style={{ flex: 1, padding: '0.375rem 0.25rem', textAlign: 'center' }}
+                                            >
+                                                {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                                                    <option key={h} value={h}>{String(h).padStart(2, '0')}</option>
+                                                ))}
+                                            </select>
+                                            <span style={{ color: 'var(--gray-400)' }}>:</span>
+                                            <select
+                                                value={formTime.split(':')[1]}
+                                                onChange={e => {
+                                                    const h24 = formTime.split(':')[0];
+                                                    setFormTime(`${h24}:${e.target.value}`);
+                                                }}
+                                                style={{ flex: 1, padding: '0.375rem 0.25rem', textAlign: 'center' }}
+                                            >
+                                                {['00', '15', '30', '45'].map(m => (
+                                                    <option key={m} value={m}>{m}</option>
+                                                ))}
+                                            </select>
+                                            <select
+                                                value={parseInt(formTime.split(':')[0], 10) >= 12 ? 'PM' : 'AM'}
+                                                onChange={e => {
+                                                    const isPM = e.target.value === 'PM';
+                                                    let h24 = parseInt(formTime.split(':')[0], 10);
+                                                    if (isPM && h24 < 12) h24 += 12;
+                                                    if (!isPM && h24 >= 12) h24 -= 12;
+                                                    const m = formTime.split(':')[1];
+                                                    setFormTime(`${String(h24).padStart(2, '0')}:${m}`);
+                                                }}
+                                                style={{ flex: 1.2, padding: '0.375rem 0.25rem', textAlign: 'center' }}
+                                            >
+                                                <option value="AM">AM</option>
+                                                <option value="PM">PM</option>
+                                            </select>
+                                        </div>
                                     </div>
 
                                     {/* Duration */}

@@ -144,10 +144,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             },
             onMessageNew: (message: MessageData) => {
                 const state = get();
+                const currentUser = useAuthStore.getState().user;
+                const isMine = message.senderId === currentUser?.id;
                 const isCurrentConversation = state.currentConversation?.id === message.conversationId;
 
                 // Add message to current conversation
-                if (isCurrentConversation) {
+                // Skip if this is our own message — we already have the optimistic temp copy
+                if (isCurrentConversation && !isMine) {
                     set({ messages: [...state.messages, message as Message] });
                 }
 
@@ -161,8 +164,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 });
 
                 // Update unread count if not current conversation AND message is from someone else
-                const currentUser = useAuthStore.getState().user;
-                if (!isCurrentConversation && message.senderId !== currentUser?.id) {
+                if (!isCurrentConversation && !isMine) {
                     set({ totalUnread: state.totalUnread + 1 });
 
                     toast(`${message.sender?.firstName || 'Someone'} sent you a message`, {
@@ -174,9 +176,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             onMessageSent: ({ messageId, tempId }) => {
                 set((state) => ({
                     isSending: false,
-                    messages: state.messages.map((m) =>
-                        m.id === tempId ? { ...m, id: messageId } : m
-                    ),
+                    // Replace the temp ID with the real server ID,
+                    // and also deduplicate in case message:new arrived first
+                    messages: state.messages
+                        .map((m) => m.id === tempId ? { ...m, id: messageId } : m)
+                        .filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i),
                 }));
             },
             onMessageError: ({ error, tempId }) => {

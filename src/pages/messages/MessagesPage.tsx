@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { KeyboardEvent } from 'react';
-import { MessageSquare, Send, Search, Plus, MoreVertical, Phone, Video, X } from 'lucide-react';
+import { MessageSquare, Send, Search, Plus, X } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useAuthStore } from '../../stores/authStore';
 import '../../styles/chat.css';

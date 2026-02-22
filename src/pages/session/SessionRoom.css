@@ -1,0 +1,265 @@
+.session-room-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--gray-900);
+    color: white;
+    overflow: hidden;
+}
+
+.session-room-loading {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--gray-900);
+    color: white;
+    gap: 1.5rem;
+}
+
+/* Header */
+.session-room-header {
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    z-index: 10;
+}
+
+.session-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.session-info h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.session-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--gray-300);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.status-dot.waiting {
+    background-color: var(--yellow-400);
+    animation: pulse 2s infinite;
+}
+
+.status-dot.connected {
+    background-color: var(--success);
+}
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--gray-300);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Main Video Area */
+.session-room-main {
+    flex: 1;
+    position: relative;
+    padding: 2rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.video-grid {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    border-radius: 16px;
+    overflow: hidden;
+    background-color: #000;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.video-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.remote-video-wrapper {
+    z-index: 1;
+}
+
+.remote-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Picture in Picture / Local Video */
+.local-video-wrapper {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    width: 240px;
+    height: 160px;
+    border-radius: 12px;
+    overflow: hidden;
+    z-index: 2;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    background-color: var(--gray-800);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
+}
+
+.local-video-wrapper:hover {
+    transform: scale(1.05);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.local-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    /* Mirror local video */
+}
+
+.local-video.hidden {
+    opacity: 0;
+}
+
+.local-label {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background-color: rgba(0, 0, 0, 0.6);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    pointer-events: none;
+}
+
+.video-placeholder,
+.local-video-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--gray-800);
+    color: var(--gray-400);
+    gap: 1rem;
+}
+
+.local-video-placeholder {
+    background-color: var(--gray-700);
+}
+
+/* Controls Footer */
+.session-room-controls {
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    z-index: 10;
+}
+
+.control-group {
+    display: flex;
+    gap: 1rem;
+}
+
+.control-btn {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.control-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.control-btn.danger {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+.control-btn.danger:hover {
+    background-color: rgba(239, 68, 68, 0.3);
+}
+
+.leave-btn {
+    background-color: var(--danger);
+}
+
+.leave-btn:hover {
+    background-color: #dc2626;
+    transform: scale(1.05);
+    /* slightly grow instead of float */
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .session-room-main {
+        padding: 0;
+    }
+
+    .video-grid {
+        border-radius: 0;
+    }
+
+    .local-video-wrapper {
+        width: 120px;
+        height: 160px;
+        bottom: 16px;
+        right: 16px;
+    }
+
+    .control-btn {
+        width: 48px;
+        height: 48px;
+    }
+}

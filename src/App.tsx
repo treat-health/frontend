@@ -16,6 +16,7 @@ import TherapistClientsPage from './pages/therapist/clients/TherapistClientsPage
 import ClientsPage from './pages/admin/clients/ClientsPage';
 import ReportsPage from './pages/admin/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import SessionRoom from './pages/session/SessionRoom';
 import Layout from './components/layout/Layout';
 
 /**
@@ -149,6 +150,16 @@ export default function App() {
                     element={
                         <ProtectedRoute>
                             <ClientSessionsPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Session Room Route */}
+                <Route
+                    path="/sessions/:id/room"
+                    element={
+                        <ProtectedRoute>
+                            <SessionRoom />
                         </ProtectedRoute>
                     }
                 />

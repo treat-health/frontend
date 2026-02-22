@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X, Loader2, CalendarDays, Users, Video, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '../../../lib/api';
@@ -340,9 +341,9 @@ export default function TherapistAppointmentsPage() {
                                         {s.status === 'SCHEDULED' && (
                                             <div className="popover-action-row">
                                                 {s.zoomJoinUrl && (
-                                                    <a href={s.zoomJoinUrl} target="_blank" rel="noopener noreferrer" className="client-popover-zoom">
-                                                        <Video size={12} /> Join Zoom
-                                                    </a>
+                                                    <Link to={`/sessions/${s.id}/room`} className="client-popover-zoom" title="Join Video Session">
+                                                        <Video size={12} /> Join Session
+                                                    </Link>
                                                 )}
                                                 <button className="popover-action-btn complete" onClick={() => handleCompleteClick(s)}>
                                                     <CheckCircle size={12} /> Complete

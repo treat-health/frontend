@@ -10,7 +10,8 @@ import {
     CheckCircle,
     Shield,
     Clock,
-    Loader2
+    Loader2,
+    Settings
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
@@ -18,7 +19,7 @@ import api from '../../lib/api';
 import type { ApiResponse } from '../../lib/api';
 import './SettingsPage.css';
 
-type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability';
+type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability' | 'system';
 
 /**
  * Settings Page — Profile, Security, and Notification Preferences
@@ -59,6 +60,11 @@ export default function SettingsPage() {
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
 
+    // System settings state (admin only)
+    const [sysSettings, setSysSettings] = useState<Record<string, string>>({});
+    const [isLoadingSys, setIsLoadingSys] = useState(false);
+    const [isSavingSys, setIsSavingSys] = useState(false);
+
     useEffect(() => {
         if (user) {
             setFirstName(user.firstName || '');
@@ -67,6 +73,40 @@ export default function SettingsPage() {
             setState(user.state || '');
         }
     }, [user]);
+
+    // Fetch system settings when admin selects the System tab
+    useEffect(() => {
+        if (activeTab === 'system' && user?.role === 'ADMIN') {
+            fetchSystemSettings();
+        }
+    }, [activeTab]);
+
+    const fetchSystemSettings = async () => {
+        setIsLoadingSys(true);
+        try {
+            const res = await api.get('/settings');
+            const map: Record<string, string> = {};
+            for (const s of res.data.data) map[s.key] = s.value;
+            setSysSettings(map);
+        } catch (err) {
+            toast.error('Failed to load system settings');
+        } finally {
+            setIsLoadingSys(false);
+        }
+    };
+
+    const handleSaveSystemSettings = async () => {
+        setIsSavingSys(true);
+        try {
+            const settings = Object.entries(sysSettings).map(([key, value]) => ({ key, value }));
+            await api.put('/settings', { settings });
+            toast.success('System settings saved!');
+        } catch (err) {
+            toast.error('Failed to save system settings');
+        } finally {
+            setIsSavingSys(false);
+        }
+    };
 
     useEffect(() => {
         const fetchAvailability = async () => {
@@ -234,6 +274,7 @@ export default function SettingsPage() {
         { id: 'security', label: 'Security', icon: Lock },
         { id: 'notifications', label: 'Notifications', icon: Bell },
         ...(user?.role === 'THERAPIST' ? [{ id: 'availability' as SettingsTab, label: 'Availability', icon: Clock }] : []),
+        ...(user?.role === 'ADMIN' ? [{ id: 'system' as SettingsTab, label: 'System', icon: Settings }] : []),
     ];
 
     return (
@@ -598,6 +639,60 @@ export default function SettingsPage() {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {/* System Tab (Admin Only) */}
+                    {activeTab === 'system' && user?.role === 'ADMIN' && (
+                        <div className="settings-section">
+                            <div className="section-header">
+                                <h2>System Settings</h2>
+                                <p>Configure application-wide defaults</p>
+                            </div>
+
+                            {isLoadingSys ? (
+                                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+                                    <Loader2 size={24} className="spin" />
+                                </div>
+                            ) : (
+                                <div className="settings-form">
+                                    <div className="form-group">
+                                        <label>First Reminder (minutes before session)</label>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
+                                            Common values: 60 = 1 hour, 120 = 2 hours, 30 = 30 min
+                                        </p>
+                                        <input
+                                            type="number"
+                                            min={5}
+                                            max={1440}
+                                            value={sysSettings['reminder_minutes_first'] || '60'}
+                                            onChange={(e) => setSysSettings(prev => ({ ...prev, reminder_minutes_first: e.target.value }))}
+                                            style={{ maxWidth: '200px' }}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Second Reminder (minutes before session)</label>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
+                                            Common values: 1440 = 24 hours, 720 = 12 hours
+                                        </p>
+                                        <input
+                                            type="number"
+                                            min={5}
+                                            max={2880}
+                                            value={sysSettings['reminder_minutes_second'] || '1440'}
+                                            onChange={(e) => setSysSettings(prev => ({ ...prev, reminder_minutes_second: e.target.value }))}
+                                            style={{ maxWidth: '200px' }}
+                                        />
+                                    </div>
+
+                                    <div className="form-actions">
+                                        <button className="btn btn-primary" onClick={handleSaveSystemSettings} disabled={isSavingSys}>
+                                            {isSavingSys ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+                                            {isSavingSys ? 'Saving...' : 'Save System Settings'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

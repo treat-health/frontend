@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X, Loader2, CalendarDays, Users, Video, Clock } from 'lucide-react';
 import api from '../../lib/api';
 import './ClientSessionsPage.css';
@@ -295,15 +296,14 @@ export default function ClientSessionsPage() {
                                                             {s.type.replace(/_/g, ' ')} • {s.therapist.firstName} {s.therapist.lastName}
                                                         </span>
                                                         {s.zoomJoinUrl && (
-                                                            <a
-                                                                href={s.zoomJoinUrl}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
+                                                            <Link
+                                                                to={`/sessions/${s.id}/room`}
                                                                 className="client-popover-zoom"
+                                                                title="Join Video Session"
                                                             >
                                                                 <Video size={12} />
-                                                                Join Zoom
-                                                            </a>
+                                                                Join Session
+                                                            </Link>
                                                         )}
                                                     </div>
                                                     <span className={`client-popover-badge ${getStatusClass(s.status)}`}>

@@ -119,9 +119,9 @@ export default function DashboardPage() {
                                         {new Date(session.scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                                     </p>
                                     {session.zoomJoinUrl && (
-                                        <a href={session.zoomJoinUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-primary" style={{ marginTop: 'var(--spacing-xs)', display: 'inline-block' }}>
-                                            Join Zoom
-                                        </a>
+                                        <Link to={`/sessions/${session.id}/room`} className="btn btn-sm btn-primary" style={{ marginTop: 'var(--spacing-xs)', display: 'inline-block' }}>
+                                            Join Session
+                                        </Link>
                                     )}
                                 </div>
                             </div>

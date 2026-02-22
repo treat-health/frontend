@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../../stores/authStore';
 import { schedulingService } from '../../../services/scheduling.service';
 import type { Appointment } from '../../../services/scheduling.service';
@@ -159,15 +160,13 @@ export default function TherapistDashboard() {
                                         {apt.status === 'SCHEDULED' && (
                                             <>
                                                 {apt.zoomJoinUrl && (
-                                                    <a
-                                                        href={apt.zoomJoinUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
+                                                    <Link
+                                                        to={`/sessions/${apt.id}/room`}
                                                         className="btn-zoom"
-                                                        title="Join Zoom Meeting"
+                                                        title="Join Video Session"
                                                     >
                                                         <Video size={20} />
-                                                    </a>
+                                                    </Link>
                                                 )}
                                                 <button
                                                     onClick={() => handleCompleteClick(apt)}
