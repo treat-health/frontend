@@ -35,7 +35,14 @@ export const tokenStorage = {
 };
 
 /**
- * Create axios instance
+ * Create base axios instance for external requests (like S3 uploads)
+ */
+export const axiosInstance: AxiosInstance = axios.create({
+    timeout: 30000,
+});
+
+/**
+ * Create API instance with base URL
  */
 const api: AxiosInstance = axios.create({
     baseURL: API_BASE_URL,
@@ -56,7 +63,7 @@ api.interceptors.request.use(
         }
         return config;
     },
-    (error: AxiosError) => Promise.reject(error)
+    (error: AxiosError) => { throw error; }
 );
 
 /**
@@ -90,8 +97,8 @@ api.interceptors.response.use(
 
             if (!refreshToken) {
                 tokenStorage.clearTokens();
-                window.location.href = '/login';
-                return Promise.reject(error);
+                globalThis.location.href = '/login';
+                throw error;
             }
 
             if (isRefreshing) {
@@ -102,7 +109,7 @@ api.interceptors.response.use(
                         originalRequest.headers.Authorization = `Bearer ${token}`;
                         return api(originalRequest);
                     })
-                    .catch((err) => Promise.reject(err));
+                    .catch((err) => { throw err; });
             }
 
             originalRequest._retry = true;
@@ -124,14 +131,14 @@ api.interceptors.response.use(
             } catch (refreshError) {
                 processQueue(refreshError as Error, null);
                 tokenStorage.clearTokens();
-                window.location.href = '/login';
-                return Promise.reject(refreshError);
+                globalThis.location.href = '/login';
+                throw refreshError;
             } finally {
                 isRefreshing = false;
             }
         }
 
-        return Promise.reject(error);
+        throw error;
     }
 );
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import { useUserStore } from '../../stores/userStore';
 import { useAuthStore } from '../../stores/authStore';
-import type { UserRole } from '../../stores/authStore';
+import type { UserRole, TreatmentStatus } from '../../stores/authStore';
 import type { CreateUserInput, InviteInfo } from '../../stores/userStore';
 import '../../styles/admin.css';
 
@@ -10,11 +10,20 @@ const ROLES: { value: UserRole; label: string }[] = [
     { value: 'CLIENT', label: 'Client' },
     { value: 'THERAPIST', label: 'Therapist' },
     { value: 'ADMIN', label: 'Admin' },
-    { value: 'CASE_MANAGER', label: 'Case Manager' },
     { value: 'ADMISSIONS_REP', label: 'Admissions Rep' },
     { value: 'CARE_COORDINATOR', label: 'Care Coordinator' },
     { value: 'PROGRAM_DIRECTOR', label: 'Program Director' },
     { value: 'INSURANCE_TEAM', label: 'Insurance Team' },
+    { value: 'PSYCHIATRIC_PROVIDER', label: 'Psychiatric Provider' },
+];
+
+const TREATMENT_STATUS_OPTIONS: { value: TreatmentStatus; label: string }[] = [
+    { value: 'ACTIVE', label: 'Active' },
+    { value: 'SUCCESSFUL_COMPLETION', label: 'Successful Completion' },
+    { value: 'ACA', label: 'ACA' },
+    { value: 'ADMINISTRATIVE_DISCHARGE', label: 'Administrative Discharge' },
+    { value: 'TRANSFER_TO_HIGH_LEVEL_CARE', label: 'Transfer to High Level Care' },
+    { value: 'REFER_TO_OUTSIDE_AGENCY', label: 'Refer to Outside Agency' },
 ];
 
 const STATES = ['CA', 'TX', 'WA', 'TN'];
@@ -29,6 +38,7 @@ export default function UsersPage() {
         isLoading,
         fetchUsers,
         createUser,
+        updateUser,
         toggleUserStatus,
         deleteUser,
         resendInvite,
@@ -82,6 +92,15 @@ export default function UsersPage() {
         try {
             const user = await toggleUserStatus(userId);
             toast.success(`User ${user.isActive ? 'activated' : 'deactivated'}`);
+        } catch (error: any) {
+            toast.error(error.message);
+        }
+    };
+
+    const handleUpdateTreatmentStatus = async (userId: string, newStatus: TreatmentStatus) => {
+        try {
+            await updateUser(userId, { treatmentStatus: newStatus } as any);
+            toast.success('Treatment status updated successfully');
         } catch (error: any) {
             toast.error(error.message);
         }
@@ -190,6 +209,7 @@ export default function UsersPage() {
                                 <th>Role</th>
                                 <th>State</th>
                                 <th>Status</th>
+                                <th>Treatment Status</th>
                                 <th>Created</th>
                                 <th>Actions</th>
                             </tr>
@@ -218,6 +238,25 @@ export default function UsersPage() {
                                         <span className={`status-badge ${user.isActive ? 'status-active' : 'status-inactive'}`}>
                                             {user.isActive ? 'Active' : 'Inactive'}
                                         </span>
+                                    </td>
+                                    <td>
+                                        {user.role === 'CLIENT' ? (
+                                            <select
+                                                className="filter-select"
+                                                style={{ padding: '4px 8px', fontSize: '0.875rem' }}
+                                                value={user.treatmentStatus || 'ACTIVE'}
+                                                onChange={(e) => handleUpdateTreatmentStatus(user.id, e.target.value as TreatmentStatus)}
+                                                disabled={isLoading}
+                                            >
+                                                {TREATMENT_STATUS_OPTIONS.map((opt) => (
+                                                    <option key={opt.value} value={opt.value}>
+                                                        {opt.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            '—'
+                                        )}
                                     </td>
                                     <td>{new Date(user.createdAt).toLocaleDateString()}</td>
                                     <td>

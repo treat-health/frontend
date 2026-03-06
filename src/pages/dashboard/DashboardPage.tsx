@@ -118,7 +118,7 @@ export default function DashboardPage() {
                                     <p style={{ fontSize: '0.875rem', color: 'var(--primary-600)' }}>
                                         {new Date(session.scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                                     </p>
-                                    {session.zoomJoinUrl && (
+                                    {(session.status === 'SCHEDULED' || session.status === 'IN_PROGRESS') && (
                                         <Link to={`/sessions/${session.id}/room`} className="btn btn-sm btn-primary" style={{ marginTop: 'var(--spacing-xs)', display: 'inline-block' }}>
                                             Join Session
                                         </Link>

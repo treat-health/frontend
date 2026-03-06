@@ -10,11 +10,22 @@ export type UserRole =
     | 'ADMIN'
     | 'THERAPIST'
     | 'CLIENT'
-    | 'CASE_MANAGER'
     | 'ADMISSIONS_REP'
     | 'CARE_COORDINATOR'
     | 'PROGRAM_DIRECTOR'
-    | 'INSURANCE_TEAM';
+    | 'INSURANCE_TEAM'
+    | 'PSYCHIATRIC_PROVIDER';
+
+/**
+ * User Treatment Status enum
+ */
+export type TreatmentStatus =
+    | 'ACTIVE'
+    | 'SUCCESSFUL_COMPLETION'
+    | 'ACA'
+    | 'ADMINISTRATIVE_DISCHARGE'
+    | 'TRANSFER_TO_HIGH_LEVEL_CARE'
+    | 'REFER_TO_OUTSIDE_AGENCY';
 
 /**
  * User type
@@ -28,6 +39,7 @@ export interface User {
     role: UserRole;
     state: string | null;
     isActive: boolean;
+    treatmentStatus?: TreatmentStatus;
     emailVerified: boolean;
     lastLoginAt: string | null;
     createdAt: string;

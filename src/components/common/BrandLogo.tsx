@@ -38,11 +38,11 @@ export default function BrandLogo({ variant = 'dark', size = 'md', className = '
             />
             <img
                 src={logoText}
-                alt="Treat Mental Health"
+                alt="Treat Health"
                 style={{
                     ...textSizes[size],
                     objectFit: 'contain',
-                    marginTop: '2px', // Slight visual alignment
+                    marginTop: '-10px', // Shift up slightly to align with the gem icon
                     ...filterStyle
                 }}
             />

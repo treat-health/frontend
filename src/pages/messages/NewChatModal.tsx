@@ -21,6 +21,7 @@ export default function NewChatModal({ onClose }: NewChatModalProps) {
     const { user } = useAuthStore();
     const { createDirectConversation, selectConversation } = useChatStore();
     const [users, setUsers] = useState<AssignableUser[]>([]);
+    const [adminUsers, setAdminUsers] = useState<AssignableUser[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -50,6 +51,15 @@ export default function NewChatModal({ onClose }: NewChatModalProps) {
                     setUsers([]);
                 }
             }
+
+            // Also fetch available admins/directors for all non-admin users
+            const isAdmin = user?.role === 'ADMIN' || user?.role === 'PROGRAM_DIRECTOR';
+            if (!isAdmin) {
+                const adminsRes = await api.get('/chat/available-admins');
+                if (adminsRes.data.success && Array.isArray(adminsRes.data.data)) {
+                    setAdminUsers(adminsRes.data.data);
+                }
+            }
         } catch (error) {
             console.error('Failed to fetch users', error);
             toast.error('Failed to load contacts');
@@ -72,6 +82,12 @@ export default function NewChatModal({ onClose }: NewChatModalProps) {
     const filteredUsers = users.filter((u) =>
         `${u.firstName} ${u.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    const filteredAdmins = adminUsers.filter((u) =>
+        `${u.firstName} ${u.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const hasNoResults = filteredUsers.length === 0 && filteredAdmins.length === 0;
 
     return (
         <div className="modal-overlay">
@@ -101,62 +117,129 @@ export default function NewChatModal({ onClose }: NewChatModalProps) {
                         />
                     </div>
 
-                    <div className="user-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <div className="user-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         {isLoading ? (
                             <div className="text-center p-4">Loading contacts...</div>
-                        ) : filteredUsers.length === 0 ? (
+                        ) : hasNoResults ? (
                             <div className="text-center p-4 text-gray-500">
-                                {searchQuery ? 'No matching contacts' : 'No assigned contacts found'}
+                                {searchQuery ? 'No matching contacts' : 'No contacts found'}
                             </div>
                         ) : (
-                            filteredUsers.map((u) => (
-                                <div
-                                    key={u.id}
-                                    className="user-item"
-                                    onClick={() => handleStartChat(u.id)}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        padding: '0.75rem',
-                                        borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer',
-                                        transition: 'background 0.2s',
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        e.currentTarget.style.backgroundColor = 'var(--gray-50)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        e.currentTarget.style.backgroundColor = 'transparent';
-                                    }}
-                                >
-                                    <div
-                                        className="avatar"
-                                        style={{
-                                            width: '40px',
-                                            height: '40px',
-                                            borderRadius: '50%',
-                                            background: 'var(--primary-100)',
-                                            color: 'var(--primary-600)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            marginRight: '1rem',
-                                            fontWeight: '600',
-                                        }}
-                                    >
-                                        {u.firstName.charAt(0)}
-                                        {u.lastName.charAt(0)}
-                                    </div>
-                                    <div className="user-info">
-                                        <div style={{ fontWeight: '500' }}>
-                                            {u.firstName} {u.lastName}
+                            <>
+                                {/* Assigned contacts */}
+                                {filteredUsers.length > 0 && (
+                                    <>
+                                        <div style={{ padding: '0.25rem 0.75rem', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--gray-400)', fontWeight: 600 }}>
+                                            My Contacts
                                         </div>
-                                        <div style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
-                                            {u.role.replace('_', ' ')}
+                                        {filteredUsers.map((u) => (
+                                            <div
+                                                key={u.id}
+                                                className="user-item"
+                                                onClick={() => handleStartChat(u.id)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    padding: '0.75rem',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    cursor: 'pointer',
+                                                    transition: 'background 0.2s',
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.backgroundColor = 'var(--gray-50)';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                                }}
+                                            >
+                                                <div
+                                                    className="avatar"
+                                                    style={{
+                                                        width: '40px',
+                                                        height: '40px',
+                                                        borderRadius: '50%',
+                                                        background: 'var(--primary-100)',
+                                                        color: 'var(--primary-600)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        marginRight: '1rem',
+                                                        fontWeight: '600',
+                                                    }}
+                                                >
+                                                    {u.firstName.charAt(0)}
+                                                    {u.lastName.charAt(0)}
+                                                </div>
+                                                <div className="user-info">
+                                                    <div style={{ fontWeight: '500' }}>
+                                                        {u.firstName} {u.lastName}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
+                                                        {u.role.replace('_', ' ')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
+
+                                {/* Support Staff (admin discovery) */}
+                                {filteredAdmins.length > 0 && (
+                                    <>
+                                        <div style={{ padding: '0.75rem 0.75rem 0.25rem', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--gray-400)', fontWeight: 600, marginTop: filteredUsers.length > 0 ? '0.5rem' : 0, borderTop: filteredUsers.length > 0 ? '1px solid var(--gray-100)' : 'none' }}>
+                                            Support Staff
                                         </div>
-                                    </div>
-                                </div>
-                            ))
+                                        {filteredAdmins.map((u) => (
+                                            <div
+                                                key={u.id}
+                                                className="user-item"
+                                                onClick={() => handleStartChat(u.id)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    padding: '0.75rem',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    cursor: 'pointer',
+                                                    transition: 'background 0.2s',
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.backgroundColor = 'var(--gray-50)';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                                }}
+                                            >
+                                                <div
+                                                    className="avatar"
+                                                    style={{
+                                                        width: '40px',
+                                                        height: '40px',
+                                                        borderRadius: '50%',
+                                                        background: '#fef3c7',
+                                                        color: '#92400e',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        marginRight: '1rem',
+                                                        fontWeight: '600',
+                                                    }}
+                                                >
+                                                    {u.firstName.charAt(0)}
+                                                    {u.lastName.charAt(0)}
+                                                </div>
+                                                <div className="user-info">
+                                                    <div style={{ fontWeight: '500' }}>
+                                                        {u.firstName} {u.lastName}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
+                                                        {u.role.replace(/_/g, ' ')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>

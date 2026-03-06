@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { Search, X, Filter, Calendar as CalendarIcon, User as UserIcon, ChevronDown, List as ListIcon } from 'lucide-react';
+import { Search, X, Filter, Calendar as CalendarIcon, User as UserIcon, ChevronDown, List as ListIcon, Sparkles } from 'lucide-react';
 import api from '../../../lib/api';
 import type { ApiResponse } from '../../../lib/api';
+import SessionCalendar from '../../../components/Calendar/SessionCalendar';
+import SessionReportPanel from '../../../components/session/SessionReportPanel';
 import './SessionListPage.css';
 import '../../../styles/admin.css';
-import SessionCalendar from '../../../components/Calendar/SessionCalendar';
 
 interface Session {
     id: string;
@@ -53,6 +54,9 @@ export default function SessionListPage() {
     const [endDate, setEndDate] = useState(searchParams.get('endDate') || '');
     const [page, setPage] = useState(1);
     const limit = 20;
+
+    // AI Report Modal
+    const [reportSessionId, setReportSessionId] = useState<string | null>(null);
 
     // Derived Selection
     const selectedClientId = searchParams.get('clientId');
@@ -192,23 +196,23 @@ export default function SessionListPage() {
 
             <div className="session-page-layout">
                 {/* Sidebar: User List */}
-                <div className="session-sidebar">
-                    <div className="sidebar-tabs">
+                <div className="session-list-sidebar">
+                    <div className="session-list-tabs">
                         <button
-                            className={`sidebar-tab ${activeTab === 'clients' ? 'active' : ''}`}
+                            className={`session-list-tab ${activeTab === 'clients' ? 'active' : ''}`}
                             onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
                         >
                             Clients
                         </button>
                         <button
-                            className={`sidebar-tab ${activeTab === 'therapists' ? 'active' : ''}`}
+                            className={`session-list-tab ${activeTab === 'therapists' ? 'active' : ''}`}
                             onClick={() => { setActiveTab('therapists'); setSearchTerm(''); }}
                         >
                             Therapists
                         </button>
                     </div>
 
-                    <div className="sidebar-search">
+                    <div className="session-list-search">
                         <div className="search-input-wrapper" style={{ display: 'flex', alignItems: 'center', background: 'var(--gray-50)', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                             <Search size={16} color="#64748b" style={{ marginRight: '8px' }} />
                             <input
@@ -290,7 +294,7 @@ export default function SessionListPage() {
                 </div>
 
                 {/* Main Content: Session Table or Calendar */}
-                <div className="session-content">
+                <div className="session-list-content">
                     {/* Header Filters & Toggle */}
                     <div className="session-header-filters">
                         <div className="view-toggle" style={{ display: 'flex', background: 'var(--gray-50)', padding: '4px', borderRadius: '8px', marginRight: '16px' }}>
@@ -377,6 +381,7 @@ export default function SessionListPage() {
                                                 <th>Client</th>
                                                 <th>Type</th>
                                                 <th>Status</th>
+                                                <th>Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -403,6 +408,19 @@ export default function SessionListPage() {
                                                         <span className={`status-badge ${getStatusBadgeClass(session.status)}`}>
                                                             {session.status}
                                                         </span>
+                                                    </td>
+                                                    <td>
+                                                        {session.status === 'COMPLETED' ? (
+                                                            <button
+                                                                onClick={() => setReportSessionId(session.id)}
+                                                                className="btn btn-secondary"
+                                                                style={{ padding: '4px 8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none' }}
+                                                            >
+                                                                <Sparkles size={12} /> Report
+                                                            </button>
+                                                        ) : (
+                                                            <span style={{ color: '#94a3b8', fontSize: '12px' }}>N/A</span>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -445,6 +463,15 @@ export default function SessionListPage() {
                     )}
                 </div>
             </div>
+
+            {/* AI Report Modal */}
+            {reportSessionId && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(2px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <div style={{ width: '90%', maxWidth: '800px', height: '85vh', background: 'white', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+                        <SessionReportPanel sessionId={reportSessionId} onClose={() => setReportSessionId(null)} />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

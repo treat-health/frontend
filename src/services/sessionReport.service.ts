@@ -1,0 +1,39 @@
+import api from '../lib/api';
+import type { ApiResponse } from '../lib/api';
+
+export interface SessionTranscript {
+    id: string;
+    sessionId: string;
+    text: string | null;
+    summary: string | null;
+    keyPoints: string[];
+    sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | null;
+    wordCount: number;
+    generatedAt: string;
+    attentionMetrics?: {
+        metrics: Record<string, {
+            cameraOffSeconds: number;
+            micOffSeconds: number;
+            audioInactiveSeconds: number;
+            nudgesCount: number;
+        }>;
+        timeline: any[];
+    } | null;
+}
+
+class SessionReportService {
+    /**
+     * Fetch the AI transcript/report for a specific session ID
+     * Accessible by assigned CLIENT, THERAPIST, or any ADMIN/PROGRAM_DIRECTOR
+     */
+    async getSessionReport(sessionId: string): Promise<SessionTranscript> {
+        // According to our backend modification: GET /api/sessions/:id/report
+        const response = await api.get<ApiResponse<SessionTranscript>>(`/sessions/${sessionId}/report`);
+        if (!response.data.success || !response.data.data) {
+            throw new Error(response.data.message || 'Failed to fetch session report');
+        }
+        return response.data.data;
+    }
+}
+
+export const sessionReportService = new SessionReportService();

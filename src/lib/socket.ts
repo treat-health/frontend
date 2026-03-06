@@ -14,6 +14,10 @@ export interface MessageData {
     senderId: string;
     content: string;
     contentType: 'TEXT' | 'FILE' | 'IMAGE';
+    attachmentUrl?: string;
+    attachmentName?: string;
+    attachmentSize?: number;
+    attachmentType?: string;
     replyToId?: string;
     createdAt: string;
     sender: {
@@ -53,12 +57,14 @@ export interface SocketEventHandlers {
     onUserOnline?: (data: UserStatusEvent) => void;
     onUserOffline?: (data: UserStatusEvent) => void;
     onUsersOnlineList?: (userIds: string[]) => void;
+    onConversationDeactivated?: (data: { conversationId: string }) => void;
     onConnect?: () => void;
     onDisconnect?: () => void;
     onError?: (error: Error) => void;
 }
 
 let eventHandlers: SocketEventHandlers = {};
+let connectErrorCount = 0;
 
 /**
  * Initialize socket connection with JWT auth
@@ -100,6 +106,7 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
     // Connection events
     socket.on('connect', () => {
         console.log('[Socket] Connected');
+        connectErrorCount = 0; // Reset on successful connection
         eventHandlers.onConnect?.();
     });
 
@@ -110,6 +117,13 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
 
     socket.on('connect_error', (error) => {
         console.error('[Socket] Connection error:', error.message);
+        connectErrorCount++;
+        if (connectErrorCount >= 5) {
+            console.warn('[Socket] Too many connection errors, recreating socket');
+            socket?.disconnect();
+            socket = null;
+            connectErrorCount = 0;
+        }
         eventHandlers.onError?.(error);
     });
 
@@ -161,6 +175,10 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
         eventHandlers.onUsersOnlineList?.(userIds);
     });
 
+    socket.on('conversation:deactivated', (data: { conversationId: string }) => {
+        eventHandlers.onConversationDeactivated?.(data);
+    });
+
     return socket;
 }
 
@@ -209,6 +227,10 @@ export function sendMessage(data: {
     conversationId: string;
     content: string;
     contentType?: 'TEXT' | 'FILE' | 'IMAGE';
+    attachmentUrl?: string;
+    attachmentName?: string;
+    attachmentSize?: number;
+    attachmentType?: string;
     replyToId?: string;
     tempId?: string;
 }): void {
@@ -216,6 +238,10 @@ export function sendMessage(data: {
         conversationId: data.conversationId,
         content: data.content,
         contentType: data.contentType || 'TEXT',
+        attachmentUrl: data.attachmentUrl,
+        attachmentName: data.attachmentName,
+        attachmentSize: data.attachmentSize,
+        attachmentType: data.attachmentType,
         replyToId: data.replyToId,
         tempId: data.tempId,
     });

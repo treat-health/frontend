@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Appointment, CreateAppointmentDto, UserSummary } from '../../services/scheduling.service';
 import { schedulingService } from '../../services/scheduling.service';
 import { X, Calendar, Clock, User, UserCheck, CheckCircle, AlertCircle, FileText, Loader2 } from 'lucide-react';
@@ -26,6 +26,7 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showSuccess, setShowSuccess] = useState(false);
+    const idempotencyKeyRef = useRef<string>('');
 
     // Form State
     const [clientId, setClientId] = useState('');
@@ -48,6 +49,7 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
             setShowSuccess(false);
             setError(null);
             setAvailabilityValid(null);
+            idempotencyKeyRef.current = crypto.randomUUID();
         }
     }, [isOpen]);
 
@@ -114,7 +116,9 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
 
         try {
             setIsSubmitting(true);
-            // Construct ISO string
+            // Construct explicit UTC string
+            // The browser parses `${date}T${time}` as local time by default.
+            // .toISOString() explicitly performs a strict local -> UTC conversion before sending to the API.
             const scheduledAt = new Date(`${date}T${time}`).toISOString();
 
             const dto: CreateAppointmentDto = {
@@ -126,7 +130,7 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
                 notes,
             };
 
-            const appointment = await schedulingService.createAppointment(dto);
+            const appointment = await schedulingService.createAppointment(dto, idempotencyKeyRef.current);
 
             if (onSuccess) onSuccess(appointment);
             setShowSuccess(true);
@@ -282,6 +286,10 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
                                         />
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="timezone-indicator" style={{ fontSize: '0.85rem', color: 'var(--gray-500)', marginTop: '-8px', marginBottom: '16px', fontStyle: 'italic' }}>
+                                All times shown and selected in your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone}).
                             </div>
 
                             {/* Row 3: Type & Notes */}

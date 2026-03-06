@@ -157,17 +157,16 @@ export default function TherapistDashboard() {
 
                                     {/* Actions */}
                                     <div className="appointment-actions">
-                                        {apt.status === 'SCHEDULED' && (
+                                        {(apt.status === 'SCHEDULED' || apt.status === 'IN_PROGRESS') && (
                                             <>
-                                                {apt.zoomJoinUrl && (
-                                                    <Link
-                                                        to={`/sessions/${apt.id}/room`}
-                                                        className="btn-zoom"
-                                                        title="Join Video Session"
-                                                    >
-                                                        <Video size={20} />
-                                                    </Link>
-                                                )}
+                                                <Link
+                                                    to={`/sessions/${apt.id}/room`}
+                                                    className="btn-zoom"
+                                                    title="Join Video Session"
+                                                >
+                                                    <Video size={20} />
+                                                    Join Session
+                                                </Link>
                                                 <button
                                                     onClick={() => handleCompleteClick(apt)}
                                                     className="btn-primary-action btn-icon"

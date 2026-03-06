@@ -638,6 +638,9 @@ h6 {
 .feature-item span {
     font-size: 0.875rem;
     line-height: 1;
+    transform: translateY(-2px);
+    position: relative;
+    top: -4px;
 }
 
 /* ==================== LOADING ==================== */

@@ -32,6 +32,7 @@ type CalendarData = Record<string, CalendarSession[]>;
 
 export default function SessionCalendar({ clientId, therapistId, onSessionCreated }: SessionCalendarProps) {
     const containerRef = useRef<HTMLDivElement>(null);
+    const idempotencyKeyRef = useRef<string>('');
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [calendarData, setCalendarData] = useState<CalendarData>({});
     const [isLoading, setIsLoading] = useState(false);
@@ -43,7 +44,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
     // Form state
     const [formTime, setFormTime] = useState('09:00');
     const [formDuration, setFormDuration] = useState(50);
-    const [formType, setFormType] = useState('INDIVIDUAL');
+    const [formType, setFormType] = useState('INDIVIDUAL_THERAPY');
     const [formNotes, setFormNotes] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
@@ -175,7 +176,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
         // Reset form state
         setFormTime('09:00');
         setFormDuration(50);
-        setFormType('INDIVIDUAL');
+        setFormType('INDIVIDUAL_THERAPY');
         setFormNotes('');
         setFormError('');
         setAvailableUsers([]);
@@ -186,6 +187,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
 
         setPopoverPos({ top, left });
         setPopoverDate(date);
+        idempotencyKeyRef.current = crypto.randomUUID();
     };
 
     const closePopover = () => {
@@ -223,7 +225,11 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
         }
 
         const dateStr = `${popoverDate.getFullYear()}-${String(popoverDate.getMonth() + 1).padStart(2, '0')}-${String(popoverDate.getDate()).padStart(2, '0')}`;
-        const startTimeISO = `${dateStr}T${formTime}:00Z`;
+
+        // Construct explicit UTC string
+        // The browser parses `${dateStr}T${formTime}` as local time by default.
+        // .toISOString() explicitly performs a strict local -> UTC conversion before sending to the API.
+        const startTimeISO = new Date(`${dateStr}T${formTime}`).toISOString();
 
         try {
             await api.post('/sessions/schedule', {
@@ -231,7 +237,10 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
                 therapistId: finalTherapistId,
                 startTime: startTimeISO,
                 type: formType,
+                duration: formDuration, // Explicitly pass dynamic duration
                 notes: formNotes || undefined,
+            }, {
+                headers: { 'Idempotency-Key': idempotencyKeyRef.current }
             });
 
             // Optimistic update — add a dot immediately
@@ -436,7 +445,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
 
                                     {/* Time */}
                                     <div className="popover-form-row">
-                                        <label>Time</label>
+                                        <label>Time ({Intl.DateTimeFormat().resolvedOptions().timeZone})</label>
                                         <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                                             <select
                                                 value={parseInt(formTime.split(':')[0], 10) % 12 || 12}
@@ -557,11 +566,11 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
                                     <div className="popover-form-row">
                                         <label>Session Type</label>
                                         <select value={formType} onChange={e => setFormType(e.target.value)}>
-                                            <option value="INDIVIDUAL">Individual</option>
-                                            <option value="GROUP">Group</option>
-                                            <option value="FAMILY">Family</option>
-                                            <option value="ASSESSMENT">Assessment</option>
-                                            <option value="FOLLOW_UP">Follow-up</option>
+                                            <option value="INDIVIDUAL_THERAPY">Individual Therapy</option>
+                                            <option value="PSYCHIATRIC_EVAL">Psychiatric Eval</option>
+                                            <option value="PSYCHIATRIC_FOLLOWUP">Psychiatric Follow-up</option>
+                                            <option value="BPS_ASSESSMENT">BPS Assessment</option>
+                                            <option value="INTAKE_CALL">Intake Call</option>
                                         </select>
                                     </div>
 

@@ -64,7 +64,6 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
                 ...baseItems,
             ];
 
-        case 'CASE_MANAGER':
         case 'CARE_COORDINATOR':
             return [
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -144,7 +143,7 @@ export default function Layout({ children }: LayoutProps) {
             const socket = getSocket();
             if (socket) socket.off('notification:new');
         };
-    }, [user, fetchUnreadCount, incrementUnreadCount, initializeSocket]);
+    }, [user, fetchUnreadCount, incrementUnreadCount, initializeSocket, initializePushNotifications]);
 
     const handleLogout = async () => {
         await logout();
@@ -276,7 +275,17 @@ export default function Layout({ children }: LayoutProps) {
                                 </span>
                             )}
                         </button>
-                        <div className="header-user" onClick={() => setShowDropdown(!showDropdown)}>
+                        <div
+                            className="header-user"
+                            onClick={() => setShowDropdown(!showDropdown)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    setShowDropdown(!showDropdown);
+                                }
+                            }}
+                        >
                             <div className="user-avatar small">{getInitials()}</div>
                             <span>{user?.firstName}</span>
                             <ChevronDown size={16} />

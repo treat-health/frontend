@@ -1,192 +1,227 @@
+/* ============================================
+   SESSION ROOM — Full-screen video call UI
+   Controls float OVER the video (like Zoom)
+   ============================================ */
+
 .session-room-container {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background-color: var(--gray-900);
-    color: white;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: #0a0a0f;
     overflow: hidden;
+    display: flex;
 }
 
+/* ── Loading ── */
 .session-room-loading {
-    height: 100vh;
+    position: fixed;
+    inset: 0;
+    z-index: 1001;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background-color: var(--gray-900);
+    background: #0a0a0f;
     color: white;
     gap: 1.5rem;
 }
 
-/* Header */
-.session-room-header {
-    padding: 1rem 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background-color: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(10px);
-    z-index: 10;
-}
-
-.session-info {
+/* ── Pre-Join Modal ── */
+.pre-join-modal {
+    background: #1e1e2d;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 2.5rem;
+    max-width: 480px;
+    width: 90%;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    align-items: center;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    z-index: 1002;
 }
 
-.session-info h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+.pre-join-modal h2 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: #fff;
+    font-size: 1.5rem;
 }
 
-.session-status {
+.pre-join-notice {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    color: #e2e8f0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.pre-join-checkbox {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    color: var(--gray-300);
+    gap: 0.75rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: #cbd5e1;
+    margin-bottom: 0.5rem;
+    user-select: none;
 }
 
-.status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+.pre-join-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #6366f1;
+    cursor: pointer;
 }
 
-.status-dot.waiting {
-    background-color: var(--yellow-400);
-    animation: pulse 2s infinite;
-}
-
-.status-dot.connected {
-    background-color: var(--success);
-}
-
-.badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background-color: rgba(255, 255, 255, 0.1);
-    color: var(--gray-300);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-/* Main Video Area */
+/* ── Main — the full-screen video canvas ── */
 .session-room-main {
     flex: 1;
     position: relative;
-    padding: 2rem;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.video-grid {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    max-width: 1200px;
-    margin: 0 auto;
-    border-radius: 16px;
     overflow: hidden;
-    background-color: #000;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
-.video-wrapper {
-    position: relative;
-    width: 100%;
-    height: 100%;
-}
-
-.remote-video-wrapper {
-    z-index: 1;
-}
-
+/* Remote video fills everything */
 .remote-video {
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    background: #111;
 }
 
-/* Picture in Picture / Local Video */
-.local-video-wrapper {
-    position: absolute;
-    bottom: 24px;
-    right: 24px;
-    width: 240px;
-    height: 160px;
-    border-radius: 12px;
-    overflow: hidden;
-    z-index: 2;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-    background-color: var(--gray-800);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    transition: all 0.3s ease;
-}
-
-.local-video-wrapper:hover {
-    transform: scale(1.05);
-    border-color: rgba(255, 255, 255, 0.3);
-}
-
-.local-video {
+.remote-video video {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transform: scaleX(-1);
-    /* Mirror local video */
+    display: block;
 }
 
-.local-video.hidden {
-    opacity: 0;
-}
-
-.local-label {
-    position: absolute;
-    bottom: 8px;
-    left: 8px;
-    background-color: rgba(0, 0, 0, 0.6);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    pointer-events: none;
-}
-
-.video-placeholder,
-.local-video-placeholder {
+/* Centered waiting placeholder */
+.video-placeholder {
     position: absolute;
     inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background-color: var(--gray-800);
-    color: var(--gray-400);
+    background: #111;
+    color: #9ca3af;
     gap: 1rem;
+    font-size: 1.1rem;
 }
 
-.local-video-placeholder {
-    background-color: var(--gray-700);
+/* ── Floating header (top overlay) ── */
+.session-room-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
+    pointer-events: none;
 }
 
-/* Controls Footer */
+.session-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    pointer-events: auto;
+}
+
+.session-info h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.session-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: #d1d5db;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-dot.waiting {
+    background: #facc15;
+    animation: pulse 2s infinite;
+}
+
+.status-dot.connected {
+    background: #22c55e;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    pointer-events: auto;
+}
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.12);
+    color: #d1d5db;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+}
+
+/* Sidebar toggle button (floating top-right) */
+.sidebar-toggle-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.12);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: background 0.2s;
+}
+
+.sidebar-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.sidebar-toggle-btn.active {
+    background: rgba(99, 102, 241, 0.4);
+    border-color: rgba(99, 102, 241, 0.6);
+}
+
+/* ── Floating Controls (bottom overlay) ── */
 .session-room-controls {
-    padding: 1.5rem 2rem;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    padding: 1.5rem 2rem 2rem;
     display: flex;
     justify-content: center;
-    gap: 2rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(10px);
-    z-index: 10;
-}
-
-.control-group {
-    display: flex;
+    align-items: center;
     gap: 1rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
 }
 
 .control-btn {
@@ -194,72 +229,339 @@
     height: 56px;
     border-radius: 50%;
     border: none;
-    background-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.15);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .control-btn:hover {
-    background-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.28);
     transform: translateY(-2px);
 }
 
-.control-btn.danger {
-    background-color: rgba(239, 68, 68, 0.2);
-    color: var(--danger);
+.control-btn.muted,
+.control-btn.video-off {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #f87171;
 }
 
-.control-btn.danger:hover {
-    background-color: rgba(239, 68, 68, 0.3);
+.control-btn.muted:hover,
+.control-btn.video-off:hover {
+    background: rgba(239, 68, 68, 0.35);
 }
 
 .leave-btn {
-    background-color: var(--danger);
+    background: #ef4444 !important;
+    border-color: #ef4444 !important;
+    color: white !important;
+    width: 64px;
+    height: 64px;
 }
 
 .leave-btn:hover {
-    background-color: #dc2626;
-    transform: scale(1.05);
-    /* slightly grow instead of float */
+    background: #dc2626 !important;
+    transform: scale(1.08);
 }
 
+/* ── Local Video PIP (bottom-right corner) ── */
+.local-video-wrapper {
+    position: absolute;
+    bottom: 110px;
+    /* above the controls bar */
+    right: 24px;
+    width: 220px;
+    height: 148px;
+    border-radius: 14px;
+    overflow: hidden;
+    z-index: 15;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    background: #1f2937;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.local-video-wrapper:hover {
+    transform: scale(1.04);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.local-video {
+    width: 100%;
+    height: 100%;
+}
+
+/* Target the actual <video> injected by Twilio */
+.local-video video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    /* Mirror so it feels natural */
+    display: block;
+}
+
+.local-label {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.65);
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    color: #e5e7eb;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+}
+
+.local-video-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1f2937;
+    color: #6b7280;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* ── Slide-out Sidebar Panel ── */
+.session-sidebar {
+    width: 320px;
+    flex-shrink: 0;
+    background: #111827;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.3s ease;
+    z-index: 25;
+}
+
+.session-sidebar.collapsed {
+    width: 0;
+}
+
+.sidebar-header {
+    padding: 1.25rem 1.25rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #f3f4f6;
+}
+
+.sidebar-close-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.sidebar-close-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: white;
+}
+
+.sidebar-tabs {
+    display: flex;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+}
+
+.sidebar-tab {
+    flex: 1;
+    padding: 0.75rem 0.5rem;
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+}
+
+.sidebar-tab.active {
+    color: #818cf8;
+    border-bottom: 2px solid #818cf8;
+}
+
+.sidebar-tab:hover {
+    color: #d1d5db;
+}
+
+.sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+/* Participants list */
+.participant-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    margin-bottom: 0.5rem;
+}
+
+.participant-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: white;
+    flex-shrink: 0;
+}
+
+.participant-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.participant-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #f3f4f6;
+}
+
+.participant-role {
+    font-size: 0.72rem;
+    color: #6b7280;
+    text-transform: capitalize;
+}
+
+/* Session notes textarea */
+.session-notes-area {
+    width: 100%;
+    min-height: 200px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 0.75rem;
+    color: #f3f4f6;
+    font-size: 0.85rem;
+    resize: vertical;
+    outline: none;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+.session-notes-area:focus {
+    border-color: rgba(99, 102, 241, 0.5);
+}
+
+.session-notes-area::placeholder {
+    color: #4b5563;
+}
+
+.notes-save-btn {
+    width: 100%;
+    margin-top: 0.75rem;
+    padding: 0.6rem;
+    border-radius: 8px;
+    border: none;
+    background: #6366f1;
+    color: white;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.notes-save-btn:hover {
+    background: #4f46e5;
+}
+
+/* Session info rows */
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.82rem;
+}
+
+.info-row:last-child {
+    border: none;
+}
+
+.info-label {
+    color: #6b7280;
+}
+
+.info-value {
+    color: #f3f4f6;
+    font-weight: 500;
+}
+
+/* ── Animations ── */
 @keyframes pulse {
-    0% {
+
+    0%,
+    100% {
         opacity: 1;
     }
 
     50% {
-        opacity: 0.5;
-    }
-
-    100% {
-        opacity: 1;
+        opacity: 0.4;
     }
 }
 
-/* Responsive */
+/* ── Responsive ── */
 @media (max-width: 768px) {
-    .session-room-main {
-        padding: 0;
-    }
-
-    .video-grid {
-        border-radius: 0;
+    .session-sidebar {
+        width: 280px;
     }
 
     .local-video-wrapper {
-        width: 120px;
-        height: 160px;
-        bottom: 16px;
-        right: 16px;
+        width: 130px;
+        height: 90px;
+        bottom: 100px;
+        right: 12px;
     }
 
     .control-btn {
         width: 48px;
         height: 48px;
+    }
+
+    .leave-btn {
+        width: 54px;
+        height: 54px;
     }
 }

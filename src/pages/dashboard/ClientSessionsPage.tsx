@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X, Loader2, CalendarDays, Users, Video, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Loader2, CalendarDays, Users, Video, Clock, Sparkles } from 'lucide-react';
 import api from '../../lib/api';
+import SessionReportPanel from '../../components/session/SessionReportPanel';
 import './ClientSessionsPage.css';
 
 interface CalendarSession {
@@ -39,6 +40,9 @@ export default function ClientSessionsPage() {
     // Popover
     const [popoverDate, setPopoverDate] = useState<Date | null>(null);
     const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+
+    // AI Report Modal
+    const [reportSessionId, setReportSessionId] = useState<string | null>(null);
 
     const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
@@ -295,7 +299,7 @@ export default function ClientSessionsPage() {
                                                         <span className="client-popover-meta">
                                                             {s.type.replace(/_/g, ' ')} • {s.therapist.firstName} {s.therapist.lastName}
                                                         </span>
-                                                        {s.zoomJoinUrl && (
+                                                        {(s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS') && (
                                                             <Link
                                                                 to={`/sessions/${s.id}/room`}
                                                                 className="client-popover-zoom"
@@ -304,6 +308,16 @@ export default function ClientSessionsPage() {
                                                                 <Video size={12} />
                                                                 Join Session
                                                             </Link>
+                                                        )}
+                                                        {s.status === 'COMPLETED' && (
+                                                            <button
+                                                                onClick={() => setReportSessionId(s.id)}
+                                                                className="client-popover-zoom"
+                                                                style={{ background: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', cursor: 'pointer', marginTop: 4, width: 'fit-content' }}
+                                                            >
+                                                                <Sparkles size={12} />
+                                                                View AI Report
+                                                            </button>
                                                         )}
                                                     </div>
                                                     <span className={`client-popover-badge ${getStatusClass(s.status)}`}>
@@ -338,6 +352,15 @@ export default function ClientSessionsPage() {
                     );
                 })()}
             </div>
+
+            {/* AI Report Modal */}
+            {reportSessionId && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(2px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <div style={{ width: '90%', maxWidth: '800px', height: '85vh', background: 'white', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+                        <SessionReportPanel sessionId={reportSessionId} onClose={() => setReportSessionId(null)} />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

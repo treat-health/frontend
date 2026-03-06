@@ -1,0 +1,272 @@
+.report-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: white;
+    border-left: 1px solid #e2e8f0;
+    overflow-y: auto;
+    width: 100%;
+}
+
+.report-panel.loading-state,
+.report-panel.error-state {
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    text-align: center;
+    gap: 1rem;
+    color: #64748b;
+}
+
+.text-primary {
+    color: #0284c7;
+}
+
+.text-danger {
+    color: #dc2626;
+}
+
+.text-success {
+    color: #16a34a;
+}
+
+.text-warning {
+    color: #d97706;
+}
+
+.text-dark {
+    color: #1e293b;
+}
+
+.text-muted {
+    color: #94a3b8;
+}
+
+.bg-success {
+    background-color: #16a34a;
+}
+
+.bg-danger {
+    background-color: #dc2626;
+}
+
+.bg-warning {
+    background-color: #fbbf24;
+}
+
+.report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+}
+
+.report-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #64748b;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.close-btn:hover {
+    color: #0f172a;
+}
+
+.report-content {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.sentiment-badge-wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.analysis-time {
+    font-size: 0.875rem;
+    color: #64748b;
+}
+
+.report-section h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.summary-section p {
+    color: #475569;
+    line-height: 1.6;
+    font-size: 0.95rem;
+}
+
+.key-points-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.key-points-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    color: #475569;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.key-points-list li svg {
+    margin-top: 0.125rem;
+    flex-shrink: 0;
+}
+
+.transcript-toggle-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.transcript-toggle-btn:hover {
+    background: #f1f5f9;
+}
+
+.transcript-body {
+    margin-top: 0.5rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* ── Attention Metrics ── */
+.attention-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.attention-card {
+    flex: 1;
+    min-width: 250px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.attention-card h5 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    color: #475569;
+}
+
+.attention-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+.stat-label {
+    color: #64748b;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: #334155;
+}
+
+/* ── Timeline ── */
+.timeline-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.timeline-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+.timeline-time {
+    color: #94a3b8;
+    font-family: monospace;
+}
+
+.timeline-user {
+    font-weight: 600;
+}
+
+.timeline-type {
+    font-size: 0.75rem;
+}
+
+.timeline-meta {
+    color: #64748b;
+    font-style: italic;
+}
+
+.transcript-text {
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: #475569;
+    line-height: 1.6;
+}

@@ -14,7 +14,7 @@
     padding: 0 20px 20px 20px;
 }
 
-.session-sidebar {
+.session-list-sidebar {
     width: 300px;
     min-width: 300px;
     background: var(--bg-surface);
@@ -27,12 +27,12 @@
     overflow: hidden;
 }
 
-.sidebar-tabs {
+.session-list-tabs {
     display: flex;
     border-bottom: 1px solid var(--gray-200);
 }
 
-.sidebar-tab {
+.session-list-tab {
     flex: 1;
     padding: 12px;
     text-align: center;
@@ -44,13 +44,13 @@
     transition: all 0.2s;
 }
 
-.sidebar-tab.active {
+.session-list-tab.active {
     background: var(--bg-surface);
     color: var(--primary-600);
     border-bottom: 2px solid var(--primary-600);
 }
 
-.sidebar-search {
+.session-list-search {
     padding: 12px;
     border-bottom: 1px solid var(--gray-200);
 }
@@ -113,7 +113,7 @@
     text-overflow: ellipsis;
 }
 
-.session-content {
+.session-list-content {
     flex: 1;
     display: flex;
     flex-direction: column;

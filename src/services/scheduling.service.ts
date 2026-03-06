@@ -57,8 +57,9 @@ class SchedulingService {
     /**
      * Create a new appointment (Admin/Staff)
      */
-    async createAppointment(data: CreateAppointmentDto): Promise<Appointment> {
-        const response = await api.post<ApiResponse<Appointment>>('/scheduling/appointments', data);
+    async createAppointment(data: CreateAppointmentDto, idempotencyKey?: string): Promise<Appointment> {
+        const config = idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined;
+        const response = await api.post<ApiResponse<Appointment>>('/scheduling/appointments', data, config);
         if (!response.data.success || !response.data.data) {
             throw new Error(response.data.message || 'Failed to create appointment');
         }
