@@ -13,7 +13,6 @@ export interface Appointment {
     durationMins: number;
     notes?: string;
     status: string; // SCHEDULED, CANCELLED, COMPLETED, etc.
-    zoomJoinUrl?: string;
     client: {
         id: string;
         firstName: string;

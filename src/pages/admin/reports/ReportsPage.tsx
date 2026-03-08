@@ -5,7 +5,6 @@ import {
     Clock,
     TrendingUp,
     Calendar,
-    DollarSign,
     Lock,
 } from 'lucide-react';
 import './ReportsPage.css';
@@ -52,13 +51,6 @@ const REPORT_CATEGORIES: ReportCategory[] = [
         title: 'Scheduling Summary',
         description: 'Therapist utilization, appointment volume, and peak hours analysis.',
         color: '#3b82f6',
-        comingSoon: true,
-    },
-    {
-        icon: DollarSign,
-        title: 'Financial Reports',
-        description: 'Billing summaries, insurance claims, and revenue breakdowns by service type.',
-        color: '#8b5cf6',
         comingSoon: true,
     },
 ];

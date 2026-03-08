@@ -216,7 +216,7 @@ export const useCallStore = create<CallStoreState>((set, get) => {
                 // As the caller, now connect via Twilio
                 if (state.remoteUserId && state.callId) {
                     twilioVoiceService.makeCall(state.remoteUserId, state.callId).catch(err => {
-                        set({ error: err.message, ...IDLE_STATE });
+                        set({ ...IDLE_STATE, error: err.message });
                     });
                 }
             }

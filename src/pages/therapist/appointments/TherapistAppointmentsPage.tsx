@@ -16,7 +16,6 @@ interface CalendarSession {
     type: string;
     client: { id: string; firstName: string; lastName: string; email: string };
     therapist: { id: string; firstName: string; lastName: string; email: string };
-    zoomJoinUrl?: string;
     notes?: string;
 }
 
@@ -340,11 +339,9 @@ export default function TherapistAppointmentsPage() {
                                         {/* Action buttons for SCHEDULED sessions */}
                                         {s.status === 'SCHEDULED' && (
                                             <div className="popover-action-row">
-                                                {s.zoomJoinUrl && (
-                                                    <Link to={`/sessions/${s.id}/room`} className="client-popover-zoom" title="Join Video Session">
-                                                        <Video size={12} /> Join Session
-                                                    </Link>
-                                                )}
+                                                <Link to={`/sessions/${s.id}/room`} className="client-popover-zoom" title="Join Video Session">
+                                                    <Video size={12} /> Join Session
+                                                </Link>
                                                 <button className="popover-action-btn complete" onClick={() => handleCompleteClick(s)}>
                                                     <CheckCircle size={12} /> Complete
                                                 </button>

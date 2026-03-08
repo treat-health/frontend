@@ -14,7 +14,6 @@ interface CalendarSession {
     type: string;
     client: { id: string; firstName: string; lastName: string; email: string };
     therapist: { id: string; firstName: string; lastName: string; email: string };
-    zoomJoinUrl?: string;
     notes?: string;
 }
 
