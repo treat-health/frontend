@@ -574,7 +574,7 @@ export default function SettingsPage() {
                         <div className="settings-section">
                             <div className="section-header" style={{ paddingBottom: '0.5rem' }}>
                                 <h2>Availability Schedule</h2>
-                                <p>Set your weekly recurring working hours</p>
+                                <p>Set your weekly recurring working hours (UTC)</p>
                             </div>
 
                             <div className="settings-form" style={{ paddingTop: '0.1rem' }}>

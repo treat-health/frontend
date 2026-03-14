@@ -25,6 +25,11 @@ export default function SessionReportPanel({ sessionId, onClose, refreshTrigger 
         setManualRefreshId(prev => prev + 1);
     };
 
+    const isPendingReportMessage = (value?: string | null) => {
+        const normalized = (value || '').toLowerCase();
+        return normalized.includes('report not available yet') || normalized.includes('still processing');
+    };
+
     useEffect(() => {
         let mounted = true;
         const fetchReport = async () => {
@@ -62,6 +67,24 @@ export default function SessionReportPanel({ sessionId, onClose, refreshTrigger 
     }
 
     if (error && !report) {
+        if (isPendingReportMessage(error)) {
+            return (
+                <div className="report-panel pending-state">
+                    <Clock size={32} className="text-warning" />
+                    <p className="pending-title">AI report is not ready yet</p>
+                    <p className="pending-copy">
+                        The session finished, but the recording is still being prepared or processed. Please refresh in a moment.
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={handleManualRefresh} className="btn-secondary" style={{ padding: '6px 16px', borderRadius: '4px', border: '1px solid #e2e8f0', background: 'white' }}>
+                            Refresh Status
+                        </button>
+                        {onClose && <button onClick={onClose} className="btn-close-report" style={{ padding: '6px 16px', borderRadius: '4px', background: 'none' }}>Close</button>}
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className="report-panel error-state">
                 <AlertCircle size={32} className="text-danger" />

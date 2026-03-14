@@ -1,7 +1,18 @@
 import { io, Socket } from 'socket.io-client';
 import { tokenStorage } from './api';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+function getDefaultSocketUrl() {
+    try {
+        const apiUrl = new URL(API_BASE_URL);
+        return apiUrl.origin;
+    } catch {
+        return 'http://localhost:3000';
+    }
+}
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || getDefaultSocketUrl();
 
 let socket: Socket | null = null;
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import { ChevronLeft, ChevronRight, Plus, X, AlertCircle, Loader2, CalendarDays, CheckCircle2 } from 'lucide-react';
 import api from '../../lib/api';
+import { connectSocket, getSocket } from '../../lib/socket';
 import './SessionCalendar.css';
 
 interface SessionCalendarProps {
@@ -30,10 +31,24 @@ interface AvailableUser {
 
 type CalendarData = Record<string, CalendarSession[]>;
 
+interface SessionCompletedEvent {
+    sessionId: string;
+    status: 'COMPLETED';
+}
+
+const createUtcDate = (year: number, monthIndex: number, day: number) => new Date(Date.UTC(year, monthIndex, day));
+
+const toUtcDateKey = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+
+const getUtcTodayStart = () => {
+    const now = new Date();
+    return createUtcDate(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+};
+
 export default function SessionCalendar({ clientId, therapistId, onSessionCreated }: SessionCalendarProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const idempotencyKeyRef = useRef<string>('');
-    const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [currentMonth, setCurrentMonth] = useState(() => createUtcDate(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     const [calendarData, setCalendarData] = useState<CalendarData>({});
     const [isLoading, setIsLoading] = useState(false);
 
@@ -62,8 +77,8 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
     const hasBothSelected = !!(clientId && therapistId);
 
     // ── Month label ──
-    const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const monthKey = `${currentMonth.getUTCFullYear()}-${String(currentMonth.getUTCMonth() + 1).padStart(2, '0')}`;
 
     // ── Fetch calendar data ──
     const fetchCalendar = useCallback(async () => {
@@ -83,6 +98,39 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
 
     useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
 
+    useEffect(() => {
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) return;
+
+        const applySessionCompletion = (data: SessionCompletedEvent) => {
+            setCalendarData((current) => {
+                let changed = false;
+                const nextEntries = Object.entries(current).map(([dateKey, sessions]) => {
+                    const nextSessions = sessions.map((session) => {
+                        if (session.id !== data.sessionId || session.status === 'COMPLETED') {
+                            return session;
+                        }
+
+                        changed = true;
+                        return { ...session, status: 'COMPLETED' };
+                    });
+
+                    return [dateKey, nextSessions] as const;
+                });
+
+                return changed ? Object.fromEntries(nextEntries) : current;
+            });
+
+            void fetchCalendar();
+        };
+
+        socket.on('session:completed', applySessionCompletion);
+
+        return () => {
+            socket.off('session:completed', applySessionCompletion);
+        };
+    }, [fetchCalendar]);
+
     // ── Fetch availability when time/duration changes ──
     const fetchAvailability = useCallback(async (date: string, time: string, duration: number) => {
         if (!isInteractive) return;
@@ -94,7 +142,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
             setPairReason('');
             try {
                 const res = await api.get('/sessions/availability', {
-                    params: { date, time, duration, clientId, therapistId }
+                    params: { date, time, duration, clientId, therapistId, overrideRules: true }
                 });
                 setPairValid(res.data.isAvailable);
                 setPairReason(res.data.reason || '');
@@ -116,7 +164,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
             const params: any = { date, time, duration };
             if (clientId) params.clientId = clientId;
             if (therapistId) params.therapistId = therapistId;
-            const res = await api.get('/sessions/availability', { params });
+            const res = await api.get('/sessions/availability', { params: { ...params, overrideRules: true } });
             const users = res.data.availableTherapists || res.data.availableClients || [];
             setAvailableUsers(users);
             if (users.length === 0) {
@@ -132,18 +180,19 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
     // Trigger availability fetch when popover opens and when time/duration change
     useEffect(() => {
         if (!popoverDate || !isInteractive) return;
-        const isPast = popoverDate < new Date(new Date().toDateString());
+        const utcTodayStart = getUtcTodayStart();
+        const isPast = popoverDate.getTime() < utcTodayStart.getTime();
         if (isPast) return;
 
-        const dateStr = `${popoverDate.getFullYear()}-${String(popoverDate.getMonth() + 1).padStart(2, '0')}-${String(popoverDate.getDate()).padStart(2, '0')}`;
+        const dateStr = toUtcDateKey(popoverDate);
         fetchAvailability(dateStr, formTime, formDuration);
     }, [popoverDate, formTime, formDuration, fetchAvailability, isInteractive]);
 
     // ── Build calendar days ──
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const year = currentMonth.getUTCFullYear();
+    const month = currentMonth.getUTCMonth();
+    const firstDay = createUtcDate(year, month, 1).getUTCDay();
+    const daysInMonth = createUtcDate(year, month + 1, 0).getUTCDate();
 
     const calendarDays: (number | null)[] = [];
     for (let i = 0; i < firstDay; i++) calendarDays.push(null);
@@ -153,9 +202,9 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
     // ── Popover positioning ──
     const handleDayClick = (day: number, e: React.MouseEvent) => {
         const cell = e.currentTarget as HTMLElement;
-        const date = new Date(year, month, day);
+        const date = createUtcDate(year, month, day);
 
-        if (popoverDate && popoverDate.getDate() === day && popoverDate.getMonth() === month) {
+        if (popoverDate && popoverDate.getUTCDate() === day && popoverDate.getUTCMonth() === month) {
             closePopover();
             return;
         }
@@ -224,12 +273,10 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
             return;
         }
 
-        const dateStr = `${popoverDate.getFullYear()}-${String(popoverDate.getMonth() + 1).padStart(2, '0')}-${String(popoverDate.getDate()).padStart(2, '0')}`;
+        const dateStr = toUtcDateKey(popoverDate);
 
-        // Construct explicit UTC string
-        // The browser parses `${dateStr}T${formTime}` as local time by default.
-        // .toISOString() explicitly performs a strict local -> UTC conversion before sending to the API.
-        const startTimeISO = new Date(`${dateStr}T${formTime}`).toISOString();
+        // Append 'Z' suffix so the string is interpreted as UTC, not browser local time.
+        const startTimeISO = `${dateStr}T${formTime}:00.000Z`;
 
         try {
             await api.post('/sessions/schedule', {
@@ -238,6 +285,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
                 startTime: startTimeISO,
                 type: formType,
                 duration: formDuration, // Explicitly pass dynamic duration
+                overrideRules: true,
                 notes: formNotes || undefined,
             }, {
                 headers: { 'Idempotency-Key': idempotencyKeyRef.current }
@@ -267,7 +315,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
             // Background refetch
             setTimeout(() => fetchCalendar(), 500);
         } catch (err: any) {
-            setFormError(err?.response?.data?.message || 'Failed to schedule session.');
+            setFormError(err?.response?.data?.message || err?.message || 'Failed to schedule session.');
         } finally {
             setIsSubmitting(false);
         }
@@ -286,11 +334,16 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
 
     const formatTimeStr = (iso: string) => {
         const d = new Date(iso);
-        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        // Using UTC methods to display UTC time
+        const hours = d.getUTCHours();
+        const minutes = d.getUTCMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const h12 = hours % 12 || 12;
+        return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm} (UTC)`;
     };
 
     const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
 
     const canSubmit = (() => {
         if (isSubmitting) return false;
@@ -304,11 +357,11 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
             <div className="calendar-main">
                 {/* Header */}
                 <div className="calendar-header">
-                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}>
+                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month - 1, 1))}>
                         <ChevronLeft size={18} />
                     </button>
                     <h3 className="calendar-month-title">{monthLabel}</h3>
-                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}>
+                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month + 1, 1))}>
                         <ChevronRight size={18} />
                     </button>
                 </div>
@@ -339,9 +392,10 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
                         const dateKey = getDateKey(day);
                         const sessions = calendarData[dateKey] || [];
                         const isToday = dateKey === todayStr;
-                        const date = new Date(year, month, day);
-                        const isPast = date < new Date(new Date().toDateString());
-                        const isSelected = popoverDate?.getDate() === day && popoverDate?.getMonth() === month;
+                        const date = createUtcDate(year, month, day);
+                        const utcTodayStart = getUtcTodayStart();
+                        const isPast = date.getTime() < utcTodayStart.getTime();
+                        const isSelected = popoverDate?.getUTCDate() === day && popoverDate?.getUTCMonth() === month;
 
                         return (
                             <div
@@ -376,7 +430,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
                     >
                         <div className="popover-header">
                             <h4>
-                                {popoverDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                {popoverDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                             </h4>
                             <button className="popover-close-btn" onClick={closePopover}>
                                 <X size={16} />
@@ -385,7 +439,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
 
                         {/* Existing sessions */}
                         {(() => {
-                            const dateKey = getDateKey(popoverDate.getDate());
+                            const dateKey = getDateKey(popoverDate.getUTCDate());
                             const sessions = calendarData[dateKey] || [];
                             if (sessions.length === 0) return null;
                             return (
@@ -416,13 +470,13 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
 
                         {/* Form or notices */}
                         {(() => {
-                            const isPast = popoverDate < new Date(new Date().toDateString());
+                            const isPast = popoverDate.getTime() < getUtcTodayStart().getTime();
 
                             if (isPast) {
                                 return (
                                     <div className="popover-readonly past">
                                         <AlertCircle size={14} />
-                                        <span>Cannot schedule sessions on past dates</span>
+                                        <span>Cannot schedule sessions on past UTC dates</span>
                                     </div>
                                 );
                             }
@@ -445,7 +499,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
 
                                     {/* Time */}
                                     <div className="popover-form-row">
-                                        <label>Time ({Intl.DateTimeFormat().resolvedOptions().timeZone})</label>
+                                        <label>Time (UTC)</label>
                                         <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                                             <select
                                                 value={parseInt(formTime.split(':')[0], 10) % 12 || 12}

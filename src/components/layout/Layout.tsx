@@ -16,13 +16,14 @@ import {
     Sun,
     Moon,
 } from 'lucide-react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { getSocket } from '../../lib/socket';
 import BrandLogo from '../common/BrandLogo';
 import '../../styles/layout.css';
+import type { AppNotification } from '../../stores/notificationStore';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -82,31 +83,58 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
     }
 }
 
+function getNotificationTargetPath(notification: AppNotification, role?: string): string {
+    if (notification.type === 'NEW_MESSAGE') {
+        const conversationId = (notification.data as any)?.conversationId;
+        return conversationId ? `/messages?conversationId=${encodeURIComponent(conversationId)}` : '/messages';
+    }
+
+    if (notification.appointmentId) {
+        if (role === 'ADMIN' || role === 'PROGRAM_DIRECTOR') return '/admin/sessions';
+        if (role === 'THERAPIST') return '/therapist/appointments';
+        return '/appointments';
+    }
+
+    return '/notifications';
+}
+
 /**
  * Main application layout with role-based sidebar navigation
  */
-export default function Layout({ children }: LayoutProps) {
+export default function Layout({ children }: Readonly<LayoutProps>) {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, logout } = useAuthStore();
     const { totalUnread, isConnected, initializeSocket } = useChatStore();
-    const { unreadCount, fetchUnreadCount, incrementUnreadCount, initializePushNotifications } = useNotificationStore();
+    const {
+        unreadCount,
+        notifications,
+        isLoadingNotifications,
+        fetchUnreadCount,
+        fetchNotifications,
+        markAsRead,
+        markAllRead,
+        addRealtimeNotification,
+        initializePushNotifications
+    } = useNotificationStore();
     const [showDropdown, setShowDropdown] = useState(false);
+    const [showNotifications, setShowNotifications] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(false);
+    const notificationPanelRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const storedTheme = localStorage.getItem('theme');
         if (storedTheme === 'dark') {
             setIsDarkMode(true);
-            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.dataset.theme = 'dark';
         }
     }, []);
 
     const toggleTheme = () => {
-        const newTheme = !isDarkMode ? 'dark' : 'light';
+        const newTheme = isDarkMode ? 'light' : 'dark';
         setIsDarkMode(!isDarkMode);
-        document.documentElement.setAttribute('data-theme', newTheme);
+        document.documentElement.dataset.theme = newTheme;
         localStorage.setItem('theme', newTheme);
     };
 
@@ -131,8 +159,8 @@ export default function Layout({ children }: LayoutProps) {
             if (socket && socket.connected) {
                 // Remove before adding to avoid duplicates
                 socket.off('notification:new');
-                socket.on('notification:new', () => {
-                    incrementUnreadCount();
+                socket.on('notification:new', (payload) => {
+                    addRealtimeNotification(payload);
                 });
                 clearInterval(checkSocketInterval);
             }
@@ -143,7 +171,48 @@ export default function Layout({ children }: LayoutProps) {
             const socket = getSocket();
             if (socket) socket.off('notification:new');
         };
-    }, [user, fetchUnreadCount, incrementUnreadCount, initializeSocket, initializePushNotifications]);
+    }, [user, fetchUnreadCount, addRealtimeNotification, initializeSocket, initializePushNotifications]);
+
+    useEffect(() => {
+        const onDocumentMouseDown = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (notificationPanelRef.current && !notificationPanelRef.current.contains(target)) {
+                setShowNotifications(false);
+            }
+        };
+
+        document.addEventListener('mousedown', onDocumentMouseDown);
+        return () => document.removeEventListener('mousedown', onDocumentMouseDown);
+    }, []);
+
+    const handleBellClick = async () => {
+        const nextOpen = !showNotifications;
+        setShowNotifications(nextOpen);
+        if (nextOpen) {
+            await fetchNotifications(20, 0);
+            if (unreadCount > 0) {
+                await markAllRead();
+            }
+        }
+    };
+
+    const formatNotificationTime = (value: string) => {
+        const date = new Date(value);
+        return date.toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
+
+    const handleNotificationClick = async (notification: AppNotification) => {
+        if (!notification.readAt) {
+            await markAsRead(notification.id);
+        }
+        setShowNotifications(false);
+        navigate(getNotificationTargetPath(notification, user?.role));
+    };
 
     const handleLogout = async () => {
         await logout();
@@ -163,7 +232,7 @@ export default function Layout({ children }: LayoutProps) {
     };
 
     const formatRole = (role: string) => {
-        return role.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        return role.replaceAll('_', ' ').toLowerCase().replaceAll(/\b\w/g, c => c.toUpperCase());
     };
 
     const getPageTitle = () => {
@@ -235,7 +304,7 @@ export default function Layout({ children }: LayoutProps) {
 
             {/* Floating Toggle Button */}
             <button
-                className={`sidebar-floating-toggle ${!sidebarOpen ? 'collapsed' : ''}`}
+                className={`sidebar-floating-toggle ${sidebarOpen ? '' : 'collapsed'}`}
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 title={sidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
             >
@@ -253,33 +322,92 @@ export default function Layout({ children }: LayoutProps) {
                         <button className="btn btn-icon btn-ghost header-btn" onClick={toggleTheme} title="Toggle Dark Mode">
                             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                         </button>
-                        <button className="btn btn-icon btn-ghost header-btn" style={{ position: 'relative' }}>
-                            <Bell size={20} />
-                            {unreadCount > 0 && (
-                                <span className="notification-badge" style={{
-                                    position: 'absolute',
-                                    top: '4px',
-                                    right: '4px',
-                                    backgroundColor: 'var(--primary-color)',
-                                    color: 'white',
-                                    fontSize: '10px',
-                                    fontWeight: 'bold',
-                                    borderRadius: '50%',
-                                    width: '16px',
-                                    height: '16px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}>
-                                    {unreadCount}
-                                </span>
+                        <div className="notification-menu" ref={notificationPanelRef}>
+                            <button
+                                className="btn btn-icon btn-ghost header-btn"
+                                style={{ position: 'relative' }}
+                                onClick={handleBellClick}
+                                aria-label="Open notifications"
+                                aria-expanded={showNotifications}
+                            >
+                                <Bell size={20} />
+                                {unreadCount > 0 && (
+                                    <span className="notification-badge" style={{
+                                        position: 'absolute',
+                                        top: '4px',
+                                        right: '4px',
+                                        backgroundColor: 'var(--primary-color)',
+                                        color: 'white',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        borderRadius: '50%',
+                                        width: '16px',
+                                        height: '16px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}>
+                                        {unreadCount > 99 ? '99+' : unreadCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            {showNotifications && (
+                                <div className="notification-panel">
+                                    <div className="notification-panel-header">
+                                        <h4>Notifications</h4>
+                                        <button
+                                            className="dropdown-item"
+                                            style={{ width: 'auto', padding: '4px 8px' }}
+                                            onClick={async () => {
+                                                await markAllRead();
+                                            }}
+                                        >
+                                            Mark all read
+                                        </button>
+                                    </div>
+
+                                    <div className="notification-panel-list">
+                                        {isLoadingNotifications && (
+                                            <div className="notification-empty">Loading notifications...</div>
+                                        )}
+
+                                        {!isLoadingNotifications && notifications.length === 0 && (
+                                            <div className="notification-empty">No notifications yet</div>
+                                        )}
+
+                                        {!isLoadingNotifications && notifications.map((n) => (
+                                            <button
+                                                key={n.id}
+                                                className={`notification-item ${n.readAt ? '' : 'unread'}`}
+                                                onClick={() => handleNotificationClick(n)}
+                                                title={n.body}
+                                            >
+                                                <div className="notification-item-title">{n.title}</div>
+                                                <div className="notification-item-body">{n.body}</div>
+                                                <div className="notification-item-time">{formatNotificationTime(n.sentAt)}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="notification-panel-footer">
+                                        <button
+                                            className="dropdown-item"
+                                            onClick={() => {
+                                                setShowNotifications(false);
+                                                navigate('/notifications');
+                                            }}
+                                        >
+                                            View all notifications
+                                        </button>
+                                    </div>
+                                </div>
                             )}
-                        </button>
-                        <div
+                        </div>
+                        <button
+                            type="button"
                             className="header-user"
                             onClick={() => setShowDropdown(!showDropdown)}
-                            role="button"
-                            tabIndex={0}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     setShowDropdown(!showDropdown);
@@ -302,7 +430,7 @@ export default function Layout({ children }: LayoutProps) {
                                     </button>
                                 </div>
                             )}
-                        </div>
+                        </button>
                     </div>
                 </header>
 

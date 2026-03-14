@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 import api from '../lib/api';
-import { twilioVoiceService } from '../services/twilioVoice';
+import { meteredVoiceService } from '../services/meteredVoice';
 import { getSocket } from '../lib/socket';
-import { Call } from '@twilio/voice-sdk';
 import toast from 'react-hot-toast';
 
 const ensureAudioPermissions = async (): Promise<boolean> => {
@@ -31,7 +30,7 @@ export interface CallStoreState {
     isMuted: boolean;
     isReady: boolean;
     error: string | null;
-    activeTwilioCall: Call | null;
+    activeMeteredCall: any | null; // Metered meeting instance
 
     // Actions
     initDevice: (conversationId: string) => Promise<void>;
@@ -60,13 +59,13 @@ const IDLE_STATE = {
     conversationId: null,
     remoteUserId: null,
     isMuted: false,
-    activeTwilioCall: null,
+    activeMeteredCall: null,
     error: null,
 };
 
 export const useCallStore = create<CallStoreState>((set, get) => {
-    // Sync Twilio Device state changes into Zustand
-    twilioVoiceService.setOnStateChange((partialState) => {
+    // Sync Metered service state changes into Zustand
+    meteredVoiceService.setOnStateChange((partialState) => {
         set((state) => ({ ...state, ...partialState }));
     });
 
@@ -76,7 +75,7 @@ export const useCallStore = create<CallStoreState>((set, get) => {
 
         initDevice: async (convId: string) => {
             try {
-                await twilioVoiceService.registerDevice(convId);
+                await meteredVoiceService.registerDevice(convId);
                 set({ error: null });
             } catch (error: any) {
                 set({ error: error.message || 'Failed to initialize calling device' });
@@ -119,16 +118,12 @@ export const useCallStore = create<CallStoreState>((set, get) => {
             const hasMic = await ensureAudioPermissions();
             if (!hasMic) return;
 
-            const { callId, conversationId, activeTwilioCall } = get();
+            const { callId, conversationId } = get();
             if (!callId || !conversationId) return;
 
             const socket = getSocket();
 
             try {
-                if (activeTwilioCall) {
-                    activeTwilioCall.accept();
-                }
-
                 socket?.emit('call:accept', { callId, conversationId });
                 set({ status: 'connected', isReceivingCall: false, error: null });
             } catch (err: any) {
@@ -137,12 +132,10 @@ export const useCallStore = create<CallStoreState>((set, get) => {
         },
 
         declineCall: (reason?: string) => {
-            const { callId, conversationId, activeTwilioCall } = get();
+            const { callId, conversationId } = get();
             if (!callId || !conversationId) return;
 
-            if (activeTwilioCall) {
-                activeTwilioCall.reject();
-            }
+            meteredVoiceService.disconnect();
 
             const socket = getSocket();
             socket?.emit('call:decline', { callId, conversationId, reason: reason || 'declined' });
@@ -151,11 +144,9 @@ export const useCallStore = create<CallStoreState>((set, get) => {
         },
 
         endCall: () => {
-            const { callId, conversationId, activeTwilioCall } = get();
+            const { callId, conversationId } = get();
 
-            if (activeTwilioCall) {
-                activeTwilioCall.disconnect();
-            }
+            meteredVoiceService.disconnect();
 
             if (callId && conversationId) {
                 const socket = getSocket();
@@ -166,11 +157,9 @@ export const useCallStore = create<CallStoreState>((set, get) => {
         },
 
         toggleMute: () => {
-            const { activeTwilioCall, isMuted } = get();
-            if (activeTwilioCall) {
-                activeTwilioCall.mute(!isMuted);
-                set({ isMuted: !isMuted });
-            }
+            const { isMuted } = get();
+            meteredVoiceService.mute(!isMuted);
+            set({ isMuted: !isMuted });
         },
 
         resetCall: () => {
@@ -185,7 +174,6 @@ export const useCallStore = create<CallStoreState>((set, get) => {
          */
         handleCallCreated: ({ callId, conversationId }) => {
             const state = get();
-            // Only update if we're the one who initiated the call
             if (state.status === 'calling' && state.conversationId === conversationId) {
                 set({ callId });
             }
@@ -213,9 +201,9 @@ export const useCallStore = create<CallStoreState>((set, get) => {
             const state = get();
             if (state.callId === callId && state.status === 'calling') {
                 set({ status: 'connected' });
-                // As the caller, now connect via Twilio
-                if (state.remoteUserId && state.callId) {
-                    twilioVoiceService.makeCall(state.remoteUserId, state.callId).catch(err => {
+                // As caller, join the Metered room now that receiver accepted
+                if (state.conversationId) {
+                    meteredVoiceService.makeCall(state.conversationId).catch(err => {
                         set({ ...IDLE_STATE, error: err.message });
                     });
                 }
@@ -233,9 +221,7 @@ export const useCallStore = create<CallStoreState>((set, get) => {
         handleCallEnded: ({ callId }) => {
             const state = get();
             if (state.callId === callId) {
-                if (state.activeTwilioCall) {
-                    state.activeTwilioCall.disconnect();
-                }
+                meteredVoiceService.disconnect();
                 set({ ...IDLE_STATE });
             }
         },

@@ -5,8 +5,9 @@ import {
     Clock,
     TrendingUp,
     Calendar,
-    Lock,
+    ArrowRight,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './ReportsPage.css';
 
 interface ReportCategory {
@@ -15,15 +16,17 @@ interface ReportCategory {
     description: string;
     color: string;
     comingSoon: boolean;
+    route?: string;
 }
 
 const REPORT_CATEGORIES: ReportCategory[] = [
     {
         icon: FileText,
         title: 'Session Reports',
-        description: 'Meeting minutes, session notes, key discussion points, and therapist observations.',
+        description: 'AI-generated transcripts, clinical summaries, key discussion points, and sentiment analysis for every completed session.',
         color: '#5a7c7d',
-        comingSoon: true,
+        comingSoon: false,
+        route: '/reports/sessions',
     },
     {
         icon: Users,
@@ -55,10 +58,9 @@ const REPORT_CATEGORIES: ReportCategory[] = [
     },
 ];
 
-/**
- * Reports Page — Scaffolded report categories for future implementation
- */
 export default function ReportsPage() {
+    const navigate = useNavigate();
+
     return (
         <div className="reports-page">
             {/* Header */}
@@ -69,49 +71,75 @@ export default function ReportsPage() {
                         Analytics, session records, and platform insights
                     </p>
                 </div>
-                <div className="reports-header-badge">
-                    <Lock size={14} />
-                    <span>Coming Soon</span>
-                </div>
             </div>
 
             {/* Info Banner */}
             <div className="reports-banner">
                 <BarChart2 size={20} />
                 <div>
-                    <strong>Reports are being built!</strong>
+                    <strong>Session Reports are live!</strong>
                     <p>
-                        We're working on comprehensive reporting features including session minutes,
-                        key discussion points, client progress tracking, and more.
+                        AI-generated session transcripts and clinical summaries are now available.
+                        Additional reports are being built.
                     </p>
                 </div>
             </div>
 
             {/* Report Cards Grid */}
             <div className="reports-grid">
-                {REPORT_CATEGORIES.map((category) => (
-                    <div key={category.title} className="report-card">
-                        <div className="report-card-header">
-                            <div
-                                className="report-icon"
-                                style={{ backgroundColor: `${category.color}15`, color: category.color }}
-                            >
-                                <category.icon size={24} />
+                {REPORT_CATEGORIES.map((category) => {
+                    const isLive = !category.comingSoon && !!category.route;
+                    const cardContent = (
+                        <>
+                            <div className="report-card-header">
+                                <div
+                                    className="report-icon"
+                                    style={{ backgroundColor: `${category.color}15`, color: category.color }}
+                                >
+                                    <category.icon size={24} />
+                                </div>
+                                {category.comingSoon && (
+                                    <span className="coming-soon-badge">Coming Soon</span>
+                                )}
+                                {isLive && (
+                                    <span className="live-badge">Live</span>
+                                )}
                             </div>
-                            {category.comingSoon && (
-                                <span className="coming-soon-badge">Coming Soon</span>
-                            )}
-                        </div>
-                        <h3 className="report-card-title">{category.title}</h3>
-                        <p className="report-card-desc">{category.description}</p>
-                        <div className="report-card-footer">
-                            <div className="report-placeholder-bar">
-                                <div className="placeholder-fill" style={{ width: '0%' }} />
+                            <h3 className="report-card-title">{category.title}</h3>
+                            <p className="report-card-desc">{category.description}</p>
+                            <div className="report-card-footer">
+                                {isLive ? (
+                                    <div className="report-card-cta" style={{ color: category.color }}>
+                                        View Reports <ArrowRight size={14} />
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="report-placeholder-bar">
+                                            <div className="placeholder-fill" style={{ width: '0%' }} />
+                                        </div>
+                                        <span className="report-status">Not available yet</span>
+                                    </>
+                                )}
                             </div>
-                            <span className="report-status">Not available yet</span>
+                        </>
+                    );
+
+                    return isLive ? (
+                        <button
+                            key={category.title}
+                            type="button"
+                            className="report-card report-card-live report-card-btn"
+                            onClick={() => navigate(category.route!)}
+                            aria-label={`Open ${category.title}`}
+                        >
+                            {cardContent}
+                        </button>
+                    ) : (
+                        <div key={category.title} className="report-card">
+                            {cardContent}
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );

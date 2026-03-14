@@ -27,12 +27,16 @@ class SessionReportService {
      * Accessible by assigned CLIENT, THERAPIST, or any ADMIN/PROGRAM_DIRECTOR
      */
     async getSessionReport(sessionId: string): Promise<SessionTranscript> {
-        // According to our backend modification: GET /api/sessions/:id/report
-        const response = await api.get<ApiResponse<SessionTranscript>>(`/sessions/${sessionId}/report`);
-        if (!response.data.success || !response.data.data) {
-            throw new Error(response.data.message || 'Failed to fetch session report');
+        try {
+            const response = await api.get<ApiResponse<SessionTranscript>>(`/sessions/${sessionId}/report`);
+            if (!response.data.success || !response.data.data) {
+                throw new Error(response.data.message || 'Failed to fetch session report');
+            }
+            return response.data.data;
+        } catch (error: any) {
+            const message = error.response?.data?.message || error.message || 'Failed to fetch session report';
+            throw new Error(message);
         }
-        return response.data.data;
     }
 }
 

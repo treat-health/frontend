@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { Search, X, Filter, Calendar as CalendarIcon, User as UserIcon, ChevronDown, List as ListIcon, Sparkles } from 'lucide-react';
 import api from '../../../lib/api';
+import { connectSocket, getSocket } from '../../../lib/socket';
 import type { ApiResponse } from '../../../lib/api';
 import SessionCalendar from '../../../components/Calendar/SessionCalendar';
 import SessionReportPanel from '../../../components/session/SessionReportPanel';
@@ -27,6 +28,11 @@ interface UserSummary {
     lastName: string;
     email: string;
     role: string;
+}
+
+interface SessionCompletedEvent {
+    sessionId: string;
+    status: 'COMPLETED';
 }
 
 export default function SessionListPage() {
@@ -125,6 +131,35 @@ export default function SessionListPage() {
         fetchSessions();
     }, [fetchSessions]);
 
+    useEffect(() => {
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) return;
+
+        const applySessionCompletion = (data: SessionCompletedEvent) => {
+            setSessions((current) => {
+                let changed = false;
+                const nextSessions = current.map((session) => {
+                    if (session.id !== data.sessionId || session.status === 'COMPLETED') {
+                        return session;
+                    }
+
+                    changed = true;
+                    return { ...session, status: 'COMPLETED' };
+                });
+
+                return changed ? nextSessions : current;
+            });
+
+            void fetchSessions();
+        };
+
+        socket.on('session:completed', applySessionCompletion);
+
+        return () => {
+            socket.off('session:completed', applySessionCompletion);
+        };
+    }, [fetchSessions]);
+
     // Reset user page when tab or search changes
     useEffect(() => {
         setUserPage(1);
@@ -162,8 +197,26 @@ export default function SessionListPage() {
         updateParams({ [type === 'start' ? 'startDate' : 'endDate']: value });
     };
 
-    // Formatters
-    const formatDateTime = (iso: string) => new Date(iso).toLocaleString();
+    // Formatters — always display in UTC so admins see the same time regardless of browser timezone
+    const formatDateTime = (iso: string) => {
+        const d = new Date(iso);
+        const year = d.getUTCFullYear();
+        const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(d.getUTCDate()).padStart(2, '0');
+        const hours = d.getUTCHours();
+        const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const h12 = hours % 12 || 12;
+        return `${month}/${day}/${year}, ${String(h12).padStart(2, '0')}:${minutes} ${ampm} UTC`;
+    };
+
+    const formatDateOnlyUtc = (iso: string) => new Date(iso).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+    });
     const getStatusBadgeClass = (status: string) => {
         switch (status) {
             case 'SCHEDULED': return 'status-active';
@@ -389,7 +442,7 @@ export default function SessionListPage() {
                                                 <tr key={session.id}>
                                                     <td>
                                                         <div style={{ fontWeight: 500 }}>{formatDateTime(session.scheduledAt)}</div>
-                                                        <div style={{ fontSize: '12px', color: '#64748b' }}>{session.durationMins} mins</div>
+                                                        <div style={{ fontSize: '12px', color: '#64748b' }}>{formatDateOnlyUtc(session.scheduledAt)} • {session.durationMins} mins</div>
                                                     </td>
                                                     <td>
                                                         <div>{session.therapist.firstName} {session.therapist.lastName}</div>

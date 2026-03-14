@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { KeyboardEvent } from 'react';
-import { MessageSquare, Send, Search, Plus, X, Paperclip, FileText, Phone } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { MessageSquare, Send, Search, Plus, X, FileText, Phone } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useCallStore } from '../../stores/callStore';
 import type { AdminUser } from '../../stores/chatStore';
@@ -39,6 +40,7 @@ function getInitials(firstName: string, lastName: string): string {
  * Messages Page Component
  */
 export default function MessagesPage() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuthStore();
     const {
         conversations,
@@ -61,9 +63,6 @@ export default function MessagesPage() {
     const [messageInput, setMessageInput] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [showNewChatModal, setShowNewChatModal] = useState(false);
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -80,12 +79,30 @@ export default function MessagesPage() {
         fetchConversations();
     }, [fetchConversations]);
 
+    // Deep-link support: /messages?conversationId=<id>
+    useEffect(() => {
+        const conversationId = searchParams.get('conversationId');
+        if (!conversationId) return;
+        if (conversations.length === 0) return;
+
+        const exists = conversations.some((c) => c.id === conversationId);
+        if (!exists) return;
+
+        if (currentConversation?.id !== conversationId) {
+            selectConversation(conversationId);
+        }
+
+        const next = new URLSearchParams(searchParams);
+        next.delete('conversationId');
+        setSearchParams(next, { replace: true });
+    }, [searchParams, setSearchParams, conversations, currentConversation?.id, selectConversation]);
+
     // Scroll to bottom when new messages arrive
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Initialize Twilio Voice Device when a direct conversation is selected
+    // Initialize voice device when a direct conversation is selected
     useEffect(() => {
         if (currentConversation && currentConversation.type === 'DIRECT') {
             useCallStore.getState().initDevice(currentConversation.id);
@@ -164,34 +181,17 @@ export default function MessagesPage() {
         }
     }, [startTyping, stopTyping]);
 
-    // Clear selected file and revoke blob URL
-    const clearSelectedFile = useCallback(() => {
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        setSelectedFile(null);
-        setPreviewUrl(null);
-    }, [previewUrl]);
-
-    // Send message (Handles Text + Attachment)
+    // Send text message
     const handleSendMessage = useCallback(() => {
-        if (!messageInput.trim() && !selectedFile) return;
+        if (!messageInput.trim()) return;
 
-        if (selectedFile && currentConversation) {
-            useChatStore.getState().sendAttachmentOptimistically(selectedFile, previewUrl, messageInput.trim(), currentConversation.id);
-        } else if (messageInput.trim() && currentConversation) {
+        if (messageInput.trim() && currentConversation) {
             useChatStore.getState().sendMessage(messageInput.trim());
         }
 
         setMessageInput('');
-        clearSelectedFile();
         stopTyping();
-    }, [messageInput, selectedFile, currentConversation, previewUrl, stopTyping, clearSelectedFile]);
-
-    // Format bytes to human-readable
-    const formatBytes = (bytes: number) => {
-        if (bytes < 1024) return `${bytes} B`;
-        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    };
+    }, [messageInput, currentConversation, stopTyping]);
 
     // Handle key press
     const handleKeyPress = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -595,103 +595,7 @@ export default function MessagesPage() {
                         </div>
 
                         <div className="chat-input-area">
-                            {/* WhatsApp-style attachment preview */}
-                            {selectedFile && (
-                                <div style={{
-                                    position: 'relative',
-                                    marginBottom: '8px',
-                                    padding: '8px',
-                                    backgroundColor: 'var(--gray-800, #1e1e2e)',
-                                    borderRadius: '12px',
-                                    border: '1px solid var(--gray-700, #333)',
-                                    display: 'inline-block',
-                                    maxWidth: '240px',
-                                }}>
-                                    {selectedFile.type.startsWith('image/') && previewUrl ? (
-                                        // Image thumbnail preview
-                                        <img
-                                            src={previewUrl}
-                                            alt={selectedFile.name}
-                                            style={{
-                                                display: 'block',
-                                                maxWidth: '220px',
-                                                maxHeight: '160px',
-                                                objectFit: 'cover',
-                                                borderRadius: '8px',
-                                            }}
-                                        />
-                                    ) : (
-                                        // Document pill
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px' }}>
-                                            <FileText size={28} style={{ color: 'var(--primary-400, #a78bfa)', flexShrink: 0 }} />
-                                            <div style={{ overflow: 'hidden' }}>
-                                                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--gray-100)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>
-                                                    {selectedFile.name}
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)' }}>
-                                                    {formatBytes(selectedFile.size)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {/* Caption below image */}
-                                    {selectedFile.type.startsWith('image/') && (
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', marginTop: '4px', paddingLeft: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {selectedFile.name} · {formatBytes(selectedFile.size)}
-                                        </div>
-                                    )}
-                                    {/* X dismiss button */}
-                                    <button
-                                        onClick={clearSelectedFile}
-                                        style={{
-                                            position: 'absolute',
-                                            top: '-8px',
-                                            right: '-8px',
-                                            background: 'var(--gray-600)',
-                                            border: 'none',
-                                            borderRadius: '50%',
-                                            width: '22px',
-                                            height: '22px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            cursor: 'pointer',
-                                            color: 'white',
-                                        }}
-                                    >
-                                        <X size={12} />
-                                    </button>
-                                </div>
-                            )}
-
                             <div className="chat-input-container">
-                                <button
-                                    className="btn btn-icon btn-ghost"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    title="Attach File"
-                                    style={{ color: 'var(--gray-500)', padding: '8px' }}
-                                >
-                                    <Paperclip size={20} />
-                                </button>
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    accept="image/*,application/pdf,.doc,.docx,.txt,audio/*,video/*"
-                                    style={{ display: 'none' }}
-                                    onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) {
-                                            setSelectedFile(file);
-                                            if (file.type.startsWith('image/')) {
-                                                if (previewUrl) URL.revokeObjectURL(previewUrl);
-                                                setPreviewUrl(URL.createObjectURL(file));
-                                            } else {
-                                                setPreviewUrl(null);
-                                            }
-                                        }
-                                        e.target.value = '';
-                                    }}
-                                />
                                 <textarea
                                     className="chat-input"
                                     placeholder="Type a message..."
@@ -704,7 +608,7 @@ export default function MessagesPage() {
                                 <button
                                     className="chat-send-btn"
                                     onClick={handleSendMessage}
-                                    disabled={(!messageInput.trim() && !selectedFile) || useChatStore.getState().isSending}
+                                    disabled={!messageInput.trim() || useChatStore.getState().isSending}
                                 >
                                     <Send size={18} />
                                 </button>

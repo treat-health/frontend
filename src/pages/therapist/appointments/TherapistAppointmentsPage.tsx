@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X, Loader2, CalendarDays, Users, Video, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '../../../lib/api';
+import { connectSocket, getSocket } from '../../../lib/socket';
 import { schedulingService } from '../../../services/scheduling.service';
 import './TherapistAppointmentsPage.css';
 import '../../dashboard/ClientSessionsPage.css'; // Reuse calendar grid base styles
@@ -28,8 +29,15 @@ interface ClientSummary {
 
 type CalendarData = Record<string, CalendarSession[]>;
 
+interface SessionCompletedEvent {
+    sessionId: string;
+    status: 'COMPLETED';
+}
+
+const createUtcDate = (year: number, monthIndex: number, day: number) => new Date(Date.UTC(year, monthIndex, day));
+
 export default function TherapistAppointmentsPage() {
-    const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [currentMonth, setCurrentMonth] = useState(() => createUtcDate(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     const [calendarData, setCalendarData] = useState<CalendarData>({});
     const [isLoading, setIsLoading] = useState(false);
 
@@ -47,8 +55,8 @@ export default function TherapistAppointmentsPage() {
     const [completingClientName, setCompletingClientName] = useState('');
     const [completionNotes, setCompletionNotes] = useState('');
 
-    const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const monthKey = `${currentMonth.getUTCFullYear()}-${String(currentMonth.getUTCMonth() + 1).padStart(2, '0')}`;
 
     // ── Fetch clients ──
     useEffect(() => {
@@ -81,6 +89,44 @@ export default function TherapistAppointmentsPage() {
     }, [monthKey, selectedClientId]);
 
     useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
+
+    useEffect(() => {
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) return;
+
+        const applySessionCompletion = (data: SessionCompletedEvent) => {
+            setCalendarData((current) => {
+                let changed = false;
+                const nextEntries = Object.entries(current).map(([dateKey, sessions]) => {
+                    const nextSessions = sessions.map((session) => {
+                        if (session.id !== data.sessionId || session.status === 'COMPLETED') {
+                            return session;
+                        }
+
+                        changed = true;
+                        return { ...session, status: 'COMPLETED' };
+                    });
+
+                    return [dateKey, nextSessions] as const;
+                });
+
+                return changed ? Object.fromEntries(nextEntries) : current;
+            });
+
+            if (completingSessionId === data.sessionId) {
+                setCompletingSessionId(null);
+                setPopoverDate(null);
+            }
+
+            void fetchCalendar();
+        };
+
+        socket.on('session:completed', applySessionCompletion);
+
+        return () => {
+            socket.off('session:completed', applySessionCompletion);
+        };
+    }, [completingSessionId, fetchCalendar]);
 
     // ── Actions ──
     const handleCompleteClick = (session: CalendarSession) => {
@@ -116,10 +162,10 @@ export default function TherapistAppointmentsPage() {
     };
 
     // ── Build calendar grid ──
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const year = currentMonth.getUTCFullYear();
+    const month = currentMonth.getUTCMonth();
+    const firstDay = createUtcDate(year, month, 1).getUTCDay();
+    const daysInMonth = createUtcDate(year, month + 1, 0).getUTCDate();
 
     const calendarDays: (number | null)[] = [];
     for (let i = 0; i < firstDay; i++) calendarDays.push(null);
@@ -137,11 +183,28 @@ export default function TherapistAppointmentsPage() {
         return 'scheduled';
     };
 
-    const formatTime = (iso: string) =>
-        new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const formatTime = (iso: string) => {
+        const d = new Date(iso);
+        const hours = d.getUTCHours();
+        const minutes = d.getUTCMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const h12 = hours % 12 || 12;
+        return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm} (UTC)`;
+    };
+
+    const formatDateTimeUtc = (iso: string) => new Date(iso).toLocaleString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'UTC',
+        timeZoneName: 'short',
+    });
 
     const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
 
     const getInitials = (first: string, last: string) =>
         `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
@@ -152,8 +215,8 @@ export default function TherapistAppointmentsPage() {
         const sessions = calendarData[dateKey] || [];
         if (sessions.length === 0) return;
 
-        const date = new Date(year, month, day);
-        if (popoverDate && popoverDate.getDate() === day && popoverDate.getMonth() === month) {
+        const date = createUtcDate(year, month, day);
+        if (popoverDate && popoverDate.getUTCDate() === day && popoverDate.getUTCMonth() === month) {
             setPopoverDate(null);
             return;
         }
@@ -225,11 +288,11 @@ export default function TherapistAppointmentsPage() {
             {/* ── Calendar Area ── */}
             <div className="therapist-calendar-area">
                 <div className="therapist-calendar-header">
-                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}>
+                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month - 1, 1))}>
                         <ChevronLeft size={18} />
                     </button>
                     <h3 className="therapist-calendar-title">{monthLabel}</h3>
-                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}>
+                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month + 1, 1))}>
                         <ChevronRight size={18} />
                     </button>
                 </div>
@@ -259,7 +322,7 @@ export default function TherapistAppointmentsPage() {
                         const dateKey = getDateKey(day);
                         const sessions = calendarData[dateKey] || [];
                         const isToday = dateKey === todayStr;
-                        const isSelected = popoverDate?.getDate() === day && popoverDate?.getMonth() === month;
+                        const isSelected = popoverDate?.getUTCDate() === day && popoverDate?.getUTCMonth() === month;
 
                         return (
                             <div
@@ -285,12 +348,12 @@ export default function TherapistAppointmentsPage() {
 
                 {/* Popover */}
                 {popoverDate && (() => {
-                    const dateKey = getDateKey(popoverDate.getDate());
+                    const dateKey = getDateKey(popoverDate.getUTCDate());
                     const sessions = calendarData[dateKey] || [];
                     return (
                         <div className="client-popover" style={{ top: popoverPos.top, left: popoverPos.left, width: 380 }}>
                             <div className="client-popover-header">
-                                <h4>{popoverDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</h4>
+                                <h4>{popoverDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</h4>
                                 <button className="client-popover-close" onClick={() => setPopoverDate(null)}>
                                     <X size={16} />
                                 </button>
@@ -307,6 +370,9 @@ export default function TherapistAppointmentsPage() {
                                             <div className="client-popover-info">
                                                 <span className="client-popover-time">
                                                     {formatTime(s.startTime)} – {formatTime(s.endTime)}
+                                                </span>
+                                                <span className="client-popover-meta">
+                                                    {formatDateTimeUtc(s.startTime)}
                                                 </span>
                                                 <span className="client-popover-meta">
                                                     {s.client.firstName} {s.client.lastName} • {s.type.replace(/_/g, ' ')}
@@ -337,17 +403,19 @@ export default function TherapistAppointmentsPage() {
                                         })()}
 
                                         {/* Action buttons for SCHEDULED sessions */}
-                                        {s.status === 'SCHEDULED' && (
+                                        {(s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS') && (
                                             <div className="popover-action-row">
                                                 <Link to={`/sessions/${s.id}/room`} className="client-popover-zoom" title="Join Video Session">
-                                                    <Video size={12} /> Join Session
+                                                    <Video size={12} /> {s.status === 'IN_PROGRESS' ? 'Rejoin Session' : 'Join Session'}
                                                 </Link>
                                                 <button className="popover-action-btn complete" onClick={() => handleCompleteClick(s)}>
                                                     <CheckCircle size={12} /> Complete
                                                 </button>
-                                                <button className="popover-action-btn no-show" onClick={() => handleMarkNoShow(s.id)}>
-                                                    <XCircle size={12} /> No Show
-                                                </button>
+                                                {s.status === 'SCHEDULED' && (
+                                                    <button className="popover-action-btn no-show" onClick={() => handleMarkNoShow(s.id)}>
+                                                        <XCircle size={12} /> No Show
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                     </div>

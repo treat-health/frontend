@@ -20,6 +20,7 @@ const APPOINTMENT_TYPES = [
 ];
 
 export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: ScheduleSessionModalProps) {
+    const todayUtc = new Date().toISOString().split('T')[0];
     const [clients, setClients] = useState<UserSummary[]>([]);
     const [therapists, setTherapists] = useState<UserSummary[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -65,7 +66,7 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
             setAvailabilityValid(null);
             try {
                 const res = await api.get('/sessions/availability', {
-                    params: { date, time, duration, clientId, therapistId }
+                    params: { date, time, duration, clientId, therapistId, overrideRules: true }
                 });
                 setAvailabilityValid(res.data.isAvailable);
                 setAvailabilityReason(res.data.reason || '');
@@ -116,10 +117,8 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
 
         try {
             setIsSubmitting(true);
-            // Construct explicit UTC string
-            // The browser parses `${date}T${time}` as local time by default.
-            // .toISOString() explicitly performs a strict local -> UTC conversion before sending to the API.
-            const scheduledAt = new Date(`${date}T${time}`).toISOString();
+            // Append 'Z' suffix so the string is interpreted as UTC, not browser local time.
+            const scheduledAt = `${date}T${time}:00.000Z`;
 
             const dto: CreateAppointmentDto = {
                 clientId,
@@ -253,7 +252,7 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
                                             onChange={(e) => setDate(e.target.value)}
                                             className="form-input with-icon"
                                             required
-                                            min={new Date().toISOString().split('T')[0]}
+                                            min={todayUtc}
                                         />
                                     </div>
                                 </div>
@@ -289,7 +288,7 @@ export default function ScheduleSessionModal({ isOpen, onClose, onSuccess }: Sch
                             </div>
 
                             <div className="timezone-indicator" style={{ fontSize: '0.85rem', color: 'var(--gray-500)', marginTop: '-8px', marginBottom: '16px', fontStyle: 'italic' }}>
-                                All times shown and selected in your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone}).
+                                All dates and times are selected in UTC. Current UTC date: {todayUtc}.
                             </div>
 
                             {/* Row 3: Type & Notes */}

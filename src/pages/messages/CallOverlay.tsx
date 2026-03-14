@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 /**
  * CallOverlay
  *
- * A floating UI component that renders the current state of a Twilio Voice Call.
+ * A floating UI component that renders the current state of an audio call.
  * It reads from `useCallStore` to detect if there's an active/incoming call.
  */
 export default function CallOverlay() {

@@ -15,14 +15,16 @@ import TherapistAppointmentsPage from './pages/therapist/appointments/TherapistA
 import TherapistClientsPage from './pages/therapist/clients/TherapistClientsPage';
 import ClientsPage from './pages/admin/clients/ClientsPage';
 import ReportsPage from './pages/admin/reports/ReportsPage';
+import SessionReportsPage from './pages/admin/reports/SessionReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import SessionRoom from './pages/session/SessionRoom';
+import NotificationsPage from './pages/notifications/NotificationsPage';
 import Layout from './components/layout/Layout';
 
 /**
  * Protected Route Component
  */
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children }: Readonly<{ children: React.ReactNode }>) {
     const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
 
     useEffect(() => {
@@ -53,7 +55,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 /**
  * Public Route (redirect if authenticated)
  */
-function PublicRoute({ children }: { children: React.ReactNode }) {
+function PublicRoute({ children }: Readonly<{ children: React.ReactNode }>) {
     const { isAuthenticated } = useAuthStore();
 
     if (isAuthenticated) {
@@ -210,12 +212,20 @@ export default function App() {
                     }
                 />
 
-                {/* Reports Route */}
+                {/* Reports Routes */}
                 <Route
                     path="/reports"
                     element={
                         <ProtectedRoute>
                             <ReportsPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/reports/sessions"
+                    element={
+                        <ProtectedRoute>
+                            <SessionReportsPage />
                         </ProtectedRoute>
                     }
                 />
@@ -226,6 +236,15 @@ export default function App() {
                     element={
                         <ProtectedRoute>
                             <SettingsPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route
+                    path="/notifications"
+                    element={
+                        <ProtectedRoute>
+                            <NotificationsPage />
                         </ProtectedRoute>
                     }
                 />

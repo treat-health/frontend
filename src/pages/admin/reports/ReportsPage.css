@@ -29,18 +29,6 @@
     font-size: 0.875rem;
 }
 
-.reports-header-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 1rem;
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
-    border-radius: 999px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-
 /* Info Banner */
 .reports-banner {
     display: flex;
@@ -88,6 +76,15 @@
     transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
+    text-align: left;
+}
+
+/* Reset button styles for live cards rendered as <button> */
+.report-card-btn {
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
 }
 
 .report-card::before {
@@ -172,6 +169,37 @@
 .report-status {
     font-size: 0.75rem;
     color: var(--gray-400);
+}
+
+/* Live card */
+.report-card-live:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(90, 124, 125, 0.12);
+    border-color: rgba(90, 124, 125, 0.35);
+}
+
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    background: #dcfce7;
+    color: #14532d;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.report-card-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: gap 0.15s;
+}
+.report-card-live:hover .report-card-cta {
+    gap: 10px;
 }
 
 /* Responsive */

@@ -26,6 +26,31 @@
     gap: 1.5rem;
 }
 
+.session-overlay-close-btn {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    width: 42px;
+    height: 42px;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(2, 6, 23, 0.96);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.session-overlay-close-btn:hover {
+    background: rgba(30, 41, 59, 0.92);
+    border-color: rgba(255, 255, 255, 0.28);
+    transform: scale(1.04);
+}
+
 /* ── Pre-Join Modal ── */
 .pre-join-modal {
     background: #1e1e2d;
@@ -76,6 +101,42 @@
     height: 18px;
     accent-color: #6366f1;
     cursor: pointer;
+}
+
+.session-rejoin-modal {
+    max-width: 520px;
+}
+
+.session-rejoin-copy {
+    color: #cbd5e1;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.session-rejoin-card {
+    width: 100%;
+    margin-top: 1.25rem;
+    padding: 1rem;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.session-rejoin-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.92rem;
+    color: #cbd5e1;
+}
+
+.session-rejoin-row strong {
+    color: #fff;
+    text-align: right;
 }
 
 /* ── Main — the full-screen video canvas ── */
@@ -228,7 +289,6 @@
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    border: none;
     background: rgba(255, 255, 255, 0.15);
     color: white;
     display: flex;
@@ -297,7 +357,7 @@
     height: 100%;
 }
 
-/* Target the actual <video> injected by Twilio */
+/* Target the actual local <video> element injected by the room SDK */
 .local-video video {
     width: 100%;
     height: 100%;
@@ -432,6 +492,24 @@
     margin-bottom: 0.5rem;
 }
 
+.participant-item-compact {
+    margin-bottom: 0;
+    background: transparent;
+    padding: 0;
+}
+
+.participant-card {
+    padding: 0.85rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 0.75rem;
+}
+
+.presence-card {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.7), rgba(17, 24, 39, 0.5));
+}
+
 .participant-avatar {
     width: 38px;
     height: 38px;
@@ -462,6 +540,184 @@
     font-size: 0.72rem;
     color: #6b7280;
     text-transform: capitalize;
+}
+
+.participant-presence-badge {
+    margin-left: auto;
+    padding: 0.3rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.participant-presence-badge.live {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.35);
+    color: #86efac;
+}
+
+.participant-presence-badge.away {
+    background: rgba(250, 204, 21, 0.12);
+    border-color: rgba(250, 204, 21, 0.3);
+    color: #fde68a;
+}
+
+.participant-presence-badge.complete {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.3);
+    color: #bae6fd;
+}
+
+.participant-presence-badge.pending {
+    background: rgba(148, 163, 184, 0.14);
+    border-color: rgba(148, 163, 184, 0.26);
+    color: #cbd5e1;
+}
+
+.presence-panel-state,
+.presence-panel-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 10px;
+    margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+}
+
+.presence-panel-state {
+    color: #cbd5e1;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.presence-panel-state.compact {
+    margin-bottom: 0;
+    padding: 0.7rem 0.8rem;
+}
+
+.presence-panel-error {
+    color: #fecaca;
+    background: rgba(127, 29, 29, 0.32);
+    border: 1px solid rgba(248, 113, 113, 0.25);
+}
+
+.presence-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin-top: 0.85rem;
+}
+
+.presence-meta-item {
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.presence-meta-item strong {
+    color: #f8fafc;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.presence-meta-label {
+    color: #94a3b8;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.presence-footnote {
+    margin-top: 0.7rem;
+    color: #cbd5e1;
+    font-size: 0.74rem;
+    line-height: 1.5;
+}
+
+.presence-audit-card {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.presence-audit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.9rem;
+}
+
+.presence-audit-header h4 {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 0.9rem;
+}
+
+.presence-audit-header span {
+    padding: 0.22rem 0.55rem;
+    border-radius: 9999px;
+    background: rgba(34, 197, 94, 0.14);
+    border: 1px solid rgba(34, 197, 94, 0.28);
+    color: #86efac;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.presence-audit-summary {
+    display: grid;
+    gap: 0.75rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.presence-audit-summary strong {
+    display: block;
+    margin-top: 0.18rem;
+    color: #e2e8f0;
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.presence-event-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.95rem;
+}
+
+.presence-event-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.85rem;
+    align-items: flex-start;
+}
+
+.presence-event-title {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.presence-event-subtitle {
+    margin: 0.18rem 0 0;
+    color: #94a3b8;
+    font-size: 0.72rem;
+}
+
+.presence-event-time {
+    color: #94a3b8;
+    font-size: 0.7rem;
+    white-space: nowrap;
 }
 
 /* Session notes textarea */
@@ -506,6 +762,54 @@
     background: #4f46e5;
 }
 
+.session-action-card {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 12px;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.22);
+}
+
+.session-action-title {
+    margin: 0 0 0.35rem;
+    color: #f3f4f6;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.session-action-copy {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.session-complete-btn {
+    width: 100%;
+    margin-top: 0.85rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.86);
+    color: #f8fafc;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.session-complete-btn:hover {
+    transform: translateY(-1px);
+    background: rgba(30, 41, 59, 0.96);
+    border-color: rgba(129, 140, 248, 0.45);
+}
+
+.session-complete-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* Session info rows */
 .info-row {
     display: flex;
@@ -527,6 +831,111 @@
 .info-value {
     color: #f3f4f6;
     font-weight: 500;
+}
+
+.session-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(2, 6, 23, 0.72);
+    backdrop-filter: blur(10px);
+}
+
+.session-dialog {
+    width: min(100%, 460px);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.98));
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45);
+    padding: 1.25rem;
+    color: white;
+}
+
+.session-dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.session-dialog-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.session-dialog-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.session-dialog-copy {
+    margin: 0.9rem 0 0;
+    color: #cbd5e1;
+    line-height: 1.6;
+    font-size: 0.92rem;
+}
+
+.session-dialog-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+}
+
+.session-dialog-btn {
+    width: 100%;
+    border: none;
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+}
+
+.session-dialog-btn:hover {
+    transform: translateY(-1px);
+}
+
+.session-dialog-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.session-dialog-btn.primary {
+    background: #6366f1;
+    color: white;
+}
+
+.session-dialog-btn.secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.session-dialog-btn.danger {
+    background: rgba(239, 68, 68, 0.92);
+    color: white;
+}
+
+.session-dialog-btn.ghost {
+    background: transparent;
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 /* ── Animations ── */
@@ -563,5 +972,18 @@
     .leave-btn {
         width: 54px;
         height: 54px;
+    }
+
+    .session-rejoin-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .presence-meta-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .presence-event-item {
+        flex-direction: column;
     }
 }

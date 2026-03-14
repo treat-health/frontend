@@ -1,11 +1,30 @@
-import { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { Room, LocalVideoTrack, LocalAudioTrack } from 'twilio-video';
 import api, { tokenStorage } from '../lib/api';
+
+// Generic interface so this hook works across different room providers.
+// The hook only needs: localParticipant with audioTracks/videoTracks.
+// With Metered we pass in a lightweight adapter object built in SessionRoom.tsx.
+export interface AttentionRoomAdapter {
+    localParticipant: {
+        audioTracks: Map<string, { track: AttentionTrackAdapter | null; isEnabled?: boolean }>;
+        videoTracks: Map<string, { track: AttentionTrackAdapter | null; isEnabled?: boolean }>;
+        on: (event: string, handler: (...args: any[]) => void) => void;
+        off?: (event: string, handler: (...args: any[]) => void) => void;
+    };
+}
+
+export interface AttentionTrackAdapter {
+    kind: 'audio' | 'video';
+    isEnabled: boolean;
+    mediaStreamTrack?: MediaStreamTrack;
+    on: (event: string, handler: () => void) => void;
+    off?: (event: string, handler: () => void) => void;
+}
 
 interface AttentionMonitorProps {
     sessionId: string;
-    room: Room | null;
+    room: AttentionRoomAdapter | null;
     role: string;
     enabled: boolean;
 }
@@ -53,7 +72,6 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
         const payload = [...eventBuffer.current];
         eventBuffer.current = []; // clear buffer
 
-        // send via standard API call
         api.post(`/sessions/${sessionId}/attention-events`, { events: payload })
             .catch(err => console.error('Failed to flush attention events', err));
     };
@@ -72,7 +90,6 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        // Use fetch with keepalive instead of sendBeacon to support authorization headers
         fetch(url, {
             method: 'POST',
             body: JSON.stringify({ events: payload }),
@@ -85,16 +102,14 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
         if (!enabled) return;
 
         const now = Date.now();
-        // Check grace period
         if (now - hookStartTime.current < GRACE_PERIOD_MS) return;
-        // Check cooldown
         if (now - lastNudgeTime.current < NUDGE_COOLDOWN_MS) return;
 
         lastNudgeTime.current = now;
         toast(message, {
             icon: '⚠️',
             duration: 6000,
-            id: 'attention-nudge', // prevents duplicate toasts
+            id: 'attention-nudge',
             style: { background: '#1e1e2d', color: '#f3f4f6', border: '1px solid #4b5563' }
         });
 
@@ -118,32 +133,30 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
             window.removeEventListener('beforeunload', handleBeforeUnload);
             if (enabled) {
                 addEvent('PARTICIPANT_LEFT');
-                // Use the standard flush during normal navigation
                 flushEvents();
             }
         };
     }, [sessionId, enabled]);
 
-    // 2. Setup Twilio Track Listeners & Audio Analysis
+    // 2. Setup Track Listeners & Audio Analysis (provider-agnostic via adapter)
     useEffect(() => {
         if (!room || !enabled) return;
 
         const localParticipant = room.localParticipant;
 
-        // Helper to attach listeners to a track
-        const attachTrackListeners = (track: LocalVideoTrack | LocalAudioTrack) => {
+        const attachTrackListeners = (track: AttentionTrackAdapter) => {
             if (track.kind === 'video') {
                 if (!track.isEnabled && !stateRefs.current.cameraOff) {
                     stateRefs.current.cameraOff = true;
                     addEvent('CAMERA_OFF_START');
-                    attemptNudge('Looks like your camera is off — please turn it on if possible.', 'camera_off');
+                    attemptNudge("Looks like your camera is off - please turn it on if possible.", 'camera_off');
                 }
 
                 track.on('disabled', () => {
                     if (!stateRefs.current.cameraOff) {
                         stateRefs.current.cameraOff = true;
                         addEvent('CAMERA_OFF_START');
-                        attemptNudge('Looks like your camera is off — please turn it on if possible.', 'camera_off');
+                        attemptNudge("Looks like your camera is off - please turn it on if possible.", 'camera_off');
                     }
                 });
 
@@ -159,14 +172,14 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
                 if (!track.isEnabled && !stateRefs.current.micOff) {
                     stateRefs.current.micOff = true;
                     addEvent('MIC_OFF_START');
-                    attemptNudge('Your microphone is off — please unmute if you’re speaking.', 'mic_off');
+                    attemptNudge("Your microphone is off - please unmute if you're speaking.", 'mic_off');
                 }
 
                 track.on('disabled', () => {
                     if (!stateRefs.current.micOff) {
                         stateRefs.current.micOff = true;
                         addEvent('MIC_OFF_START');
-                        attemptNudge('Your microphone is off — please unmute if you’re speaking.', 'mic_off');
+                        attemptNudge("Your microphone is off - please unmute if you're speaking.", 'mic_off');
                     }
                 });
 
@@ -180,21 +193,22 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
                 // Setup Web Audio API for inactivity proxy
                 try {
                     const mediaStreamTrack = track.mediaStreamTrack;
-                    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                    const mediaStream = new MediaStream([mediaStreamTrack]);
-                    const source = audioContext.createMediaStreamSource(mediaStream);
-                    const analyser = audioContext.createAnalyser();
+                    if (mediaStreamTrack) {
+                        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                        const mediaStream = new MediaStream([mediaStreamTrack]);
+                        const source = audioContext.createMediaStreamSource(mediaStream);
+                        const analyser = audioContext.createAnalyser();
 
-                    analyser.fftSize = 256;
-                    source.connect(analyser);
+                        analyser.fftSize = 256;
+                        source.connect(analyser);
 
-                    // Resume context (important for Safari which requires user gesture to start AudioContext)
-                    if (audioContext.state === 'suspended') {
-                        audioContext.resume().catch(err => console.warn('Could not resume AudioContext', err));
+                        if (audioContext.state === 'suspended') {
+                            audioContext.resume().catch(err => console.warn('Could not resume AudioContext', err));
+                        }
+
+                        audioContextRef.current = audioContext;
+                        analyserRef.current = analyser;
                     }
-
-                    audioContextRef.current = audioContext;
-                    analyserRef.current = analyser;
                 } catch (e) {
                     console.warn('AudioContext not supported or restricted, skipping audio inactivity detection', e);
                 }
@@ -203,15 +217,14 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
 
         // Attach to existing tracks
         localParticipant.videoTracks.forEach(pub => {
-            if (pub.track) attachTrackListeners(pub.track as LocalVideoTrack);
+            if (pub.track) attachTrackListeners(pub.track);
         });
         localParticipant.audioTracks.forEach(pub => {
-            if (pub.track) attachTrackListeners(pub.track as LocalAudioTrack);
+            if (pub.track) attachTrackListeners(pub.track);
         });
 
-        // Listen for new tracks added during the call
-        localParticipant.on('trackPublished', (publication) => {
-            if (publication.track) attachTrackListeners(publication.track as any);
+        localParticipant.on('trackPublished', (publication: any) => {
+            if (publication.track) attachTrackListeners(publication.track as AttentionTrackAdapter);
         });
 
         // Loop for audio inactivity check
@@ -220,9 +233,8 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
         const checkAudioActivity = () => {
             if (!analyserRef.current) return;
 
-            // Only check if mic is actually enabled in twilio
+            // If mic is off, don't double-penalise with "audio inactive"
             if (stateRefs.current.micOff) {
-                // If mic is off, don't double penalty them with "audio inactive"
                 if (isAudioInactiveRef.current) {
                     isAudioInactiveRef.current = false;
                     addEvent('AUDIO_INACTIVE_END');
@@ -235,13 +247,11 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
             const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
             analyserRef.current.getByteFrequencyData(dataArray);
 
-            // Calculate average volume
             let sum = 0;
             for (let i = 0; i < dataArray.length; i++) {
                 sum += dataArray[i];
             }
             const average = sum / dataArray.length;
-
             const isQuiet = average < AUDIO_VOLUME_THRESHOLD;
 
             if (isQuiet) {
@@ -250,14 +260,12 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
                 } else {
                     const silenceDuration = Date.now() - silenceStartMSRef.current;
                     if (silenceDuration >= AUDIO_INACTIVITY_THRESHOLD_MS && !isAudioInactiveRef.current) {
-                        // Reached 10 seconds of silence!
                         isAudioInactiveRef.current = true;
                         addEvent('AUDIO_INACTIVE_START');
-                        attemptNudge('We haven’t detected audio for a bit — are you still there?', 'audio_inactive');
+                        attemptNudge("We haven't detected audio for a bit - are you still there?", 'audio_inactive');
                     }
                 }
             } else {
-                // Audio detected
                 silenceStartMSRef.current = null;
                 if (isAudioInactiveRef.current) {
                     isAudioInactiveRef.current = false;
@@ -265,7 +273,6 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
                 }
             }
 
-            // check every ~500ms to save CPU, rather than every visual frame
             setTimeout(() => {
                 animationFrameId = requestAnimationFrame(checkAudioActivity);
             }, 500);
@@ -282,5 +289,5 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
             }
         };
     }, [room, enabled]);
-
 }
+

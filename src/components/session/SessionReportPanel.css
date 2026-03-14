@@ -18,6 +18,28 @@
     color: #64748b;
 }
 
+.report-panel.pending-state {
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    text-align: center;
+    gap: 0.75rem;
+    color: #64748b;
+}
+
+.pending-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #334155;
+    margin: 0;
+}
+
+.pending-copy {
+    max-width: 420px;
+    margin: 0;
+    line-height: 1.5;
+}
+
 .text-primary {
     color: #0284c7;
 }

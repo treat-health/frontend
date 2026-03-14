@@ -1,0 +1,291 @@
+/* ============================================================
+   Session Reports Page
+   ============================================================ */
+
+.srp-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* -- Header -- */
+.srp-header {
+    padding: 20px 24px 16px !important;
+    border-bottom: 1px solid var(--gray-100, #f1f5f9);
+    flex-shrink: 0;
+}
+
+.srp-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--gray-500, #64748b);
+    font-size: 12px;
+    padding: 0;
+    margin-bottom: 8px;
+    transition: color 0.15s;
+}
+.srp-back-btn:hover {
+    color: var(--gray-900, #0f172a);
+}
+
+/* -- Filters Bar -- */
+.srp-filters {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    background: var(--bg-surface, #fff);
+    border-bottom: 1px solid var(--gray-100, #f1f5f9);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+/* -- Search -- */
+.srp-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gray-50, #f8fafc);
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--gray-200, #e2e8f0);
+    min-width: 220px;
+}
+.srp-search-input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 13px;
+    color: var(--gray-900, #0f172a);
+    width: 100%;
+}
+.srp-search-input::placeholder {
+    color: var(--gray-400, #94a3b8);
+}
+.srp-clear-btn {
+    display: flex;
+    align-items: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    color: var(--gray-400, #94a3b8);
+    flex-shrink: 0;
+    transition: color 0.15s;
+}
+.srp-clear-btn:hover {
+    color: var(--gray-600, #475569);
+}
+
+/* -- Status Pills -- */
+.srp-status-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.srp-pill {
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--gray-200, #e2e8f0);
+    background: var(--bg-surface, #fff);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--gray-600, #475569);
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.srp-pill:hover {
+    background: var(--gray-50, #f8fafc);
+}
+.srp-pill-active {
+    background: #5a7c7d;
+    color: #fff;
+    border-color: #5a7c7d;
+}
+.srp-pill-active:hover {
+    background: #4a6c6d;
+}
+
+/* -- Date range -- */
+.srp-date-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.srp-date-input {
+    border: 1px solid var(--gray-200, #e2e8f0);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    color: var(--gray-800, #1e293b);
+    background: var(--bg-surface, #fff);
+    outline: none;
+    transition: border-color 0.15s;
+}
+.srp-date-input:focus {
+    border-color: #5a7c7d;
+}
+.srp-date-sep {
+    font-size: 12px;
+    color: var(--gray-400, #94a3b8);
+}
+
+/* -- Result count -- */
+.srp-result-count {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--gray-500, #64748b);
+    white-space: nowrap;
+}
+
+/* -- Table Container -- */
+.srp-table-container {
+    margin: 0 24px;
+    flex: 1;
+    overflow: auto;
+}
+
+/* -- Table Cell Styles -- */
+.srp-datetime {
+    font-weight: 500;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.srp-user-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-900, #0f172a);
+}
+.srp-user-email {
+    font-size: 11px;
+    color: var(--gray-400, #94a3b8);
+    margin-top: 1px;
+}
+.srp-duration {
+    font-size: 13px;
+    color: var(--gray-500, #64748b);
+    white-space: nowrap;
+}
+.srp-type-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: var(--gray-50, #f8fafc);
+    color: var(--gray-700, #334155);
+    border: 1px solid var(--gray-200, #e2e8f0);
+    white-space: nowrap;
+    text-transform: capitalize;
+}
+.srp-na {
+    color: var(--gray-300, #cbd5e1);
+    font-size: 14px;
+}
+
+/* -- Status badges -- */
+.srp-status-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+    text-transform: capitalize;
+    letter-spacing: 0.01em;
+}
+.badge-completed  { background: #dcfce7; color: #15803d; }
+.badge-scheduled  { background: #e0f2fe; color: #0369a1; }
+.badge-inprogress { background: #fef9c3; color: #92400e; }
+.badge-cancelled  { background: #fee2e2; color: #b91c1c; }
+
+/* -- View Report button -- */
+.srp-report-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    background: #eff6ff;
+    color: #2563eb;
+    transition: background 0.15s, transform 0.1s;
+    white-space: nowrap;
+}
+.srp-report-btn:hover {
+    background: #dbeafe;
+    transform: translateY(-1px);
+}
+.srp-report-btn:active {
+    transform: translateY(0);
+}
+
+/* -- Pagination -- */
+.srp-pagination {
+    padding: 16px 24px;
+    border-top: 1px solid var(--gray-100, #f1f5f9);
+    flex-shrink: 0;
+}
+
+/* -- Report Modal -- */
+.srp-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+}
+/* Transparent full-overlay button to capture backdrop clicks */
+.srp-modal-backdrop-btn {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    border: none;
+    cursor: default;
+    z-index: 0;
+}
+.srp-modal-panel {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 820px;
+    height: 85vh;
+    background: #fff;
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.3);
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* -- Responsive -- */
+@media (max-width: 768px) {
+    .srp-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .srp-result-count {
+        margin-left: 0;
+    }
+    .srp-date-range {
+        flex-wrap: wrap;
+    }
+    .srp-table-container {
+        margin: 0 8px;
+    }
+}

@@ -3,12 +3,368 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock, Sparkles } from 'lucide-react';
 import api from '../../lib/api';
-import { getSocket } from '../../lib/socket';
+import { connectSocket, getSocket } from '../../lib/socket';
 import toast from 'react-hot-toast';
-import * as TwilioVideo from 'twilio-video';
 import SessionReportPanel from '../../components/session/SessionReportPanel';
-import { useAttentionMonitor } from '../../hooks/useAttentionMonitor';
+import { useAttentionMonitor, type AttentionRoomAdapter } from '../../hooks/useAttentionMonitor';
 import './SessionRoom.css';
+
+// Metered SDK is loaded via <script> tag in index.html
+declare global {
+    interface Window { Metered: any; }
+}
+
+const ROOM_OPEN_EARLY_MINUTES = 15;
+const ROOM_REJOIN_GRACE_MINUTES = 15;
+
+type JoinState = 'LOADING' | 'WAITING' | 'ACKNOWLEDGMENT' | 'JOINING' | 'LEFT' | 'COMPLETED';
+type ExitContext = 'LEFT' | 'NETWORK' | null;
+
+interface SessionDetails {
+    id: string;
+    status: string;
+    scheduledAt: string;
+    durationMins: number;
+    clientId: string;
+    therapistId: string;
+    notes?: string | null;
+}
+
+interface PresenceParticipantSummary {
+    userId: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: string;
+    state: string;
+    isConnected: boolean;
+    firstJoinedAt: string | null;
+    lastJoinedAt: string | null;
+    lastLeftAt: string | null;
+    lastSeenAt: string | null;
+    totalConnectedSeconds: number;
+    joinCount: number;
+    reconnectCount: number;
+    lastDisconnectReason: string | null;
+}
+
+interface PresenceEventSummary {
+    id: string;
+    eventType: string;
+    source: string;
+    userId: string | null;
+    role: string | null;
+    occurredAt: string;
+    disconnectReason: string | null;
+    connectionId: string | null;
+    providerRoomId: string | null;
+    providerParticipantId: string | null;
+    metadata?: Record<string, unknown> | null;
+}
+
+interface PresenceSummary {
+    sessionId: string;
+    status: string;
+    roomWindow: {
+        opensAt: string;
+        closesAt: string;
+        canRejoinNow: boolean;
+    };
+    participants: PresenceParticipantSummary[];
+    recentEvents: PresenceEventSummary[];
+}
+
+function parseSessionDate(value: string) {
+    const trimmedValue = value.trim();
+
+    if (/z$/i.test(trimmedValue) || /[+-]\d{2}:\d{2}$/.test(trimmedValue)) {
+        return new Date(trimmedValue);
+    }
+
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(trimmedValue)) {
+        return new Date(trimmedValue.replace(' ', 'T') + 'Z');
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(trimmedValue)) {
+        return new Date(`${trimmedValue}Z`);
+    }
+
+    return new Date(trimmedValue);
+}
+
+function getSessionTiming(session: SessionDetails) {
+    const scheduledStartMs = parseSessionDate(session.scheduledAt).getTime();
+    const scheduledEndMs = scheduledStartMs + session.durationMins * 60 * 1000;
+
+    return {
+        scheduledStartMs,
+        scheduledEndMs,
+        roomOpenMs: scheduledStartMs - ROOM_OPEN_EARLY_MINUTES * 60 * 1000,
+        rejoinDeadlineMs: scheduledEndMs + ROOM_REJOIN_GRACE_MINUTES * 60 * 1000,
+    };
+}
+
+function isSessionTerminal(session: SessionDetails) {
+    return ['COMPLETED', 'NO_SHOW', 'CANCELLED'].includes(session.status);
+}
+
+function canRejoinSession(session: SessionDetails, nowMs = Date.now()) {
+    if (isSessionTerminal(session)) {
+        return false;
+    }
+
+    const { roomOpenMs, rejoinDeadlineMs } = getSessionTiming(session);
+    return nowMs >= roomOpenMs && nowMs <= rejoinDeadlineMs;
+}
+
+function formatSessionDateTime(iso: string) {
+    return parseSessionDate(iso).toLocaleString([], {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'UTC',
+        timeZoneName: 'short',
+    });
+}
+
+function formatTimestamp(timestampMs: number) {
+    return new Date(timestampMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTime(value?: string | null) {
+    if (!value) return '—';
+    return parseSessionDate(value).toLocaleString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+        timeZoneName: 'short',
+    });
+}
+
+function formatConnectedDuration(totalSeconds: number) {
+    const safeSeconds = Math.max(0, totalSeconds);
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const seconds = safeSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+}
+
+function formatRoleLabel(role?: string | null) {
+    return role ? role.replaceAll('_', ' ').toLowerCase() : 'participant';
+}
+
+function formatPresenceStateLabel(state: string) {
+    switch (state) {
+        case 'CONNECTED':
+            return 'Live in room';
+        case 'DISCONNECTED':
+            return 'Disconnected';
+        case 'COMPLETED':
+            return 'Session completed';
+        case 'EXPIRED':
+            return 'Window expired';
+        default:
+            return 'Not joined yet';
+    }
+}
+
+function getPresenceStateTone(state: string) {
+    switch (state) {
+        case 'CONNECTED':
+            return 'live';
+        case 'DISCONNECTED':
+            return 'away';
+        case 'COMPLETED':
+            return 'complete';
+        default:
+            return 'pending';
+    }
+}
+
+function formatPresenceEventLabel(eventType: string) {
+    return eventType.replaceAll('_', ' ').toLowerCase();
+}
+
+function getPresenceEventDescription(event: PresenceEventSummary, participants: PresenceParticipantSummary[]) {
+    const actor = participants.find((participant) => participant.userId === event.userId);
+    const actorName = actor ? `${actor.firstName} ${actor.lastName}` : 'System';
+
+    switch (event.eventType) {
+        case 'PARTICIPANT_CONNECTED':
+            return `${actorName} joined the room`;
+        case 'PARTICIPANT_DISCONNECTED': {
+            const disconnectSuffix = event.disconnectReason ? ` · ${event.disconnectReason}` : '';
+            return `${actorName} left the room${disconnectSuffix}`;
+        }
+        case 'ROOM_CREATED':
+            return 'Secure room created';
+        case 'ROOM_ENDED':
+            return 'Room lifecycle closed';
+        case 'TOKEN_ISSUED':
+            return `${actorName} was authorized to join`;
+        case 'SESSION_COMPLETED':
+            return `${actorName} completed the session`;
+        default:
+            return formatPresenceEventLabel(event.eventType);
+    }
+}
+
+
+interface SessionStatusScreenProps {
+    title: string;
+    message: string;
+    onClose: () => void;
+}
+
+function SessionStatusScreen({ title, message, onClose }: Readonly<SessionStatusScreenProps>) {
+    return (
+        <div className="session-room-loading" style={{ flexDirection: 'column', gap: '1rem', padding: '2rem', textAlign: 'center' }}>
+            <CheckCircle size={64} style={{ color: 'var(--primary-color)' }} />
+            <h2>{title}</h2>
+            <p>{message}</p>
+            <div style={{ marginTop: '2rem' }}>
+                <button className="btn btn-submit" onClick={onClose}>Return to Dashboard</button>
+            </div>
+        </div>
+    );
+}
+
+interface SessionRejoinScreenProps {
+    heading: string;
+    message: string;
+    scheduledRangeLabel: string | null;
+    rejoinDeadlineLabel: string | null;
+    onClose: () => void;
+    onRejoin: () => void;
+}
+
+function SessionRejoinScreen({
+    heading,
+    message,
+    scheduledRangeLabel,
+    rejoinDeadlineLabel,
+    onClose,
+    onRejoin,
+}: Readonly<SessionRejoinScreenProps>) {
+    return (
+        <div className="session-room-loading">
+            <button
+                type="button"
+                className="session-overlay-close-btn"
+                onClick={onClose}
+                aria-label="Close session window"
+                title="Close"
+            >
+                <X size={18} />
+            </button>
+            <div className="pre-join-modal session-rejoin-modal">
+                <CheckCircle size={36} className="text-primary mb-4" />
+                <h2>{heading}</h2>
+                <p className="session-rejoin-copy">{message}</p>
+
+                <div className="session-rejoin-card">
+                    <div className="session-rejoin-row">
+                        <span>Session time</span>
+                        <strong>{scheduledRangeLabel}</strong>
+                    </div>
+                    <div className="session-rejoin-row">
+                        <span>Rejoin available until</span>
+                        <strong>{rejoinDeadlineLabel}</strong>
+                    </div>
+                </div>
+
+                <button
+                    className="btn btn-submit"
+                    onClick={onRejoin}
+                    style={{ width: '100%', marginTop: '1.5rem' }}
+                >
+                    Rejoin Session
+                </button>
+                <button
+                    className="btn btn-secondary"
+                    onClick={onClose}
+                    style={{ width: '100%', marginTop: '0.5rem', background: 'transparent', border: '1px solid #e2e8f0', color: '#64748b' }}
+                >
+                    Return to Dashboard
+                </button>
+            </div>
+        </div>
+    );
+}
+
+interface SessionExitDialogProps {
+    canUserCompleteSession: boolean;
+    isCompletingSession: boolean;
+    rejoinDeadlineLabel: string | null;
+    onCancel: () => void;
+    onComplete: () => void;
+    onLeave: (returnToDashboard: boolean) => void;
+}
+
+function SessionExitDialog({
+    canUserCompleteSession,
+    isCompletingSession,
+    rejoinDeadlineLabel,
+    onCancel,
+    onComplete,
+    onLeave,
+}: Readonly<SessionExitDialogProps>) {
+    return (
+        <dialog
+            className="session-dialog-backdrop"
+            open
+            onCancel={onCancel}
+            aria-labelledby="session-exit-dialog-title"
+        >
+            <div
+                className="session-dialog"
+            >
+                <div className="session-dialog-header">
+                    <h3 id="session-exit-dialog-title">Leave call?</h3>
+                    <button type="button" className="session-dialog-close" onClick={onCancel}>
+                        <X size={16} />
+                    </button>
+                </div>
+                <p className="session-dialog-copy">
+                    Leaving disconnects only you. The session stays rejoinable until <strong>{rejoinDeadlineLabel || 'the secure window closes'}</strong>.
+                </p>
+                <div className="session-dialog-actions">
+                    <button type="button" className="session-dialog-btn primary" onClick={() => onLeave(false)}>
+                        Leave Call
+                    </button>
+                    <button type="button" className="session-dialog-btn secondary" onClick={() => onLeave(true)}>
+                        Leave & Return to Dashboard
+                    </button>
+                    {canUserCompleteSession && (
+                        <button
+                            type="button"
+                            className="session-dialog-btn danger"
+                            onClick={onComplete}
+                            disabled={isCompletingSession}
+                        >
+                            {isCompletingSession ? 'Completing…' : 'Complete Session'}
+                        </button>
+                    )}
+                    <button type="button" className="session-dialog-btn ghost" onClick={onCancel}>
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </dialog>
+    );
+}
 
 export default function SessionRoom() {
     const { id } = useParams<{ id: string }>();
@@ -27,21 +383,32 @@ export default function SessionRoom() {
     const [sidebarTab, setSidebarTab] = useState<'info' | 'people' | 'report'>('people');
     const [sessionNotes, setSessionNotes] = useState('');
     const [reportRefreshTrigger, setReportRefreshTrigger] = useState(0);
+    const [showExitDialog, setShowExitDialog] = useState(false);
+    const [isCompletingSession, setIsCompletingSession] = useState(false);
+    const [exitContext, setExitContext] = useState<ExitContext>(null);
 
     // Explicit session metadata & waiting room state
-    const [sessionDetails, setSessionDetails] = useState<any>(null);
-    const [joinState, setJoinState] = useState<'LOADING' | 'WAITING' | 'OPEN' | 'ACKNOWLEDGMENT' | 'JOINING' | 'COMPLETED'>('LOADING');
+    const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
+    const [joinState, setJoinState] = useState<JoinState>('LOADING');
     const [timeRemaining, setTimeRemaining] = useState<number>(0);
     const [hasAcknowledged, setHasAcknowledged] = useState(false);
     const [aiMonitoringConsent, setAiMonitoringConsent] = useState(false);
+    const [presenceSummary, setPresenceSummary] = useState<PresenceSummary | null>(null);
+    const [isPresenceLoading, setIsPresenceLoading] = useState(false);
+    const [presenceError, setPresenceError] = useState<string | null>(null);
 
-    // WebRTC Refs
+    // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
     const remoteVideoRef = useRef<HTMLDivElement>(null);
-    const roomRef = useRef<TwilioVideo.Room | null>(null);
+    const roomRef = useRef<any | null>(null); // Metered meeting instance
+    const localStreamRef = useRef<MediaStream | null>(null);
+    const remoteStreamsRef = useRef<Map<string, HTMLElement>>(new Map());
+    const disconnectIntentRef = useRef<'LEAVE' | 'COMPLETE' | null>(null);
+    const presenceRefreshAbortRef = useRef(false);
+    const sessionDetailsRef = useRef<SessionDetails | null>(null);
+    const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
 
-    // Load Session Details & Join Twilio Room
-    // Fetch explicit Session data first
+    // Load explicit Session data first
     useEffect(() => {
         let mounted = true;
 
@@ -49,28 +416,11 @@ export default function SessionRoom() {
             try {
                 if (!id) return;
                 const res = await api.get(`/sessions/${id}`);
-                if (mounted) {
-                    setSessionDetails(res.data);
+                if (!mounted) return;
 
-                    // Force complete if already marked
-                    if (res.data.status === 'COMPLETED' || res.data.status === 'NO_SHOW') {
-                        setJoinState('COMPLETED');
-                        setIsLoading(false);
-                        return;
-                    }
-
-                    // Evaluate window: opens 15 minutes before scheduledAt
-                    const scheduledAtTime = new Date(res.data.scheduledAt).getTime();
-                    const openTime = scheduledAtTime - 15 * 60 * 1000;
-                    const now = Date.now();
-
-                    if (now >= openTime) {
-                        setJoinState('ACKNOWLEDGMENT');
-                    } else {
-                        setJoinState('WAITING');
-                        setTimeRemaining(Math.max(0, openTime - now));
-                    }
-                }
+                const session = res.data.data;
+                setSessionDetails(session);
+                setSessionNotes(session.notes || '');
             } catch (err: any) {
                 if (mounted) {
                     toast.error(err.response?.data?.message || 'Failed to fetch session details');
@@ -81,24 +431,123 @@ export default function SessionRoom() {
 
         fetchSessionDetails();
 
-        // 1-second interval to update waiting time
-        const interval = setInterval(() => {
-            setJoinState(curr => {
-                if (curr === 'WAITING' && sessionDetails) {
-                    const openTime = new Date(sessionDetails.scheduledAt).getTime() - 15 * 60 * 1000;
-                    const now = Date.now();
-                    if (now >= openTime) return 'ACKNOWLEDGMENT';
-                    setTimeRemaining(Math.max(0, openTime - now));
+        return () => {
+            mounted = false;
+        };
+    }, [id, navigate]);
+
+    // Keep the waiting room timer updated without resetting an active join attempt
+    useEffect(() => {
+        if (!sessionDetails) return;
+
+        const updateJoinAvailability = () => {
+            const session = sessionDetails;
+            const now = Date.now();
+
+            if (isSessionTerminal(session)) {
+                setJoinState('COMPLETED');
+                setIsLoading(false);
+                setTimeRemaining(0);
+                return;
+            }
+
+            const { roomOpenMs, rejoinDeadlineMs } = getSessionTiming(session);
+            const isRoomOpen = now >= roomOpenMs;
+            const rejoinWindowOpen = now <= rejoinDeadlineMs;
+
+            if (!rejoinWindowOpen) {
+                setJoinState('COMPLETED');
+                setIsLoading(false);
+                setTimeRemaining(0);
+                return;
+            }
+
+            setTimeRemaining(isRoomOpen ? 0 : Math.max(0, roomOpenMs - now));
+            setJoinState((currentState) => {
+                if (currentState === 'JOINING' || currentState === 'COMPLETED') {
+                    return currentState;
                 }
-                return curr;
+
+                if (currentState === 'LEFT' && canRejoinSession(session, now)) {
+                    return 'LEFT';
+                }
+
+                return isRoomOpen ? 'ACKNOWLEDGMENT' : 'WAITING';
             });
-        }, 1000);
+        };
+
+        updateJoinAvailability();
+        const interval = setInterval(updateJoinAvailability, 1000);
+
+        return () => {
+            clearInterval(interval);
+        };
+    }, [sessionDetails]);
+
+    useEffect(() => {
+        presenceRefreshAbortRef.current = false;
+        return () => {
+            presenceRefreshAbortRef.current = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        sessionDetailsRef.current = sessionDetails;
+    }, [sessionDetails]);
+
+    useEffect(() => {
+        if (!id || !user) return;
+
+        let mounted = true;
+
+        const fetchPresenceSummary = async (options?: { silent?: boolean }) => {
+            if (!options?.silent) {
+                setIsPresenceLoading(true);
+            }
+
+            try {
+                const res = await api.get(`/sessions/${id}/presence`);
+                if (!mounted || presenceRefreshAbortRef.current) return;
+
+                const nextPresence = res.data.data as PresenceSummary;
+                setPresenceSummary(nextPresence);
+                setPresenceError(null);
+
+                if (sessionDetails && nextPresence.status !== sessionDetails.status) {
+                    setSessionDetails({ ...sessionDetails, status: nextPresence.status });
+                }
+            } catch (error: any) {
+                if (!mounted || presenceRefreshAbortRef.current) return;
+                const message = error.response?.data?.message || 'Unable to load live session presence';
+                setPresenceError(message);
+            } finally {
+                if (mounted && !presenceRefreshAbortRef.current) {
+                    setIsPresenceLoading(false);
+                }
+            }
+        };
+
+        void fetchPresenceSummary();
+
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) {
+            return () => {
+                mounted = false;
+            };
+        }
+
+        const handlePresenceUpdated = (data: { sessionId: string }) => {
+            if (data.sessionId !== id) return;
+            void fetchPresenceSummary({ silent: true });
+        };
+
+        socket.on('session:presence_updated', handlePresenceUpdated);
 
         return () => {
             mounted = false;
-            clearInterval(interval);
+            socket.off('session:presence_updated', handlePresenceUpdated);
         };
-    }, [id, navigate, isConnected, joinState]);
+    }, [id, sessionDetails, user]);
 
     // Listen for AI Report completions remotely
     useEffect(() => {
@@ -122,52 +571,188 @@ export default function SessionRoom() {
     }, [id]);
 
     // Role detection & feature gating
-    const roleInSession = user?.id === sessionDetails?.clientId ? 'CLIENT' : (user?.id === sessionDetails?.therapistId ? 'THERAPIST' : 'UNKNOWN');
+    let roleInSession: 'CLIENT' | 'THERAPIST' | 'UNKNOWN' = 'UNKNOWN';
+    if (user?.id === sessionDetails?.clientId) {
+        roleInSession = 'CLIENT';
+    } else if (user?.id === sessionDetails?.therapistId) {
+        roleInSession = 'THERAPIST';
+    }
     const isMonitoringEnabled = aiMonitoringConsent && import.meta.env.VITE_SESSION_ATTENTION_MONITORING_ENABLED !== 'false';
 
-    // Hook up attention monitor
+    // Hook up attention monitor (uses provider-agnostic adapter built after Metered join)
     useAttentionMonitor({
         sessionId: id || '',
-        room: roomRef.current,
+        room: attentionAdapter,
         role: roleInSession,
-        enabled: isMonitoringEnabled && !!roomRef.current
+        enabled: isMonitoringEnabled && !!attentionAdapter
     });
+
+    const canUserCompleteSession = user?.role === 'THERAPIST' || user?.role === 'ADMIN' || user?.role === 'PROGRAM_DIRECTOR';
+    const canViewDetailedPresence = user?.role === 'THERAPIST' || user?.role === 'ADMIN' || user?.role === 'PROGRAM_DIRECTOR';
+    const sessionTiming = sessionDetails ? getSessionTiming(sessionDetails) : null;
+    const rejoinDeadlineLabel = sessionTiming ? formatTimestamp(sessionTiming.rejoinDeadlineMs) : null;
+    const scheduledRangeLabel = sessionDetails && sessionTiming
+        ? `${formatSessionDateTime(sessionDetails.scheduledAt)} – ${formatTimestamp(sessionTiming.scheduledEndMs)}`
+        : null;
+    const presenceParticipants = presenceSummary?.participants ?? [];
+    const localPresence = presenceParticipants.find((participant) => participant.userId === user?.id) ?? null;
+    const remotePresenceParticipants = presenceParticipants.filter((participant) => participant.userId !== user?.id);
+
+    const clearVideoContainers = () => {
+        if (localVideoRef.current) {
+            localVideoRef.current.innerHTML = '';
+        }
+        if (remoteVideoRef.current) {
+            remoteVideoRef.current.innerHTML = '';
+        }
+        // Also remove any dangling audio elements that were appended to body by Metered
+        document.querySelectorAll('[id^="metered-remote-audio-"]').forEach(el => el.remove());
+        remoteStreamsRef.current.clear();
+    };
+
+    const disconnectRoom = (intent: 'LEAVE' | 'COMPLETE') => {
+        disconnectIntentRef.current = intent;
+        if (roomRef.current) {
+            roomRef.current.leaveMeeting?.();
+            roomRef.current = null;
+        }
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(t => t.stop());
+            localStreamRef.current = null;
+        }
+        clearVideoContainers();
+        setIsConnected(false);
+        setAttentionAdapter(null);
+    };
+
+    const applyCompletedSessionState = (options?: { toastMessage?: string; shouldToast?: boolean }) => {
+        disconnectRoom('COMPLETE');
+        setSessionDetails((current) => {
+            if (!current) return current;
+            const nextSession = { ...current, status: 'COMPLETED' };
+            sessionDetailsRef.current = nextSession;
+            return nextSession;
+        });
+        setPresenceSummary((current) => current ? {
+            ...current,
+            status: 'COMPLETED',
+            roomWindow: {
+                ...current.roomWindow,
+                canRejoinNow: false,
+            },
+        } : current);
+        setShowExitDialog(false);
+        setExitContext(null);
+        setJoinState('COMPLETED');
+        setIsLoading(false);
+
+        if (options?.shouldToast && options.toastMessage) {
+            toast.success(options.toastMessage, { duration: 5000 });
+        }
+    };
+
+    const startJoining = () => {
+        setExitContext(null);
+        setIsLoading(true);
+        setJoinState('JOINING');
+    };
+
+    const handleLeaveCall = (returnToDashboard = false) => {
+        const latestSession = sessionDetailsRef.current;
+        const sessionAlreadyCompleted = latestSession?.status === 'COMPLETED';
+        const rejoinable = !!latestSession && canRejoinSession(latestSession);
+        const rejoinMessage = rejoinDeadlineLabel
+            ? `You left the call. You can rejoin until ${rejoinDeadlineLabel}.`
+            : 'You left the call.';
+
+        setShowExitDialog(false);
+        setIsSidebarOpen(false);
+        disconnectRoom('LEAVE');
+        setIsLoading(false);
+        setExitContext('LEFT');
+        setJoinState(!sessionAlreadyCompleted && rejoinable ? 'LEFT' : 'COMPLETED');
+
+        toast.success(sessionAlreadyCompleted ? 'Session completed. Rejoin is now closed.' : rejoinMessage, { duration: 5000 });
+
+        if (returnToDashboard) {
+            navigate('/dashboard');
+        }
+    };
+
+    const handleCompleteSession = async () => {
+        if (!id || !sessionDetails || !canUserCompleteSession) return;
+
+        try {
+            setIsCompletingSession(true);
+            await api.post(`/sessions/${id}/end`);
+            applyCompletedSessionState({
+                shouldToast: true,
+                toastMessage: 'Session completed. Rejoin is now closed.',
+            });
+        } catch (error: any) {
+            console.error('Failed to complete session:', error);
+            toast.error(error.response?.data?.message || 'Unable to complete the session right now.');
+        } finally {
+            setIsCompletingSession(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!id || !user) return;
+
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) return;
+
+        const handleSessionCompleted = (data: {
+            sessionId: string;
+            completedByUserId?: string;
+        }) => {
+            if (data.sessionId !== id) return;
+
+            applyCompletedSessionState({
+                shouldToast: data.completedByUserId !== user.id,
+                toastMessage: 'This session has been completed. Rejoin is now closed.',
+            });
+        };
+
+        socket.on('session:completed', handleSessionCompleted);
+
+        return () => {
+            socket.off('session:completed', handleSessionCompleted);
+        };
+    }, [id, navigate, user]);
 
     useEffect(() => {
         if (!id || !user || joinState !== 'JOINING') return;
 
         let isUnmounting = false;
 
-        const initTwilioVideo = async () => {
+        const initMeteredVideo = async () => {
             if (!id || !user) return;
 
+            if (!(globalThis as any).Metered?.Meeting) {
+                toast.error('Video SDK not loaded. Please refresh the page.');
+                setIsLoading(false);
+                return;
+            }
+
             try {
-                // 1. Get Twilio Access Token from our backend
-                const response = await api.post(`/sessions/${id}/twilio-token`);
-                const { token, aiMonitoringConsent: consentFromServer } = response.data;
+                // 1. Get media token from our backend (same endpoint, now returns Metered token)
+                const response = await api.post(`/sessions/${id}/media-token`);
+                const { token, roomName, aiMonitoringConsent: consentFromServer } = response.data;
                 setAiMonitoringConsent(!!consentFromServer);
 
                 if (isUnmounting) return;
 
-                let room: TwilioVideo.Room;
+                // 2. Get user media first so we can fallback gracefully
+                let localStream: MediaStream;
                 try {
-                    // Try to connect with both video and audio
-                    room = await TwilioVideo.connect(token, {
-                        video: { width: 1280, height: 720 },
-                        audio: true,
-                        name: id // Room name is the session ID
-                    });
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
                 } catch (err: any) {
-                    // If video fails (e.g. camera in use by phone link), fallback to audio-only
-                    if (err.message && (err.message.includes('video source') || err.message.includes('Permission'))) {
-                        console.warn("Video connection failed, falling back to audio-only:", err.message);
-                        toast.error("Camera unavailable. Joining with audio only.", { duration: 5000 });
-
-                        room = await TwilioVideo.connect(token, {
-                            video: false,
-                            audio: true,
-                            name: id
-                        });
+                    if (err.message?.includes('video') || err.name === 'NotReadableError') {
+                        console.warn('Video unavailable, falling back to audio-only:', err.message);
+                        toast.error('Camera unavailable. Joining with audio only.', { duration: 5000 });
+                        localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
                         setIsVideoOff(true);
                     } else {
                         throw err;
@@ -175,166 +760,208 @@ export default function SessionRoom() {
                 }
 
                 if (isUnmounting) {
-                    room.disconnect();
+                    localStream.getTracks().forEach(t => t.stop());
                     return;
                 }
 
-                roomRef.current = room;
-                setIsLoading(false);
-                setIsConnected(room.participants.size > 0);
+                localStreamRef.current = localStream;
 
-                // Ensure the session is marked IN_PROGRESS as a fallback if the webhook is delayed
-                api.post(`/sessions/${id}/start`).catch(err => {
-                    console.warn("Manual start fallback failed or session already started", err);
-                });
+                // 3. Attach local video
+                if (localVideoRef.current) {
+                    localVideoRef.current.innerHTML = '';
+                    const videoTracks = localStream.getVideoTracks();
+                    if (videoTracks.length > 0) {
+                        const localVideo = document.createElement('video');
+                        localVideo.autoplay = true;
+                        localVideo.muted = true;
+                        localVideo.playsInline = true;
+                        localVideo.srcObject = new MediaStream([videoTracks[0]]);
+                        localVideo.style.width = '100%';
+                        localVideo.style.height = '100%';
+                        localVideo.style.objectFit = 'cover';
+                        localVideo.style.transform = 'scaleX(-1)';
+                        localVideo.style.display = 'block';
+                        localVideoRef.current.appendChild(localVideo);
+                    }
+                }
 
-                // Helper to attach a remote track
-                const attachTrack = (track: TwilioVideo.AudioTrack | TwilioVideo.VideoTrack) => {
-                    if (remoteVideoRef.current) {
-                        remoteVideoRef.current.appendChild(track.attach());
+                // 4. Create Metered meeting and join
+                const meeting = new (globalThis as any).Metered.Meeting();
+                roomRef.current = meeting;
+
+                // Build attention adapter from localStream tracks
+                const videoTracks = localStream.getVideoTracks();
+                const audioTracks = localStream.getAudioTracks();
+
+                const makeTrackAdapter = (track: MediaStreamTrack, kind: 'video' | 'audio') => {
+                    const listeners: Record<string, (() => void)[]> = {};
+                    return {
+                        kind,
+                        get isEnabled() { return track.enabled; },
+                        mediaStreamTrack: track,
+                        on(event: string, handler: () => void) {
+                            (listeners[event] = listeners[event] || []).push(handler);
+                        }
+                    };
+                };
+
+                const videoAdapters = videoTracks.map(t => makeTrackAdapter(t, 'video'));
+                const audioAdapters = audioTracks.map(t => makeTrackAdapter(t, 'audio'));
+                const adapter: AttentionRoomAdapter = {
+                    localParticipant: {
+                        videoTracks: new Map(videoAdapters.map((a, i) => [`video-${i}`, { track: a, isEnabled: videoAdapters[i].isEnabled }])),
+                        audioTracks: new Map(audioAdapters.map((a, i) => [`audio-${i}`, { track: a, isEnabled: audioAdapters[i].isEnabled }])),
+                        on: (_event: string, _handler: any) => { /* not used for local */ }
+                    }
+                };
+                setAttentionAdapter(adapter);
+
+                // ── Bind Metered events ──
+
+                // Remote participant's track became available
+                meeting.on('remoteTrackStarted', (trackItem: any) => {
+                    if (isUnmounting) return;
+                    if (trackItem.type === 'video') {
+                        const remoteVideo = document.createElement('video');
+                        remoteVideo.id = `metered-remote-video-${trackItem.participantSessionId}`;
+                        remoteVideo.autoplay = true;
+                        remoteVideo.playsInline = true;
+                        remoteVideo.style.width = '100%';
+                        remoteVideo.style.height = '100%';
+                        remoteVideo.style.objectFit = 'cover';
+                        remoteVideo.srcObject = new MediaStream([trackItem.track]);
+                        if (remoteVideoRef.current) {
+                            remoteVideoRef.current.appendChild(remoteVideo);
+                        }
+                        remoteStreamsRef.current.set(`video-${trackItem.participantSessionId}`, remoteVideo);
                         setIsConnected(true);
+                    } else if (trackItem.type === 'audio') {
+                        const audioEl = document.createElement('audio');
+                        audioEl.id = `metered-remote-audio-${trackItem.participantSessionId}`;
+                        audioEl.autoplay = true;
+                        audioEl.srcObject = new MediaStream([trackItem.track]);
+                        document.body.appendChild(audioEl);
+                        remoteStreamsRef.current.set(`audio-${trackItem.participantSessionId}`, audioEl);
                     }
-                };
-
-                // Helper to detach a remote track
-                const detachTrack = (track: TwilioVideo.AudioTrack | TwilioVideo.VideoTrack) => {
-                    track.detach().forEach((element) => element.remove());
-                    // If no one else is in the room, update status
-                    if (room.participants.size === 0) {
-                        setIsConnected(false);
-                    }
-                };
-
-                // 4. Attach tracks from participants already in the room
-                room.participants.forEach((participant) => {
-                    // Handle ALREADY subscribed tracks
-                    participant.tracks.forEach((publication) => {
-                        if (publication.isSubscribed && publication.track) {
-                            attachTrack(publication.track as TwilioVideo.AudioTrack | TwilioVideo.VideoTrack);
-                        }
-                    });
-
-                    // Listen for this participant adding new tracks later
-                    participant.on('trackSubscribed', (track) => {
-                        attachTrack(track as TwilioVideo.AudioTrack | TwilioVideo.VideoTrack);
-                    });
-
-                    participant.on('trackUnsubscribed', (track) => {
-                        detachTrack(track as TwilioVideo.AudioTrack | TwilioVideo.VideoTrack);
-                    });
-
-                    participant.on('trackEnabled', (track) => {
-                        if (track.kind === 'video' && remoteVideoRef.current) {
-                            remoteVideoRef.current.querySelectorAll('video').forEach(v => v.style.opacity = '1');
-                        }
-                    });
-
-                    participant.on('trackDisabled', (track) => {
-                        if (track.kind === 'video' && remoteVideoRef.current) {
-                            remoteVideoRef.current.querySelectorAll('video').forEach(v => v.style.opacity = '0');
-                        }
-                    });
                 });
 
-                // 5. Listen for new participants joining
-                room.on('participantConnected', (participant) => {
-                    toast(`${participant.identity.split('::')[1] || 'Participant'} joined the room`);
+                meeting.on('remoteTrackStopped', (trackItem: any) => {
+                    const videoEl = document.getElementById(`metered-remote-video-${trackItem.participantSessionId}`);
+                    videoEl?.remove();
+                    const audioEl = document.getElementById(`metered-remote-audio-${trackItem.participantSessionId}`);
+                    audioEl?.remove();
+                    remoteStreamsRef.current.delete(`video-${trackItem.participantSessionId}`);
+                    remoteStreamsRef.current.delete(`audio-${trackItem.participantSessionId}`);
+                });
+
+                meeting.on('participantJoined', (participant: any) => {
+                    toast(`${participant.participantName || 'Participant'} joined the room`);
                     setIsConnected(true);
-
-                    participant.on('trackSubscribed', (track) => {
-                        attachTrack(track as TwilioVideo.AudioTrack | TwilioVideo.VideoTrack);
-                    });
-
-                    participant.on('trackUnsubscribed', (track) => {
-                        detachTrack(track as TwilioVideo.AudioTrack | TwilioVideo.VideoTrack);
-                    });
-
-                    participant.on('trackEnabled', (track) => {
-                        if (track.kind === 'video' && remoteVideoRef.current) {
-                            remoteVideoRef.current.querySelectorAll('video').forEach(v => v.style.opacity = '1');
-                        }
-                    });
-
-                    participant.on('trackDisabled', (track) => {
-                        if (track.kind === 'video' && remoteVideoRef.current) {
-                            remoteVideoRef.current.querySelectorAll('video').forEach(v => {
-                                if (v.parentElement !== localVideoRef.current) {
-                                    v.style.opacity = '0';
-                                }
-                            });
-                        }
-                    });
                 });
 
-                // 6. Listen for participants leaving
-                room.on('participantDisconnected', (participant) => {
-                    toast(`${participant.identity.split('::')[1] || 'Participant'} left the room`);
-                    participant.tracks.forEach((publication) => {
-                        if (publication.track) {
-                            detachTrack(publication.track as TwilioVideo.AudioTrack | TwilioVideo.VideoTrack);
-                        }
-                    });
-                    if (room.participants.size === 0) {
-                        setIsConnected(false);
-                    }
+                meeting.on('participantLeft', (participant: any) => {
+                    toast(`${participant.participantName || 'Participant'} left the room`);
+                    // Check if anyone else remains
+                    meeting.getParticipants?.().then((participants: any[]) => {
+                        if (!participants || participants.length === 0) setIsConnected(false);
+                    }).catch(() => setIsConnected(false));
                 });
 
-                // Handle network disconnection and reconnects
-                room.on('reconnecting', (error) => {
-                    console.log('Reconnecting your connection!', error?.message);
+                meeting.on('reconnecting', () => {
                     toast.loading('Connection lost. Reconnecting...', { id: 'reconnect-toast' });
                 });
 
-                room.on('reconnected', () => {
+                meeting.on('reconnected', () => {
                     toast.success('Reconnected successfully!', { id: 'reconnect-toast' });
                 });
 
-                room.on('disconnected', (_disconnectedRoom, error) => {
+                meeting.on('meetingEnded', () => {
                     toast.dismiss('reconnect-toast');
-                    if (error) {
-                        console.error('Disconnected due to error:', error);
-                        if (error.code === 53118 || error.code === 20104) {
-                            toast.error('Session has expired or ended.');
-                            navigate('/dashboard');
-                        } else {
-                            toast.error('Connection lost permanently. Please refresh to rejoin if within the session window.');
-                        }
-                    }
-                    if (localVideoRef.current) localVideoRef.current.innerHTML = '';
-                    if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
+                    const disconnectIntent = disconnectIntentRef.current;
+                    disconnectIntentRef.current = null;
+                    const latestSession = sessionDetailsRef.current;
+
+                    clearVideoContainers();
                     setIsConnected(false);
-                    roomRef.current = null; // Important: stops the attention monitor hook
+                    setIsLoading(false);
+                    roomRef.current = null;
+                    setAttentionAdapter(null);
+
+                    if (disconnectIntent === 'LEAVE' || disconnectIntent === 'COMPLETE') return;
+
+                    if (latestSession?.status === 'COMPLETED') {
+                        setExitContext(null);
+                        setJoinState('COMPLETED');
+                        return;
+                    }
+
+                    if (latestSession && canRejoinSession(latestSession)) {
+                        setExitContext('NETWORK');
+                        setJoinState('LEFT');
+                        toast.error('Connection lost. You can rejoin if the session window is still open.', { duration: 6000 });
+                    }
+                });
+
+                meeting.on('error', (err: any) => {
+                    console.error('[MeteredVideo] Error:', err);
+                    toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
+                });
+
+                // 5. Join the Metered room with the token from our backend
+                await meeting.join({
+                    roomURL: roomName || id,    // backend returns roomName (session ID based)
+                    meetingToken: token,
+                    participantName: user.id,  // use user ID as stable identity
+                    localStream                // pass our pre-acquired stream for fine-grained control
+                });
+
+                if (isUnmounting) {
+                    meeting.leaveMeeting?.();
+                    return;
+                }
+
+                setIsLoading(false);
+
+                // Mark session IN_PROGRESS as fallback if webhook is delayed
+                api.post(`/sessions/${id}/start`).catch(err => {
+                    console.warn('Manual start fallback failed or session already started', err);
                 });
 
             } catch (err: any) {
-                console.error('Failed to join Twilio room:', err);
+                console.error('[SessionRoom] Failed to join Metered room:', err);
 
-                // Detailed error messaging for permissions
-                if (err.message?.includes('Permission denied')) {
+                if (err.message?.includes('Permission denied') || err.name === 'NotAllowedError') {
                     toast.error('Browser denied camera/microphone access. Please check your permissions.');
                 } else if (err.response?.data?.message) {
-                    toast.error(err.response.data.message); // e.g. "Session room is not yet open"
-                    navigate('/dashboard');
+                    toast.error(err.response.data.message);
+                    if (sessionDetails && canRejoinSession(sessionDetails)) {
+                        setExitContext('NETWORK');
+                        setJoinState('LEFT');
+                    } else {
+                        navigate('/dashboard');
+                    }
                 } else {
                     toast.error(`Could not connect: ${err.message || 'Unknown error'}`);
                 }
 
-                if (!isUnmounting) {
-                    setIsLoading(false);
-                }
+                if (!isUnmounting) setIsLoading(false);
             }
         };
 
-        initTwilioVideo();
+        initMeteredVideo();
 
         return () => {
             isUnmounting = true;
             if (roomRef.current) {
-                roomRef.current.disconnect();
+                roomRef.current.leaveMeeting?.();
                 roomRef.current = null;
             }
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(t => t.stop());
+                localStreamRef.current = null;
+            }
         };
-    }, [id, user, joinState]);
+    }, [id, navigate, sessionDetails, user, joinState]);
 
     // Timeout warning if waiting for > 5 mins -> Only if JOINING (they passed acknowledgment)
     useEffect(() => {
@@ -350,70 +977,27 @@ export default function SessionRoom() {
         }
     }, [isLoading, isConnected, joinState]);
 
-    // Attach local video after DOM mounts (when isLoading changes to false)
+    // Attach local video after DOM mounts (Metered streams local tracks during join; handled inline)
+    // This effect is a no-op for Metered but kept to avoid breaking any future local-video re-attachment logic.
     useEffect(() => {
-        if (!isLoading && roomRef.current && localVideoRef.current) {
-            localVideoRef.current.innerHTML = '';
-            roomRef.current.localParticipant.tracks.forEach((publication) => {
-                if (publication.track && publication.track.kind === 'video') {
-                    const track = publication.track as TwilioVideo.LocalVideoTrack;
-                    const videoEl = track.attach();
-                    videoEl.style.width = '100%';
-                    videoEl.style.height = '100%';
-                    videoEl.style.objectFit = 'cover';
-                    videoEl.style.transform = 'scaleX(-1)'; // Mirror so it feels natural
-                    videoEl.style.display = 'block';
-                    localVideoRef.current?.appendChild(videoEl);
-                }
-            });
-        }
+        // Local video is already attached during initMeteredVideo's getUserMedia step
     }, [isLoading]);
 
-    // Handlers
+    // Handlers — toggle Metered audio/video tracks directly on the localStream
     const toggleMute = () => {
-        if (roomRef.current?.localParticipant) {
-            if (isMuted) {
-                roomRef.current.localParticipant.audioTracks.forEach(publication => {
-                    publication.track?.enable();
-                });
-            } else {
-                roomRef.current.localParticipant.audioTracks.forEach(publication => {
-                    publication.track?.disable();
-                });
-            }
+        if (localStreamRef.current) {
+            const audioTracks = localStreamRef.current.getAudioTracks();
+            audioTracks.forEach(track => { track.enabled = isMuted; }); // flip
             setIsMuted(!isMuted);
         }
     };
 
     const toggleVideo = () => {
-        if (roomRef.current?.localParticipant) {
-            if (isVideoOff) {
-                roomRef.current.localParticipant.videoTracks.forEach(publication => {
-                    publication.track?.enable();
-                });
-            } else {
-                roomRef.current.localParticipant.videoTracks.forEach(publication => {
-                    publication.track?.disable();
-                });
-            }
+        if (localStreamRef.current) {
+            const videoTracks = localStreamRef.current.getVideoTracks();
+            videoTracks.forEach(track => { track.enabled = isVideoOff; }); // flip
             setIsVideoOff(!isVideoOff);
         }
-    };
-
-    const handleLeave = async () => {
-        if (id) {
-            try {
-                await api.post(`/sessions/${id}/end`);
-            } catch (error) {
-                console.error("Fallback /end failed:", error);
-            }
-        }
-
-        if (roomRef.current) {
-            roomRef.current.disconnect();
-            roomRef.current = null;
-        }
-        navigate('/dashboard'); // or redirect back to appointments list
     };
 
     const handleSaveNotes = async () => {
@@ -427,9 +1011,22 @@ export default function SessionRoom() {
         }
     };
 
+    const renderOverlayCloseButton = () => (
+        <button
+            type="button"
+            className="session-overlay-close-btn"
+            onClick={() => navigate('/dashboard')}
+            aria-label="Close session window"
+            title="Close"
+        >
+            <X size={18} />
+        </button>
+    );
+
     if (isLoading && joinState === 'JOINING') {
         return (
             <div className="session-room-loading">
+                {renderOverlayCloseButton()}
                 <Loader2 className="animate-spin" size={48} />
                 <p>Preparing secure session environment...</p>
             </div>
@@ -437,28 +1034,37 @@ export default function SessionRoom() {
     }
 
     if (joinState === 'COMPLETED') {
-        return (
-            <div className="session-room-loading" style={{ flexDirection: 'column', gap: '1rem', padding: '2rem', textAlign: 'center' }}>
-                <CheckCircle size={64} style={{ color: 'var(--primary-color)' }} />
-                <h2>Session Completed</h2>
-                <p>This session has ended and is permanently closed.</p>
-                <div style={{ marginTop: '2rem' }}>
-                    <button className="btn btn-submit" onClick={() => navigate('/dashboard')}>Return to Dashboard</button>
-                </div>
-            </div>
-        );
+        const isGraceWindowExpired = sessionDetails ? !canRejoinSession(sessionDetails) && !isSessionTerminal(sessionDetails) : false;
+        let completedTitle = 'Session Unavailable';
+        let completedMessage = 'This session is no longer available to join.';
+
+        if (sessionDetails?.status === 'COMPLETED') {
+            completedTitle = 'Session Completed';
+            completedMessage = 'This session has ended and is permanently closed.';
+        } else if (isGraceWindowExpired) {
+            completedTitle = 'Session Window Closed';
+            completedMessage = 'The secure rejoin window has ended for this session.';
+        }
+
+        return <SessionStatusScreen title={completedTitle} message={completedMessage} onClose={() => navigate('/dashboard')} />;
     }
 
     if (joinState === 'WAITING' && sessionDetails) {
         const minsLeft = Math.ceil(timeRemaining / 60000);
+        const minuteLabel = minsLeft === 1 ? 'minute' : 'minutes';
+        const roomOpenLabel = sessionTiming ? formatDateTime(new Date(sessionTiming.roomOpenMs).toISOString()) : null;
         return (
             <div className="session-room-loading" style={{ flexDirection: 'column', gap: '1rem', padding: '2rem', textAlign: 'center' }}>
+                {renderOverlayCloseButton()}
                 <Clock size={48} style={{ color: 'var(--primary-color)' }} />
                 <h2>Waiting Room</h2>
-                <p>Your session is scheduled for <strong>{new Date(sessionDetails.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>.</p>
-                <p>The secure room will open 15 minutes prior. Please wait...</p>
+                <p>Your session is scheduled for <strong>{formatSessionDateTime(sessionDetails.scheduledAt)}</strong>.</p>
+                <p>
+                    The secure room opens 15 minutes prior at{' '}
+                    <strong>{roomOpenLabel || 'the scheduled opening time'}</strong>.
+                </p>
                 <div style={{ marginTop: '2rem', padding: '1rem 2rem', background: '#e0f2fe', borderRadius: '8px', color: '#0369a1', fontWeight: 600 }}>
-                    Opening in approx. {minsLeft} minute{minsLeft !== 1 ? 's' : ''}
+                    Opening in approx. {minsLeft} {minuteLabel}
                 </div>
             </div>
         );
@@ -467,6 +1073,7 @@ export default function SessionRoom() {
     if (joinState === 'ACKNOWLEDGMENT') {
         return (
             <div className="session-room-loading">
+                {renderOverlayCloseButton()}
                 <div className="pre-join-modal">
                     <Video size={36} className="text-primary mb-4" />
                     <h2>Ready to join?</h2>
@@ -491,7 +1098,7 @@ export default function SessionRoom() {
                     <button
                         className="btn btn-submit"
                         disabled={!hasAcknowledged}
-                        onClick={() => setJoinState('JOINING')}
+                        onClick={startJoining}
                         style={{ width: '100%', marginTop: '1.5rem', opacity: hasAcknowledged ? 1 : 0.6 }}
                     >
                         Join Session
@@ -505,6 +1112,24 @@ export default function SessionRoom() {
                     </button>
                 </div>
             </div>
+        );
+    }
+
+    if (joinState === 'LEFT' && sessionDetails) {
+        const heading = exitContext === 'NETWORK' ? 'Connection interrupted' : 'You left the call';
+        const message = exitContext === 'NETWORK'
+            ? 'Your secure session was interrupted, but the room is still open for you.'
+            : 'You are safely out of the room, and you can hop back in whenever you are ready.';
+
+        return (
+            <SessionRejoinScreen
+                heading={heading}
+                message={message}
+                scheduledRangeLabel={scheduledRangeLabel}
+                rejoinDeadlineLabel={rejoinDeadlineLabel}
+                onClose={() => navigate('/dashboard')}
+                onRejoin={startJoining}
+            />
         );
     }
 
@@ -538,9 +1163,9 @@ export default function SessionRoom() {
                         </span>
                         {sessionDetails && (
                             <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
-                                Scheduled {new Date(sessionDetails.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                Scheduled {formatSessionDateTime(sessionDetails.scheduledAt)}
                                 {' '}–{' '}
-                                {new Date(new Date(sessionDetails.scheduledAt).getTime() + (sessionDetails.durationMins * 60000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {sessionTiming ? formatTimestamp(sessionTiming.scheduledEndMs) : ''}
                             </div>
                         )}
                     </div>
@@ -594,8 +1219,8 @@ export default function SessionRoom() {
                     {/* End call */}
                     <button
                         className="control-btn leave-btn"
-                        onClick={handleLeave}
-                        title="End Session"
+                        onClick={() => setShowExitDialog(true)}
+                        title="Leave Call"
                     >
                         <PhoneOff size={24} />
                     </button>
@@ -647,25 +1272,105 @@ export default function SessionRoom() {
                                 <div className="participant-avatar">{userInitial}</div>
                                 <div className="participant-info">
                                     <span className="participant-name">{userName} (You)</span>
-                                    <span className="participant-role">{user?.role?.replace('_', ' ').toLowerCase()}</span>
+                                    <span className="participant-role">{formatRoleLabel(user?.role)}</span>
+                                    {localPresence && (
+                                        <span className={`participant-presence-badge ${getPresenceStateTone(localPresence.state)}`}>
+                                            {formatPresenceStateLabel(localPresence.state)}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                            {roomRef.current && Array.from(roomRef.current.participants.values()).map(p => {
-                                const parts = p.identity.split('::');
-                                const name = parts.length >= 2 ? parts[1] : 'Other Participant';
-                                const role = parts.length >= 3 ? parts[2].replace('_', ' ').toLowerCase() : 'connected';
-                                const initials = name.charAt(0).toUpperCase();
+                            {isPresenceLoading && (
+                                <div className="presence-panel-state">
+                                    <Loader2 size={16} className="client-spin" />
+                                    <span>Refreshing live presence…</span>
+                                </div>
+                            )}
+                            {presenceError && (
+                                <div className="presence-panel-error">{presenceError}</div>
+                            )}
+                            {remotePresenceParticipants.map((participant) => {
+                                const initials = `${participant.firstName?.[0] || ''}${participant.lastName?.[0] || ''}`.toUpperCase() || 'P';
 
                                 return (
-                                    <div key={p.sid} className="participant-item">
-                                        <div className="participant-avatar" style={{ background: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' }}>{initials}</div>
-                                        <div className="participant-info">
-                                            <span className="participant-name">{name}</span>
-                                            <span className="participant-role">{role}</span>
+                                    <div key={participant.userId} className="participant-card presence-card">
+                                        <div className="participant-item participant-item-compact">
+                                            <div className="participant-avatar" style={{ background: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' }}>{initials}</div>
+                                            <div className="participant-info">
+                                                <span className="participant-name">{participant.firstName} {participant.lastName}</span>
+                                                <span className="participant-role">{formatRoleLabel(participant.role)}</span>
+                                            </div>
+                                            <span className={`participant-presence-badge ${getPresenceStateTone(participant.state)}`}>
+                                                {formatPresenceStateLabel(participant.state)}
+                                            </span>
                                         </div>
+
+                                        <div className="presence-meta-grid">
+                                            <div className="presence-meta-item">
+                                                <span className="presence-meta-label">Last joined</span>
+                                                <strong>{formatDateTime(participant.lastJoinedAt)}</strong>
+                                            </div>
+                                            <div className="presence-meta-item">
+                                                <span className="presence-meta-label">Last left</span>
+                                                <strong>{formatDateTime(participant.lastLeftAt)}</strong>
+                                            </div>
+                                            <div className="presence-meta-item">
+                                                <span className="presence-meta-label">Connected time</span>
+                                                <strong>{formatConnectedDuration(participant.totalConnectedSeconds)}</strong>
+                                            </div>
+                                            <div className="presence-meta-item">
+                                                <span className="presence-meta-label">Rejoins</span>
+                                                <strong>{participant.reconnectCount}</strong>
+                                            </div>
+                                        </div>
+
+                                        {canViewDetailedPresence && participant.lastDisconnectReason && (
+                                            <div className="presence-footnote">
+                                                Last disconnect reason: {participant.lastDisconnectReason}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
+
+                            {presenceSummary && canViewDetailedPresence && (
+                                <div className="presence-audit-card">
+                                    <div className="presence-audit-header">
+                                        <h4>Presence audit trail</h4>
+                                        <span>Live</span>
+                                    </div>
+                                    <div className="presence-audit-summary">
+                                        <div>
+                                            <span className="presence-meta-label">Room window</span>
+                                            <strong>{formatDateTime(presenceSummary.roomWindow.opensAt)} → {formatDateTime(presenceSummary.roomWindow.closesAt)}</strong>
+                                        </div>
+                                        <div>
+                                            <span className="presence-meta-label">Rejoin eligibility</span>
+                                            <strong>{presenceSummary.roomWindow.canRejoinNow ? 'Open now' : 'Closed'}</strong>
+                                        </div>
+                                    </div>
+
+                                    <div className="presence-event-list">
+                                        {presenceSummary.recentEvents.length === 0 ? (
+                                            <div className="presence-panel-state compact">No presence events yet.</div>
+                                        ) : (
+                                            presenceSummary.recentEvents.slice(0, 8).map((event) => (
+                                                <div key={event.id} className="presence-event-item">
+                                                    <div>
+                                                        <p className="presence-event-title">
+                                                            {getPresenceEventDescription(event, presenceParticipants)}
+                                                        </p>
+                                                        <p className="presence-event-subtitle">
+                                                            {formatPresenceEventLabel(event.eventType)} • {event.source.toLowerCase().replaceAll('_', ' ')}
+                                                        </p>
+                                                    </div>
+                                                    <span className="presence-event-time">{formatDateTime(event.occurredAt)}</span>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </>
                     )}
 
@@ -683,6 +1388,12 @@ export default function SessionRoom() {
                                 <span className="info-label">Session ID</span>
                                 <span className="info-value" style={{ fontSize: '0.7rem', wordBreak: 'break-all' }}>{id?.slice(0, 8)}...</span>
                             </div>
+                            {rejoinDeadlineLabel && (
+                                <div className="info-row">
+                                    <span className="info-label">Rejoin window</span>
+                                    <span className="info-value">Until {rejoinDeadlineLabel}</span>
+                                </div>
+                            )}
                             <div style={{ marginTop: '1rem' }}>
                                 <p style={{ fontSize: '0.78rem', color: '#6b7280', marginBottom: '0.5rem' }}>Session Notes</p>
                                 <textarea
@@ -695,10 +1406,36 @@ export default function SessionRoom() {
                                     Save Notes
                                 </button>
                             </div>
+                            <div className="session-action-card">
+                                <p className="session-action-title">Leave vs complete</p>
+                                <p className="session-action-copy">
+                                    Leave Call keeps the room rejoinable until the secure session window closes.
+                                </p>
+                                {canUserCompleteSession && (
+                                    <button
+                                        className="session-complete-btn"
+                                        onClick={() => setShowExitDialog(true)}
+                                        disabled={isCompletingSession}
+                                    >
+                                        {isCompletingSession ? 'Completing…' : 'Review leave & completion options'}
+                                    </button>
+                                )}
+                            </div>
                         </>
                     )}
                 </div>
             </aside>
+
+            {showExitDialog && (
+                <SessionExitDialog
+                    canUserCompleteSession={canUserCompleteSession}
+                    isCompletingSession={isCompletingSession}
+                    rejoinDeadlineLabel={rejoinDeadlineLabel}
+                    onCancel={() => setShowExitDialog(false)}
+                    onComplete={handleCompleteSession}
+                    onLeave={handleLeaveCall}
+                />
+            )}
         </div>
     );
 }
