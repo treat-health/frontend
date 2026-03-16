@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock, Sparkles } from 'lucide-react';
@@ -9,13 +9,12 @@ import SessionReportPanel from '../../components/session/SessionReportPanel';
 import { useAttentionMonitor, type AttentionRoomAdapter } from '../../hooks/useAttentionMonitor';
 import './SessionRoom.css';
 
-// Metered SDK is loaded via <script> tag in index.html
-declare global {
-    interface Window { Metered: any; }
-}
+// Metered SDK types are globally declared in src/types/metered.d.ts
+// MeteredMeeting interface is available globally from that declaration file.
+import type { MeteredMeeting } from '../../types/metered';
 
 const ROOM_OPEN_EARLY_MINUTES = 15;
-const ROOM_REJOIN_GRACE_MINUTES = 15;
+const ROOM_REJOIN_GRACE_MINUTES = 0; // Strict session end
 
 type JoinState = 'LOADING' | 'WAITING' | 'ACKNOWLEDGMENT' | 'JOINING' | 'LEFT' | 'COMPLETED';
 type ExitContext = 'LEFT' | 'NETWORK' | null;
@@ -221,6 +220,23 @@ function getPresenceEventDescription(event: PresenceEventSummary, participants: 
     }
 }
 
+function createTrackAdapter(track: MediaStreamTrack, kind: 'video' | 'audio') {
+    const listeners: Record<string, Array<() => void>> = {};
+
+    const registerListener = (event: string, handler: () => void) => {
+        const eventListeners = listeners[event] ?? [];
+        eventListeners.push(handler);
+        listeners[event] = eventListeners;
+    };
+
+    return {
+        kind,
+        get isEnabled() { return track.enabled; },
+        mediaStreamTrack: track,
+        on: registerListener,
+    };
+}
+
 
 interface SessionStatusScreenProps {
     title: string;
@@ -279,10 +295,12 @@ function SessionRejoinScreen({
                         <span>Session time</span>
                         <strong>{scheduledRangeLabel}</strong>
                     </div>
-                    <div className="session-rejoin-row">
-                        <span>Rejoin available until</span>
-                        <strong>{rejoinDeadlineLabel}</strong>
-                    </div>
+                    {rejoinDeadlineLabel && (
+                        <div className="session-rejoin-row">
+                            <span>Rejoin available until</span>
+                            <strong>{rejoinDeadlineLabel}</strong>
+                        </div>
+                    )}
                 </div>
 
                 <button
@@ -338,7 +356,7 @@ function SessionExitDialog({
                     </button>
                 </div>
                 <p className="session-dialog-copy">
-                    Leaving disconnects only you. The session stays rejoinable until <strong>{rejoinDeadlineLabel || 'the secure window closes'}</strong>.
+                    Leaving disconnects only you. The session stays rejoinable until <strong>{rejoinDeadlineLabel || 'the scheduled end time'}</strong>.
                 </p>
                 <div className="session-dialog-actions">
                     <button type="button" className="session-dialog-btn primary" onClick={() => onLeave(false)}>
@@ -366,49 +384,493 @@ function SessionExitDialog({
     );
 }
 
-export default function SessionRoom() {
-    const { id } = useParams<{ id: string }>();
-    const navigate = useNavigate();
-    const { user } = useAuthStore();
+// eslint-disable-next-line sonarjs/cognitive-complexity
+function renderPreJoinStage(params: {
+    isLoading: boolean;
+    joinState: JoinState;
+    sessionDetails: SessionDetails | null;
+    isGraceWindowExpired: boolean;
+    hasAcknowledged: boolean;
+    waitMinutesLeft: number;
+    waitMinuteLabel: string;
+    roomOpenLabel: string | null;
+    scheduledRangeLabel: string | null;
+    rejoinDeadlineLabel: string | null;
+    exitContext: ExitContext;
+    onCloseOverlay: () => void;
+    onCloseDashboard: () => void;
+    onStartJoining: () => void;
+    onToggleAcknowledged: (checked: boolean) => void;
+}): JSX.Element | null {
+    const {
+        isLoading,
+        joinState,
+        sessionDetails,
+        isGraceWindowExpired,
+        hasAcknowledged,
+        waitMinutesLeft,
+        waitMinuteLabel,
+        roomOpenLabel,
+        scheduledRangeLabel,
+        rejoinDeadlineLabel,
+        exitContext,
+        onCloseOverlay,
+        onCloseDashboard,
+        onStartJoining,
+        onToggleAcknowledged,
+    } = params;
 
-    const [isLoading, setIsLoading] = useState(true);
-    const [isConnected, setIsConnected] = useState(false);
+    if (isLoading && joinState === 'JOINING') {
+        return (
+            <div className="session-room-loading">
+                {onCloseOverlay()}
+                <Loader2 className="animate-spin" size={48} />
+                <p>Preparing secure session environment...</p>
+            </div>
+        );
+    }
 
-    // Media State
-    const [isMuted, setIsMuted] = useState(false);
-    const [isVideoOff, setIsVideoOff] = useState(false);
+    if (joinState === 'COMPLETED') {
+        let completedTitle = 'Session Unavailable';
+        let completedMessage = 'This session is no longer available to join.';
 
-    // Sidebar panel
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [sidebarTab, setSidebarTab] = useState<'info' | 'people' | 'report'>('people');
-    const [sessionNotes, setSessionNotes] = useState('');
-    const [reportRefreshTrigger, setReportRefreshTrigger] = useState(0);
-    const [showExitDialog, setShowExitDialog] = useState(false);
-    const [isCompletingSession, setIsCompletingSession] = useState(false);
-    const [exitContext, setExitContext] = useState<ExitContext>(null);
+        if (sessionDetails?.status === 'COMPLETED') {
+            completedTitle = 'Session Completed';
+            completedMessage = 'This session has ended and is permanently closed.';
+        } else if (isGraceWindowExpired) {
+            completedTitle = 'Session Window Closed';
+            completedMessage = 'The secure rejoin window has ended for this session.';
+        }
 
-    // Explicit session metadata & waiting room state
-    const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
-    const [joinState, setJoinState] = useState<JoinState>('LOADING');
-    const [timeRemaining, setTimeRemaining] = useState<number>(0);
-    const [hasAcknowledged, setHasAcknowledged] = useState(false);
-    const [aiMonitoringConsent, setAiMonitoringConsent] = useState(false);
-    const [presenceSummary, setPresenceSummary] = useState<PresenceSummary | null>(null);
-    const [isPresenceLoading, setIsPresenceLoading] = useState(false);
-    const [presenceError, setPresenceError] = useState<string | null>(null);
+        return <SessionStatusScreen title={completedTitle} message={completedMessage} onClose={onCloseDashboard} />;
+    }
 
-    // WebRTC Refs (provider-agnostic)
-    const localVideoRef = useRef<HTMLDivElement>(null);
-    const remoteVideoRef = useRef<HTMLDivElement>(null);
-    const roomRef = useRef<any | null>(null); // Metered meeting instance
-    const localStreamRef = useRef<MediaStream | null>(null);
-    const remoteStreamsRef = useRef<Map<string, HTMLElement>>(new Map());
-    const disconnectIntentRef = useRef<'LEAVE' | 'COMPLETE' | null>(null);
-    const presenceRefreshAbortRef = useRef(false);
-    const sessionDetailsRef = useRef<SessionDetails | null>(null);
-    const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
+    if (joinState === 'WAITING' && sessionDetails) {
+        return (
+            <div className="session-room-loading" style={{ flexDirection: 'column', gap: '1rem', padding: '2rem', textAlign: 'center' }}>
+                {onCloseOverlay()}
+                <Clock size={48} style={{ color: 'var(--primary-color)' }} />
+                <h2>Waiting Room</h2>
+                <p>Your session is scheduled for <strong>{formatSessionDateTime(sessionDetails.scheduledAt)}</strong>.</p>
+                <p>
+                    The secure room opens 15 minutes prior at{' '}
+                    <strong>{roomOpenLabel || 'the scheduled opening time'}</strong>.
+                </p>
+                <div style={{ marginTop: '2rem', padding: '1rem 2rem', background: '#e0f2fe', borderRadius: '8px', color: '#0369a1', fontWeight: 600 }}>
+                    Opening in approx. {waitMinutesLeft} {waitMinuteLabel}
+                </div>
+            </div>
+        );
+    }
 
-    // Load explicit Session data first
+    if (joinState === 'ACKNOWLEDGMENT') {
+        return (
+            <div className="session-room-loading">
+                {onCloseOverlay()}
+                <div className="pre-join-modal">
+                    <Video size={36} className="text-primary mb-4" />
+                    <h2>Ready to join?</h2>
+
+                    <div className="pre-join-notice">
+                        <p><strong>For session quality and safety, please keep your camera on and remain present.</strong></p>
+                        <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                            We use local technical signals (camera/mic status and audio activity) to ensure everyone is present.
+                            <br />Your session remains completely private.
+                        </p>
+                    </div>
+
+                    <label className="pre-join-checkbox">
+                        <input
+                            type="checkbox"
+                            checked={hasAcknowledged}
+                            onChange={(e) => onToggleAcknowledged(e.target.checked)}
+                        />
+                        <span>I understand and agree</span>
+                    </label>
+
+                    <button
+                        className="btn btn-submit"
+                        disabled={!hasAcknowledged}
+                        onClick={onStartJoining}
+                        style={{ width: '100%', marginTop: '1.5rem', opacity: hasAcknowledged ? 1 : 0.6 }}
+                    >
+                        Join Session
+                    </button>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={onCloseDashboard}
+                        style={{ width: '100%', marginTop: '0.5rem', background: 'transparent', border: '1px solid #e2e8f0', color: '#64748b' }}
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (joinState === 'LEFT' && sessionDetails) {
+        const heading = exitContext === 'NETWORK' ? 'Connection interrupted' : 'You left the call';
+        const message = exitContext === 'NETWORK'
+            ? 'Your secure session was interrupted, but the room is still open for you.'
+            : 'You are safely out of the room, and you can hop back in whenever you are ready.';
+
+        return (
+            <SessionRejoinScreen
+                heading={heading}
+                message={message}
+                scheduledRangeLabel={scheduledRangeLabel}
+                rejoinDeadlineLabel={rejoinDeadlineLabel}
+                onClose={onCloseDashboard}
+                onRejoin={onStartJoining}
+            />
+        );
+    }
+
+    return null;
+}
+
+function useMeteredJoinEffect(params: {
+    id?: string;
+    user: { id: string } | null;
+    joinState: JoinState;
+    navigate: (to: string) => void;
+    sessionDetails: SessionDetails | null;
+    setAiMonitoringConsent: (value: boolean) => void;
+    setIsLoading: (value: boolean) => void;
+    setIsVideoOff: (value: boolean) => void;
+    setAttentionAdapter: (adapter: AttentionRoomAdapter | null) => void;
+    setIsConnected: (value: boolean) => void;
+    setExitContext: (value: ExitContext) => void;
+    setJoinState: (value: JoinState) => void;
+    localVideoRef: React.RefObject<HTMLDivElement | null>;
+    remoteVideoRef: React.RefObject<HTMLDivElement | null>;
+    localStreamRef: React.RefObject<MediaStream | null>;
+    remoteStreamsRef: React.RefObject<Map<string, HTMLElement>>;
+    roomRef: React.RefObject<MeteredMeeting | null>;
+    sessionDetailsRef: React.RefObject<SessionDetails | null>;
+    disconnectIntentRef: React.RefObject<'LEAVE' | 'COMPLETE' | null>;
+    clearVideoContainers: () => void;
+}) {
+    const {
+        id,
+        user,
+        joinState,
+        navigate,
+        sessionDetails,
+        setAiMonitoringConsent,
+        setIsLoading,
+        setIsVideoOff,
+        setAttentionAdapter,
+        setIsConnected,
+        setExitContext,
+        setJoinState,
+        localVideoRef,
+        remoteVideoRef,
+        localStreamRef,
+        remoteStreamsRef,
+        roomRef,
+        sessionDetailsRef,
+        disconnectIntentRef,
+        clearVideoContainers,
+    } = params;
+
+    useEffect(() => {
+        if (!id || !user || joinState !== 'JOINING') return;
+
+        let isUnmounting = false;
+
+        // eslint-disable-next-line sonarjs/cognitive-complexity
+        const initMeteredVideo = async () => {
+            if (!id || !user) return;
+
+            if (!(globalThis as any).Metered?.Meeting) {
+                toast.error('Video SDK not loaded. Please refresh the page.');
+                setIsLoading(false);
+                return;
+            }
+
+            try {
+                const response = await api.post(`/sessions/${id}/media-token`);
+                const { token, roomName, aiMonitoringConsent: consentFromServer } = response.data;
+                setAiMonitoringConsent(!!consentFromServer);
+
+                if (isUnmounting) return;
+
+                let localStream: MediaStream;
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
+                } catch (err: any) {
+                    if (err.message?.includes('video') || err.name === 'NotReadableError') {
+                        console.warn('Video unavailable, falling back to audio-only:', err.message);
+                        toast.error('Camera unavailable. Joining with audio only.', { duration: 5000 });
+                        localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+                        setIsVideoOff(true);
+                    } else {
+                        throw err;
+                    }
+                }
+
+                if (isUnmounting) {
+                    localStream.getTracks().forEach((t) => t.stop());
+                    return;
+                }
+
+                localStreamRef.current = localStream;
+
+                if (localVideoRef.current) {
+                    localVideoRef.current.innerHTML = '';
+                    const videoTracks = localStream.getVideoTracks();
+                    if (videoTracks.length > 0) {
+                        const localVideo = document.createElement('video');
+                        localVideo.autoplay = true;
+                        localVideo.muted = true;
+                        localVideo.playsInline = true;
+                        localVideo.srcObject = new MediaStream([videoTracks[0]]);
+                        localVideo.style.width = '100%';
+                        localVideo.style.height = '100%';
+                        localVideo.style.objectFit = 'cover';
+                        localVideo.style.transform = 'scaleX(-1)';
+                        localVideo.style.display = 'block';
+                        localVideoRef.current.appendChild(localVideo);
+                    }
+                }
+
+                const meeting = new (globalThis as any).Metered.Meeting();
+                roomRef.current = meeting;
+
+                const videoTracks = localStream.getVideoTracks();
+                const audioTracks = localStream.getAudioTracks();
+
+                const videoAdapters = videoTracks.map((t) => createTrackAdapter(t, 'video'));
+                const audioAdapters = audioTracks.map((t) => createTrackAdapter(t, 'audio'));
+                const adapter: AttentionRoomAdapter = {
+                    localParticipant: {
+                        videoTracks: new Map(videoAdapters.map((a, i) => [`video-${i}`, { track: a, isEnabled: videoAdapters[i].isEnabled }])),
+                        audioTracks: new Map(audioAdapters.map((a, i) => [`audio-${i}`, { track: a, isEnabled: audioAdapters[i].isEnabled }])),
+                        on: (_event: string, _handler: any) => { /* not used for local */ }
+                    }
+                };
+                setAttentionAdapter(adapter);
+
+                meeting.on('remoteTrackStarted', (trackItem: any) => {
+                    if (isUnmounting) return;
+                    if (trackItem.type === 'video') {
+                        const remoteVideo = document.createElement('video');
+                        remoteVideo.id = `metered-remote-video-${trackItem.participantSessionId}`;
+                        remoteVideo.autoplay = true;
+                        remoteVideo.playsInline = true;
+                        remoteVideo.style.width = '100%';
+                        remoteVideo.style.height = '100%';
+                        remoteVideo.style.objectFit = 'cover';
+                        remoteVideo.srcObject = new MediaStream([trackItem.track]);
+                        if (remoteVideoRef.current) {
+                            remoteVideoRef.current.appendChild(remoteVideo);
+                        }
+                        remoteStreamsRef.current.set(`video-${trackItem.participantSessionId}`, remoteVideo);
+                        setIsConnected(true);
+                    } else if (trackItem.type === 'audio') {
+                        const audioEl = document.createElement('audio');
+                        audioEl.id = `metered-remote-audio-${trackItem.participantSessionId}`;
+                        audioEl.autoplay = true;
+                        audioEl.srcObject = new MediaStream([trackItem.track]);
+                        document.body.appendChild(audioEl);
+                        remoteStreamsRef.current.set(`audio-${trackItem.participantSessionId}`, audioEl);
+                    }
+                });
+
+                meeting.on('remoteTrackStopped', (trackItem: any) => {
+                    const videoEl = document.getElementById(`metered-remote-video-${trackItem.participantSessionId}`);
+                    videoEl?.remove();
+                    const audioEl = document.getElementById(`metered-remote-audio-${trackItem.participantSessionId}`);
+                    audioEl?.remove();
+                    remoteStreamsRef.current.delete(`video-${trackItem.participantSessionId}`);
+                    remoteStreamsRef.current.delete(`audio-${trackItem.participantSessionId}`);
+                });
+
+                meeting.on('participantJoined', (participant: any) => {
+                    toast(`${participant.participantName || 'Participant'} joined the room`);
+                    setIsConnected(true);
+                });
+
+                const refreshConnectionState = async () => {
+                    try {
+                        const participants = await meeting.getParticipants?.();
+                        if (!participants || participants.length === 0) {
+                            setIsConnected(false);
+                        }
+                    } catch {
+                        setIsConnected(false);
+                    }
+                };
+
+                meeting.on('participantLeft', (participant: any) => {
+                    toast(`${participant.participantName || 'Participant'} left the room`);
+                    void refreshConnectionState();
+                });
+
+                meeting.on('reconnecting', () => {
+                    toast.loading('Connection lost. Reconnecting...', { id: 'reconnect-toast' });
+                });
+
+                meeting.on('reconnected', () => {
+                    toast.success('Reconnected successfully!', { id: 'reconnect-toast' });
+                });
+
+                meeting.on('meetingEnded', () => {
+                    toast.dismiss('reconnect-toast');
+                    const disconnectIntent = disconnectIntentRef.current;
+                    disconnectIntentRef.current = null;
+                    const latestSession = sessionDetailsRef.current;
+
+                    clearVideoContainers();
+                    setIsConnected(false);
+                    setIsLoading(false);
+                    roomRef.current = null;
+                    setAttentionAdapter(null);
+
+                    if (disconnectIntent === 'LEAVE' || disconnectIntent === 'COMPLETE') return;
+
+                    if (latestSession?.status === 'COMPLETED') {
+                        setExitContext(null);
+                        setJoinState('COMPLETED');
+                        return;
+                    }
+
+                    if (latestSession && canRejoinSession(latestSession)) {
+                        setExitContext('NETWORK');
+                        setJoinState('LEFT');
+                        toast.error('Connection lost. You can rejoin if the session window is still open.', { duration: 6000 });
+                    }
+                });
+
+                meeting.on('error', (err: any) => {
+                    console.error('[MeteredVideo] Error:', err);
+                    toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
+                });
+
+                await meeting.join({
+                    roomURL: roomName || id,
+                    meetingToken: token,
+                    participantName: user.id,
+                    localStream
+                });
+
+                if (isUnmounting) {
+                    meeting.leaveMeeting?.();
+                    return;
+                }
+
+                setIsLoading(false);
+
+                api.post(`/sessions/${id}/start`).catch((err) => {
+                    console.warn('Manual start fallback failed or session already started', err);
+                });
+
+            } catch (err: any) {
+                console.error('[SessionRoom] Failed to join Metered room:', err);
+
+                if (err.message?.includes('Permission denied') || err.name === 'NotAllowedError') {
+                    toast.error('Browser denied camera/microphone access. Please check your permissions.');
+                } else if (err.response?.data?.message) {
+                    toast.error(err.response.data.message);
+                    if (sessionDetails && canRejoinSession(sessionDetails)) {
+                        setExitContext('NETWORK');
+                        setJoinState('LEFT');
+                    } else {
+                        navigate('/dashboard');
+                    }
+                } else {
+                    toast.error(`Could not connect: ${err.message || 'Unknown error'}`);
+                }
+
+                if (!isUnmounting) setIsLoading(false);
+            }
+        };
+
+        initMeteredVideo();
+
+        return () => {
+            isUnmounting = true;
+            if (roomRef.current) {
+                roomRef.current.leaveMeeting?.();
+                roomRef.current = null;
+            }
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach((t) => t.stop());
+                localStreamRef.current = null;
+            }
+        };
+    }, [
+        id,
+        user,
+        joinState,
+        navigate,
+        sessionDetails,
+        setAiMonitoringConsent,
+        setIsLoading,
+        setIsVideoOff,
+        setAttentionAdapter,
+        setIsConnected,
+        setExitContext,
+        setJoinState,
+        localVideoRef,
+        remoteVideoRef,
+        localStreamRef,
+        remoteStreamsRef,
+        roomRef,
+        sessionDetailsRef,
+        disconnectIntentRef,
+        clearVideoContainers,
+    ]);
+}
+
+function useSessionLifecycleEffects(params: {
+    id?: string;
+    user: any;
+    navigate: (to: string) => void;
+    sessionDetails: SessionDetails | null;
+    setSessionDetails: React.Dispatch<React.SetStateAction<SessionDetails | null>>;
+    setSessionNotes: (value: string) => void;
+    setJoinState: React.Dispatch<React.SetStateAction<JoinState>>;
+    setIsLoading: (value: boolean) => void;
+    setTimeRemainingMs: (value: number | null) => void;
+    isConnected: boolean;
+    joinState: JoinState;
+    isCompletingSession: boolean;
+    applyCompletedSessionState: (options?: { toastMessage?: string; shouldToast?: boolean }) => void;
+    presenceRefreshAbortRef: React.RefObject<boolean>;
+    sessionDetailsRef: React.RefObject<SessionDetails | null>;
+    setPresenceSummary: React.Dispatch<React.SetStateAction<PresenceSummary | null>>;
+    setPresenceError: (value: string | null) => void;
+    setIsPresenceLoading: (value: boolean) => void;
+    setIsSidebarOpen: (value: boolean) => void;
+    setSidebarTab: (value: 'info' | 'people' | 'report') => void;
+    setReportRefreshTrigger: React.Dispatch<React.SetStateAction<number>>;
+}) {
+    const {
+        id,
+        user,
+        navigate,
+        sessionDetails,
+        setSessionDetails,
+        setSessionNotes,
+        setJoinState,
+        setIsLoading,
+        setTimeRemainingMs,
+        isConnected,
+        joinState,
+        isCompletingSession,
+        applyCompletedSessionState,
+        presenceRefreshAbortRef,
+        sessionDetailsRef,
+        setPresenceSummary,
+        setPresenceError,
+        setIsPresenceLoading,
+        setIsSidebarOpen,
+        setSidebarTab,
+        setReportRefreshTrigger,
+    } = params;
+
     useEffect(() => {
         let mounted = true;
 
@@ -421,9 +883,11 @@ export default function SessionRoom() {
                 const session = res.data.data;
                 setSessionDetails(session);
                 setSessionNotes(session.notes || '');
-            } catch (err: any) {
+            } catch (err: unknown) {
                 if (mounted) {
-                    toast.error(err.response?.data?.message || 'Failed to fetch session details');
+                    const message = err instanceof Error ? err.message : 'Failed to fetch session details';
+                    const axiosMessage = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                    toast.error(axiosMessage ?? message);
                     navigate('/dashboard');
                 }
             }
@@ -434,9 +898,8 @@ export default function SessionRoom() {
         return () => {
             mounted = false;
         };
-    }, [id, navigate]);
+    }, [id, navigate, setSessionDetails, setSessionNotes]);
 
-    // Keep the waiting room timer updated without resetting an active join attempt
     useEffect(() => {
         if (!sessionDetails) return;
 
@@ -447,7 +910,6 @@ export default function SessionRoom() {
             if (isSessionTerminal(session)) {
                 setJoinState('COMPLETED');
                 setIsLoading(false);
-                setTimeRemaining(0);
                 return;
             }
 
@@ -458,11 +920,9 @@ export default function SessionRoom() {
             if (!rejoinWindowOpen) {
                 setJoinState('COMPLETED');
                 setIsLoading(false);
-                setTimeRemaining(0);
                 return;
             }
 
-            setTimeRemaining(isRoomOpen ? 0 : Math.max(0, roomOpenMs - now));
             setJoinState((currentState) => {
                 if (currentState === 'JOINING' || currentState === 'COMPLETED') {
                     return currentState;
@@ -482,18 +942,47 @@ export default function SessionRoom() {
         return () => {
             clearInterval(interval);
         };
-    }, [sessionDetails]);
+    }, [sessionDetails, setJoinState, setIsLoading]);
+
+    useEffect(() => {
+        if (!sessionDetails || !isConnected) {
+            setTimeRemainingMs(null);
+            return;
+        }
+
+        const tick = () => {
+            const now = Date.now();
+            const timing = getSessionTiming(sessionDetails);
+            const remaining = timing.scheduledEndMs - now;
+
+            if (remaining <= 0) {
+                setTimeRemainingMs(0);
+                if (joinState !== 'COMPLETED' && !isCompletingSession) {
+                    applyCompletedSessionState({
+                        shouldToast: true,
+                        toastMessage: 'Session time has elapsed. The room is now permanently closed.',
+                    });
+                }
+            } else {
+                setTimeRemainingMs(remaining);
+            }
+        };
+
+        tick();
+        const interval = setInterval(tick, 1000);
+        return () => clearInterval(interval);
+    }, [sessionDetails, isConnected, joinState, isCompletingSession, applyCompletedSessionState, setTimeRemainingMs]);
 
     useEffect(() => {
         presenceRefreshAbortRef.current = false;
         return () => {
             presenceRefreshAbortRef.current = true;
         };
-    }, []);
+    }, [presenceRefreshAbortRef]);
 
     useEffect(() => {
         sessionDetailsRef.current = sessionDetails;
-    }, [sessionDetails]);
+    }, [sessionDetails, sessionDetailsRef]);
 
     useEffect(() => {
         if (!id || !user) return;
@@ -516,10 +1005,10 @@ export default function SessionRoom() {
                 if (sessionDetails && nextPresence.status !== sessionDetails.status) {
                     setSessionDetails({ ...sessionDetails, status: nextPresence.status });
                 }
-            } catch (error: any) {
+            } catch (error: unknown) {
                 if (!mounted || presenceRefreshAbortRef.current) return;
-                const message = error.response?.data?.message || 'Unable to load live session presence';
-                setPresenceError(message);
+                const axiosMsg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                setPresenceError(axiosMsg ?? 'Unable to load live session presence');
             } finally {
                 if (mounted && !presenceRefreshAbortRef.current) {
                     setIsPresenceLoading(false);
@@ -547,9 +1036,8 @@ export default function SessionRoom() {
             mounted = false;
             socket.off('session:presence_updated', handlePresenceUpdated);
         };
-    }, [id, sessionDetails, user]);
+    }, [id, sessionDetails, user, presenceRefreshAbortRef, setIsPresenceLoading, setPresenceSummary, setPresenceError, setSessionDetails]);
 
-    // Listen for AI Report completions remotely
     useEffect(() => {
         const socket = getSocket();
         if (!socket) return;
@@ -557,8 +1045,7 @@ export default function SessionRoom() {
         const handleTranscriptionReady = (data: { sessionId: string }) => {
             if (data.sessionId === id) {
                 toast.success('AI Session Report is ready!', { duration: 5000, icon: '✨' });
-                setReportRefreshTrigger(prev => prev + 1);
-                // Optionally auto-open the sidebar to the report tab if they are still around
+                setReportRefreshTrigger((prev) => prev + 1);
                 setIsSidebarOpen(true);
                 setSidebarTab('report');
             }
@@ -568,7 +1055,113 @@ export default function SessionRoom() {
         return () => {
             socket.off('session:transcription_ready', handleTranscriptionReady);
         };
-    }, [id]);
+    }, [id, setReportRefreshTrigger, setIsSidebarOpen, setSidebarTab]);
+
+    useEffect(() => {
+        if (!id || !user) return;
+
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) return;
+
+        const handleSessionCompleted = (data: {
+            sessionId: string;
+            completedByUserId?: string;
+        }) => {
+            if (data.sessionId !== id) return;
+
+            applyCompletedSessionState({
+                shouldToast: data.completedByUserId !== user.id,
+                toastMessage: 'This session has been completed. Rejoin is now closed.',
+            });
+        };
+
+        socket.on('session:completed', handleSessionCompleted);
+
+        return () => {
+            socket.off('session:completed', handleSessionCompleted);
+        };
+    }, [id, user, applyCompletedSessionState]);
+
+    useEffect(() => {
+        if (!isLoading && !isConnected && joinState === 'JOINING') {
+            const timeout = setTimeout(() => {
+                toast("The other participant hasn't joined yet. You can continue waiting, or leave and follow up with them.", {
+                    duration: 8000,
+                    icon: '⏳'
+                });
+            }, 5 * 60 * 1000);
+
+            return () => clearTimeout(timeout);
+        }
+    }, [isLoading, isConnected, joinState]);
+}
+
+// eslint-disable-next-line sonarjs/cognitive-complexity
+export default function SessionRoom() {
+    const { id } = useParams<{ id: string }>();
+    const navigate = useNavigate();
+    const { user } = useAuthStore();
+
+    const [isLoading, setIsLoading] = useState(true);
+    const [isConnected, setIsConnected] = useState(false);
+
+    // Media State
+    const [isMuted, setIsMuted] = useState(false);
+    const [isVideoOff, setIsVideoOff] = useState(false);
+
+    // Sidebar panel
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [sidebarTab, setSidebarTab] = useState<'info' | 'people' | 'report'>('people');
+    const [sessionNotes, setSessionNotes] = useState('');
+    const [reportRefreshTrigger, setReportRefreshTrigger] = useState(0);
+    const [showExitDialog, setShowExitDialog] = useState(false);
+    const [isCompletingSession, setIsCompletingSession] = useState(false);
+    const [exitContext, setExitContext] = useState<ExitContext>(null);
+
+    // Explicit session metadata & waiting room state
+    const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
+    const [joinState, setJoinState] = useState<JoinState>('LOADING');
+    const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+    const [hasAcknowledged, setHasAcknowledged] = useState(false);
+    const [aiMonitoringConsent, setAiMonitoringConsent] = useState(false);
+    const [presenceSummary, setPresenceSummary] = useState<PresenceSummary | null>(null);
+    const [isPresenceLoading, setIsPresenceLoading] = useState(false);
+    const [presenceError, setPresenceError] = useState<string | null>(null);
+
+    // WebRTC Refs (provider-agnostic)
+    const localVideoRef = useRef<HTMLDivElement>(null);
+    const remoteVideoRef = useRef<HTMLDivElement>(null);
+    const roomRef = useRef<MeteredMeeting | null>(null); // Metered meeting instance
+    const localStreamRef = useRef<MediaStream | null>(null);
+    const remoteStreamsRef = useRef<Map<string, HTMLElement>>(new Map());
+    const disconnectIntentRef = useRef<'LEAVE' | 'COMPLETE' | null>(null);
+    const presenceRefreshAbortRef = useRef(false);
+    const sessionDetailsRef = useRef<SessionDetails | null>(null);
+    const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
+
+    useSessionLifecycleEffects({
+        id,
+        user,
+        navigate: (to: string) => { void navigate(to); },
+        sessionDetails,
+        setSessionDetails,
+        setSessionNotes,
+        setJoinState,
+        setIsLoading,
+        setTimeRemainingMs,
+        isConnected,
+        joinState,
+        isCompletingSession,
+        applyCompletedSessionState,
+        presenceRefreshAbortRef,
+        sessionDetailsRef,
+        setPresenceSummary,
+        setPresenceError,
+        setIsPresenceLoading,
+        setIsSidebarOpen,
+        setSidebarTab,
+        setReportRefreshTrigger,
+    });
 
     // Role detection & feature gating
     let roleInSession: 'CLIENT' | 'THERAPIST' | 'UNKNOWN' = 'UNKNOWN';
@@ -625,7 +1218,7 @@ export default function SessionRoom() {
         setAttentionAdapter(null);
     };
 
-    const applyCompletedSessionState = (options?: { toastMessage?: string; shouldToast?: boolean }) => {
+    const applyCompletedSessionState = useCallback((options?: { toastMessage?: string; shouldToast?: boolean }) => {
         disconnectRoom('COMPLETE');
         setSessionDetails((current) => {
             if (!current) return current;
@@ -649,7 +1242,7 @@ export default function SessionRoom() {
         if (options?.shouldToast && options.toastMessage) {
             toast.success(options.toastMessage, { duration: 5000 });
         }
-    };
+    }, [disconnectRoom]);
 
     const startJoining = () => {
         setExitContext(null);
@@ -689,293 +1282,38 @@ export default function SessionRoom() {
                 shouldToast: true,
                 toastMessage: 'Session completed. Rejoin is now closed.',
             });
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Failed to complete session:', error);
-            toast.error(error.response?.data?.message || 'Unable to complete the session right now.');
+            const axiosMsg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(axiosMsg ?? 'Unable to complete the session right now.');
         } finally {
             setIsCompletingSession(false);
         }
     };
 
-    useEffect(() => {
-        if (!id || !user) return;
 
-        const socket = getSocket() ?? connectSocket();
-        if (!socket) return;
-
-        const handleSessionCompleted = (data: {
-            sessionId: string;
-            completedByUserId?: string;
-        }) => {
-            if (data.sessionId !== id) return;
-
-            applyCompletedSessionState({
-                shouldToast: data.completedByUserId !== user.id,
-                toastMessage: 'This session has been completed. Rejoin is now closed.',
-            });
-        };
-
-        socket.on('session:completed', handleSessionCompleted);
-
-        return () => {
-            socket.off('session:completed', handleSessionCompleted);
-        };
-    }, [id, navigate, user]);
-
-    useEffect(() => {
-        if (!id || !user || joinState !== 'JOINING') return;
-
-        let isUnmounting = false;
-
-        const initMeteredVideo = async () => {
-            if (!id || !user) return;
-
-            if (!(globalThis as any).Metered?.Meeting) {
-                toast.error('Video SDK not loaded. Please refresh the page.');
-                setIsLoading(false);
-                return;
-            }
-
-            try {
-                // 1. Get media token from our backend (same endpoint, now returns Metered token)
-                const response = await api.post(`/sessions/${id}/media-token`);
-                const { token, roomName, aiMonitoringConsent: consentFromServer } = response.data;
-                setAiMonitoringConsent(!!consentFromServer);
-
-                if (isUnmounting) return;
-
-                // 2. Get user media first so we can fallback gracefully
-                let localStream: MediaStream;
-                try {
-                    localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
-                } catch (err: any) {
-                    if (err.message?.includes('video') || err.name === 'NotReadableError') {
-                        console.warn('Video unavailable, falling back to audio-only:', err.message);
-                        toast.error('Camera unavailable. Joining with audio only.', { duration: 5000 });
-                        localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-                        setIsVideoOff(true);
-                    } else {
-                        throw err;
-                    }
-                }
-
-                if (isUnmounting) {
-                    localStream.getTracks().forEach(t => t.stop());
-                    return;
-                }
-
-                localStreamRef.current = localStream;
-
-                // 3. Attach local video
-                if (localVideoRef.current) {
-                    localVideoRef.current.innerHTML = '';
-                    const videoTracks = localStream.getVideoTracks();
-                    if (videoTracks.length > 0) {
-                        const localVideo = document.createElement('video');
-                        localVideo.autoplay = true;
-                        localVideo.muted = true;
-                        localVideo.playsInline = true;
-                        localVideo.srcObject = new MediaStream([videoTracks[0]]);
-                        localVideo.style.width = '100%';
-                        localVideo.style.height = '100%';
-                        localVideo.style.objectFit = 'cover';
-                        localVideo.style.transform = 'scaleX(-1)';
-                        localVideo.style.display = 'block';
-                        localVideoRef.current.appendChild(localVideo);
-                    }
-                }
-
-                // 4. Create Metered meeting and join
-                const meeting = new (globalThis as any).Metered.Meeting();
-                roomRef.current = meeting;
-
-                // Build attention adapter from localStream tracks
-                const videoTracks = localStream.getVideoTracks();
-                const audioTracks = localStream.getAudioTracks();
-
-                const makeTrackAdapter = (track: MediaStreamTrack, kind: 'video' | 'audio') => {
-                    const listeners: Record<string, (() => void)[]> = {};
-                    return {
-                        kind,
-                        get isEnabled() { return track.enabled; },
-                        mediaStreamTrack: track,
-                        on(event: string, handler: () => void) {
-                            (listeners[event] = listeners[event] || []).push(handler);
-                        }
-                    };
-                };
-
-                const videoAdapters = videoTracks.map(t => makeTrackAdapter(t, 'video'));
-                const audioAdapters = audioTracks.map(t => makeTrackAdapter(t, 'audio'));
-                const adapter: AttentionRoomAdapter = {
-                    localParticipant: {
-                        videoTracks: new Map(videoAdapters.map((a, i) => [`video-${i}`, { track: a, isEnabled: videoAdapters[i].isEnabled }])),
-                        audioTracks: new Map(audioAdapters.map((a, i) => [`audio-${i}`, { track: a, isEnabled: audioAdapters[i].isEnabled }])),
-                        on: (_event: string, _handler: any) => { /* not used for local */ }
-                    }
-                };
-                setAttentionAdapter(adapter);
-
-                // ── Bind Metered events ──
-
-                // Remote participant's track became available
-                meeting.on('remoteTrackStarted', (trackItem: any) => {
-                    if (isUnmounting) return;
-                    if (trackItem.type === 'video') {
-                        const remoteVideo = document.createElement('video');
-                        remoteVideo.id = `metered-remote-video-${trackItem.participantSessionId}`;
-                        remoteVideo.autoplay = true;
-                        remoteVideo.playsInline = true;
-                        remoteVideo.style.width = '100%';
-                        remoteVideo.style.height = '100%';
-                        remoteVideo.style.objectFit = 'cover';
-                        remoteVideo.srcObject = new MediaStream([trackItem.track]);
-                        if (remoteVideoRef.current) {
-                            remoteVideoRef.current.appendChild(remoteVideo);
-                        }
-                        remoteStreamsRef.current.set(`video-${trackItem.participantSessionId}`, remoteVideo);
-                        setIsConnected(true);
-                    } else if (trackItem.type === 'audio') {
-                        const audioEl = document.createElement('audio');
-                        audioEl.id = `metered-remote-audio-${trackItem.participantSessionId}`;
-                        audioEl.autoplay = true;
-                        audioEl.srcObject = new MediaStream([trackItem.track]);
-                        document.body.appendChild(audioEl);
-                        remoteStreamsRef.current.set(`audio-${trackItem.participantSessionId}`, audioEl);
-                    }
-                });
-
-                meeting.on('remoteTrackStopped', (trackItem: any) => {
-                    const videoEl = document.getElementById(`metered-remote-video-${trackItem.participantSessionId}`);
-                    videoEl?.remove();
-                    const audioEl = document.getElementById(`metered-remote-audio-${trackItem.participantSessionId}`);
-                    audioEl?.remove();
-                    remoteStreamsRef.current.delete(`video-${trackItem.participantSessionId}`);
-                    remoteStreamsRef.current.delete(`audio-${trackItem.participantSessionId}`);
-                });
-
-                meeting.on('participantJoined', (participant: any) => {
-                    toast(`${participant.participantName || 'Participant'} joined the room`);
-                    setIsConnected(true);
-                });
-
-                meeting.on('participantLeft', (participant: any) => {
-                    toast(`${participant.participantName || 'Participant'} left the room`);
-                    // Check if anyone else remains
-                    meeting.getParticipants?.().then((participants: any[]) => {
-                        if (!participants || participants.length === 0) setIsConnected(false);
-                    }).catch(() => setIsConnected(false));
-                });
-
-                meeting.on('reconnecting', () => {
-                    toast.loading('Connection lost. Reconnecting...', { id: 'reconnect-toast' });
-                });
-
-                meeting.on('reconnected', () => {
-                    toast.success('Reconnected successfully!', { id: 'reconnect-toast' });
-                });
-
-                meeting.on('meetingEnded', () => {
-                    toast.dismiss('reconnect-toast');
-                    const disconnectIntent = disconnectIntentRef.current;
-                    disconnectIntentRef.current = null;
-                    const latestSession = sessionDetailsRef.current;
-
-                    clearVideoContainers();
-                    setIsConnected(false);
-                    setIsLoading(false);
-                    roomRef.current = null;
-                    setAttentionAdapter(null);
-
-                    if (disconnectIntent === 'LEAVE' || disconnectIntent === 'COMPLETE') return;
-
-                    if (latestSession?.status === 'COMPLETED') {
-                        setExitContext(null);
-                        setJoinState('COMPLETED');
-                        return;
-                    }
-
-                    if (latestSession && canRejoinSession(latestSession)) {
-                        setExitContext('NETWORK');
-                        setJoinState('LEFT');
-                        toast.error('Connection lost. You can rejoin if the session window is still open.', { duration: 6000 });
-                    }
-                });
-
-                meeting.on('error', (err: any) => {
-                    console.error('[MeteredVideo] Error:', err);
-                    toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
-                });
-
-                // 5. Join the Metered room with the token from our backend
-                await meeting.join({
-                    roomURL: roomName || id,    // backend returns roomName (session ID based)
-                    meetingToken: token,
-                    participantName: user.id,  // use user ID as stable identity
-                    localStream                // pass our pre-acquired stream for fine-grained control
-                });
-
-                if (isUnmounting) {
-                    meeting.leaveMeeting?.();
-                    return;
-                }
-
-                setIsLoading(false);
-
-                // Mark session IN_PROGRESS as fallback if webhook is delayed
-                api.post(`/sessions/${id}/start`).catch(err => {
-                    console.warn('Manual start fallback failed or session already started', err);
-                });
-
-            } catch (err: any) {
-                console.error('[SessionRoom] Failed to join Metered room:', err);
-
-                if (err.message?.includes('Permission denied') || err.name === 'NotAllowedError') {
-                    toast.error('Browser denied camera/microphone access. Please check your permissions.');
-                } else if (err.response?.data?.message) {
-                    toast.error(err.response.data.message);
-                    if (sessionDetails && canRejoinSession(sessionDetails)) {
-                        setExitContext('NETWORK');
-                        setJoinState('LEFT');
-                    } else {
-                        navigate('/dashboard');
-                    }
-                } else {
-                    toast.error(`Could not connect: ${err.message || 'Unknown error'}`);
-                }
-
-                if (!isUnmounting) setIsLoading(false);
-            }
-        };
-
-        initMeteredVideo();
-
-        return () => {
-            isUnmounting = true;
-            if (roomRef.current) {
-                roomRef.current.leaveMeeting?.();
-                roomRef.current = null;
-            }
-            if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach(t => t.stop());
-                localStreamRef.current = null;
-            }
-        };
-    }, [id, navigate, sessionDetails, user, joinState]);
-
-    // Timeout warning if waiting for > 5 mins -> Only if JOINING (they passed acknowledgment)
-    useEffect(() => {
-        if (!isLoading && !isConnected && joinState === 'JOINING') {
-            const timeout = setTimeout(() => {
-                toast("The other participant hasn't joined yet. You can continue waiting, or leave and follow up with them.", {
-                    duration: 8000,
-                    icon: '⏳'
-                });
-            }, 5 * 60 * 1000); // 5 minutes
-
-            return () => clearTimeout(timeout);
-        }
-    }, [isLoading, isConnected, joinState]);
+    useMeteredJoinEffect({
+        id,
+        user: user ? { id: user.id } : null,
+        joinState,
+        navigate: (to: string) => { void navigate(to); },
+        sessionDetails,
+        setAiMonitoringConsent,
+        setIsLoading,
+        setIsVideoOff,
+        setAttentionAdapter,
+        setIsConnected,
+        setExitContext,
+        setJoinState,
+        localVideoRef,
+        remoteVideoRef,
+        localStreamRef,
+        remoteStreamsRef,
+        roomRef,
+        sessionDetailsRef,
+        disconnectIntentRef,
+        clearVideoContainers,
+    });
 
     // Attach local video after DOM mounts (Metered streams local tracks during join; handled inline)
     // This effect is a no-op for Metered but kept to avoid breaking any future local-video re-attachment logic.
@@ -1023,115 +1361,43 @@ export default function SessionRoom() {
         </button>
     );
 
-    if (isLoading && joinState === 'JOINING') {
-        return (
-            <div className="session-room-loading">
-                {renderOverlayCloseButton()}
-                <Loader2 className="animate-spin" size={48} />
-                <p>Preparing secure session environment...</p>
-            </div>
-        );
+    const isGraceWindowExpired = sessionDetails ? !canRejoinSession(sessionDetails) && !isSessionTerminal(sessionDetails) : false;
+    const waitMsLeft = sessionTiming ? Math.max(0, sessionTiming.roomOpenMs - Date.now()) : 0;
+    const waitMinutesLeft = Math.ceil(waitMsLeft / 60000);
+    const waitMinuteLabel = waitMinutesLeft === 1 ? 'minute' : 'minutes';
+    const roomOpenLabel = sessionTiming ? formatDateTime(new Date(sessionTiming.roomOpenMs).toISOString()) : null;
+
+    const preJoinStage = renderPreJoinStage({
+        isLoading,
+        joinState,
+        sessionDetails,
+        isGraceWindowExpired,
+        hasAcknowledged,
+        waitMinutesLeft,
+        waitMinuteLabel,
+        roomOpenLabel,
+        scheduledRangeLabel,
+        rejoinDeadlineLabel,
+        exitContext,
+        onCloseOverlay: renderOverlayCloseButton,
+        onCloseDashboard: () => { void navigate('/dashboard'); },
+        onStartJoining: startJoining,
+        onToggleAcknowledged: setHasAcknowledged,
+    });
+
+    if (preJoinStage) {
+        return preJoinStage;
     }
 
-    if (joinState === 'COMPLETED') {
-        const isGraceWindowExpired = sessionDetails ? !canRejoinSession(sessionDetails) && !isSessionTerminal(sessionDetails) : false;
-        let completedTitle = 'Session Unavailable';
-        let completedMessage = 'This session is no longer available to join.';
+    const formatCountdown = (ms: number | null) => {
+        if (ms === null || ms < 0) return '00:00';
+        const totalSeconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    };
 
-        if (sessionDetails?.status === 'COMPLETED') {
-            completedTitle = 'Session Completed';
-            completedMessage = 'This session has ended and is permanently closed.';
-        } else if (isGraceWindowExpired) {
-            completedTitle = 'Session Window Closed';
-            completedMessage = 'The secure rejoin window has ended for this session.';
-        }
-
-        return <SessionStatusScreen title={completedTitle} message={completedMessage} onClose={() => navigate('/dashboard')} />;
-    }
-
-    if (joinState === 'WAITING' && sessionDetails) {
-        const minsLeft = Math.ceil(timeRemaining / 60000);
-        const minuteLabel = minsLeft === 1 ? 'minute' : 'minutes';
-        const roomOpenLabel = sessionTiming ? formatDateTime(new Date(sessionTiming.roomOpenMs).toISOString()) : null;
-        return (
-            <div className="session-room-loading" style={{ flexDirection: 'column', gap: '1rem', padding: '2rem', textAlign: 'center' }}>
-                {renderOverlayCloseButton()}
-                <Clock size={48} style={{ color: 'var(--primary-color)' }} />
-                <h2>Waiting Room</h2>
-                <p>Your session is scheduled for <strong>{formatSessionDateTime(sessionDetails.scheduledAt)}</strong>.</p>
-                <p>
-                    The secure room opens 15 minutes prior at{' '}
-                    <strong>{roomOpenLabel || 'the scheduled opening time'}</strong>.
-                </p>
-                <div style={{ marginTop: '2rem', padding: '1rem 2rem', background: '#e0f2fe', borderRadius: '8px', color: '#0369a1', fontWeight: 600 }}>
-                    Opening in approx. {minsLeft} {minuteLabel}
-                </div>
-            </div>
-        );
-    }
-
-    if (joinState === 'ACKNOWLEDGMENT') {
-        return (
-            <div className="session-room-loading">
-                {renderOverlayCloseButton()}
-                <div className="pre-join-modal">
-                    <Video size={36} className="text-primary mb-4" />
-                    <h2>Ready to join?</h2>
-
-                    <div className="pre-join-notice">
-                        <p><strong>For session quality and safety, please keep your camera on and remain present.</strong></p>
-                        <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                            We use local technical signals (camera/mic status and audio activity) to ensure everyone is present.
-                            <br />Your session remains completely private.
-                        </p>
-                    </div>
-
-                    <label className="pre-join-checkbox">
-                        <input
-                            type="checkbox"
-                            checked={hasAcknowledged}
-                            onChange={(e) => setHasAcknowledged(e.target.checked)}
-                        />
-                        <span>I understand and agree</span>
-                    </label>
-
-                    <button
-                        className="btn btn-submit"
-                        disabled={!hasAcknowledged}
-                        onClick={startJoining}
-                        style={{ width: '100%', marginTop: '1.5rem', opacity: hasAcknowledged ? 1 : 0.6 }}
-                    >
-                        Join Session
-                    </button>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => navigate('/dashboard')}
-                        style={{ width: '100%', marginTop: '0.5rem', background: 'transparent', border: '1px solid #e2e8f0', color: '#64748b' }}
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    if (joinState === 'LEFT' && sessionDetails) {
-        const heading = exitContext === 'NETWORK' ? 'Connection interrupted' : 'You left the call';
-        const message = exitContext === 'NETWORK'
-            ? 'Your secure session was interrupted, but the room is still open for you.'
-            : 'You are safely out of the room, and you can hop back in whenever you are ready.';
-
-        return (
-            <SessionRejoinScreen
-                heading={heading}
-                message={message}
-                scheduledRangeLabel={scheduledRangeLabel}
-                rejoinDeadlineLabel={rejoinDeadlineLabel}
-                onClose={() => navigate('/dashboard')}
-                onRejoin={startJoining}
-            />
-        );
-    }
+    const isWarningState = timeRemainingMs !== null && timeRemainingMs <= 300000; // 5 mins
 
     const userInitial = user ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase() : 'ME';
     const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'You';
@@ -1162,10 +1428,26 @@ export default function SessionRoom() {
                             {isConnected ? 'Connected securely' : 'Waiting for others to join...'}
                         </span>
                         {sessionDetails && (
-                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
-                                Scheduled {formatSessionDateTime(sessionDetails.scheduledAt)}
-                                {' '}–{' '}
-                                {sessionTiming ? formatTimestamp(sessionTiming.scheduledEndMs) : ''}
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>
+                                    Scheduled {formatSessionDateTime(sessionDetails.scheduledAt)}
+                                    {' '}–{' '}
+                                    {sessionTiming ? formatTimestamp(sessionTiming.scheduledEndMs) : ''}
+                                </span>
+                                {timeRemainingMs !== null && (
+                                    <span style={{ 
+                                        background: isWarningState ? '#fee2e2' : '#f1f5f9', 
+                                        color: isWarningState ? '#dc2626' : '#475569', 
+                                        padding: '2px 8px', 
+                                        borderRadius: '4px', 
+                                        fontWeight: 600,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}>
+                                        <Clock size={12} /> {formatCountdown(timeRemainingMs)} remaining
+                                    </span>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1195,6 +1477,30 @@ export default function SessionRoom() {
                     )}
                     <span className="local-label">You</span>
                 </div>
+
+                {/* ─── Warning Banner (5 mins remaining) ─── */}
+                {isWarningState && timeRemainingMs > 0 && (
+                    <div className="session-warning-banner" style={{
+                        position: 'absolute',
+                        top: '80px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: 'rgba(220, 38, 38, 0.9)',
+                        color: 'white',
+                        padding: '12px 24px',
+                        borderRadius: '8px',
+                        fontWeight: '600',
+                        zIndex: 100,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        animation: 'pulse-danger 2s infinite'
+                    }}>
+                        <Clock size={18} />
+                        Session will end in {formatCountdown(timeRemainingMs)}
+                    </div>
+                )}
 
                 {/* ─── Floating Controls Bar ─── */}
                 <footer className="session-room-controls">

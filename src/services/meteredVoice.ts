@@ -10,15 +10,11 @@
 
 import api from '../lib/api';
 
-// The Metered SDK is loaded as a global via <script> tag in index.html
-declare global {
-    interface Window {
-        Metered: any;
-    }
-}
+// Metered SDK types are globally declared in src/types/metered.d.ts
+import type { MeteredMeeting } from '../types/metered';
 
 class MeteredVoiceService {
-    private meeting: any = null;
+    private meeting: MeteredMeeting | null = null;
 
     // Callback hook into Zustand store
     private onStateChange: (state: any) => void = () => { };
@@ -74,10 +70,11 @@ class MeteredVoiceService {
                 throw new Error('No Metered token or room received from backend');
             }
 
-            this.meeting = new (globalThis as any).Metered.Meeting();
+            const meeting = new (globalThis as unknown as { Metered: { Meeting: new() => MeteredMeeting } }).Metered.Meeting();
+            this.meeting = meeting;
             this.bindMeetingEvents();
 
-            await this.meeting.join({
+            await meeting.join({
                 roomURL: roomName, // Backend returns the full room URL or room ID
                 participantName: identity || 'participant',
                 meetingToken: token,
@@ -88,9 +85,10 @@ class MeteredVoiceService {
 
             this.updateState({ activeMeteredCall: this.meeting });
 
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Unknown voice call error';
             console.error('[MeteredVoiceService] Failed to join meeting:', error);
-            this.updateState({ activeMeteredCall: null, error: error.message });
+            this.updateState({ activeMeteredCall: null, error: msg });
             throw error;
         }
     }
