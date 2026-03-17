@@ -10,6 +10,7 @@ export interface MeteredMeeting {
     join(options: {
         roomURL: string;
         participantName?: string;
+        accessToken?: string;
         meetingToken?: string;
         video?: boolean;
         audio?: boolean;

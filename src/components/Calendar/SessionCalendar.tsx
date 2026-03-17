@@ -9,6 +9,7 @@ interface SessionCalendarProps {
     clientId: string | null;
     therapistId: string | null;
     onSessionCreated?: () => void;
+    refreshSignal?: number;
 }
 
 interface CalendarSession {
@@ -45,7 +46,7 @@ const getUtcTodayStart = () => {
     return createUtcDate(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 };
 
-export default function SessionCalendar({ clientId, therapistId, onSessionCreated }: SessionCalendarProps) {
+export default function SessionCalendar({ clientId, therapistId, onSessionCreated, refreshSignal = 0 }: Readonly<SessionCalendarProps>) {
     const containerRef = useRef<HTMLDivElement>(null);
     const idempotencyKeyRef = useRef<string>('');
     const [currentMonth, setCurrentMonth] = useState(() => createUtcDate(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
@@ -94,7 +95,7 @@ export default function SessionCalendar({ clientId, therapistId, onSessionCreate
         } finally {
             setIsLoading(false);
         }
-    }, [monthKey, clientId, therapistId]);
+    }, [monthKey, clientId, therapistId, refreshSignal]);
 
     useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
 

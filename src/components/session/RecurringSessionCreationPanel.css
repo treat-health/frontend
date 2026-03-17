@@ -1,0 +1,222 @@
+.recurring-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 20px;
+    height: 100%;
+    overflow: auto;
+}
+
+.recurring-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.recurring-panel-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.recurring-panel-header p {
+    margin: 4px 0 0;
+    color: var(--gray-500);
+    font-size: 0.9rem;
+}
+
+.recurring-panel-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--primary-50);
+    color: var(--primary-700);
+    border: 1px solid var(--primary-100);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.recurring-form-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 16px;
+}
+
+.recurring-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    padding: 14px;
+    background: var(--bg-surface);
+}
+
+.recurring-card h3 {
+    margin: 0 0 10px;
+    font-size: 0.95rem;
+}
+
+.recurring-client-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.recurring-client-limit-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--gray-500);
+}
+
+.recurring-client-limit {
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    color: var(--gray-700);
+    background: var(--bg-surface);
+}
+
+.client-list-grid {
+    max-height: 420px;
+    overflow: auto;
+    display: grid;
+    gap: 8px;
+}
+
+.recurring-client-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--gray-500);
+    font-size: 0.85rem;
+    padding: 6px 2px;
+}
+
+.client-checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--gray-100);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.client-checkbox-row:hover {
+    background: var(--gray-50);
+}
+
+.client-checkbox-row span {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+}
+
+.client-checkbox-row small {
+    color: var(--gray-500);
+    font-size: 0.75rem;
+}
+
+.recurring-client-pagination {
+    margin-top: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+
+.recurring-client-pagination button {
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    background: var(--bg-surface);
+    color: var(--gray-600);
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.recurring-client-pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.recurring-client-pagination span {
+    font-size: 0.78rem;
+    color: var(--gray-500);
+}
+
+.time-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.weekday-chip-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.weekday-chip {
+    border: 1px solid var(--gray-300);
+    background: var(--bg-surface);
+    color: var(--gray-700);
+    padding: 6px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.weekday-chip.active {
+    background: var(--primary-600);
+    border-color: var(--primary-600);
+    color: #fff;
+}
+
+.recurring-submit {
+    width: 100%;
+    justify-content: center;
+    margin-top: 8px;
+}
+
+.recurring-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--gray-500);
+    padding: 16px;
+}
+
+.recurring-error,
+.recurring-success-hint {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+}
+
+.recurring-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+}
+
+.recurring-success-hint {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    color: #166534;
+}
+
+@media (max-width: 1200px) {
+    .recurring-form-grid {
+        grid-template-columns: 1fr;
+    }
+}

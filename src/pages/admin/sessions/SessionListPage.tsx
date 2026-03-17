@@ -1,47 +1,41 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { Search, X, Filter, Calendar as CalendarIcon, User as UserIcon, ChevronDown, List as ListIcon, Sparkles } from 'lucide-react';
+import { Calendar as CalendarIcon, Repeat } from 'lucide-react';
 import api from '../../../lib/api';
 import { connectSocket, getSocket } from '../../../lib/socket';
 import type { ApiResponse } from '../../../lib/api';
-import SessionCalendar from '../../../components/Calendar/SessionCalendar';
 import SessionReportPanel from '../../../components/session/SessionReportPanel';
+import RecurringSessionCreationPanel from '../../../components/session/RecurringSessionCreationPanel';
+import UserFilterSidebar from './components/UserFilterSidebar';
+import SessionViewPanel from './components/SessionViewPanel';
+import type { Session, UserSummary, SessionCompletedEvent } from './types';
 import './SessionListPage.css';
 import '../../../styles/admin.css';
 
-interface Session {
-    id: string;
-    clientId: string;
-    therapistId: string;
-    scheduledAt: string;
-    durationMins: number;
-    status: string;
-    type: string;
-    client: { id: string; firstName: string; lastName: string; email: string };
-    therapist: { id: string; firstName: string; lastName: string; email: string };
-}
+const applySessionCompletedEvent = (current: Session[], data: SessionCompletedEvent): Session[] => {
+    let changed = false;
+    const updated = current.map((session) => {
+        if (session.id !== data.sessionId || session.status === 'COMPLETED') {
+            return session;
+        }
 
-interface UserSummary {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    role: string;
-}
+        changed = true;
+        return { ...session, status: 'COMPLETED' };
+    });
 
-interface SessionCompletedEvent {
-    sessionId: string;
-    status: 'COMPLETED';
-}
+    return changed ? updated : current;
+};
 
 export default function SessionListPage() {
     const [searchParams, setSearchParams] = useSearchParams();
 
     // Layout State
     const [activeTab, setActiveTab] = useState<'clients' | 'therapists'>('clients');
+    const [section, setSection] = useState<'calendar' | 'recurring'>('calendar');
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+    const [calendarRefreshSignal, setCalendarRefreshSignal] = useState(0);
 
     // Data State
     const [users, setUsers] = useState<UserSummary[]>([]);
@@ -136,19 +130,7 @@ export default function SessionListPage() {
         if (!socket) return;
 
         const applySessionCompletion = (data: SessionCompletedEvent) => {
-            setSessions((current) => {
-                let changed = false;
-                const nextSessions = current.map((session) => {
-                    if (session.id !== data.sessionId || session.status === 'COMPLETED') {
-                        return session;
-                    }
-
-                    changed = true;
-                    return { ...session, status: 'COMPLETED' };
-                });
-
-                return changed ? nextSessions : current;
-            });
+            setSessions((current) => applySessionCompletedEvent(current, data));
 
             void fetchSessions();
         };
@@ -230,17 +212,27 @@ export default function SessionListPage() {
 
     const totalPages = Math.ceil(totalSessions / limit);
 
+    const handleRecurringSuccess = () => {
+        setSection('calendar');
+        setViewMode('calendar');
+        setCalendarRefreshSignal((value) => value + 1);
+        void fetchSessions();
+    };
+
     return (
         <div className="admin-page-full">
             <div className="admin-header nomargin" style={{ paddingLeft: '20px', paddingTop: '20px' }}>
                 <div>
                     <h1>Session Management</h1>
-                    <p className="admin-subtitle">View and manage all schedules</p>
+                    <p className="admin-subtitle">
+                        {section === 'calendar'
+                            ? 'View and manage all schedules'
+                            : 'Create recurring session schedules for multiple clients'}
+                    </p>
                 </div>
                 <button className="btn btn-secondary" style={{ marginRight: '20px' }} onClick={() => {
                     setStartDate('');
                     setEndDate('');
-                    handleClearUser();
                     updateParams({ startDate: null, endDate: null, clientId: null, therapistId: null });
                 }}>
                     Reset Filters
@@ -248,273 +240,72 @@ export default function SessionListPage() {
             </div>
 
             <div className="session-page-layout">
-                {/* Sidebar: User List */}
-                <div className="session-list-sidebar">
-                    <div className="session-list-tabs">
-                        <button
-                            className={`session-list-tab ${activeTab === 'clients' ? 'active' : ''}`}
-                            onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
-                        >
-                            Clients
-                        </button>
-                        <button
-                            className={`session-list-tab ${activeTab === 'therapists' ? 'active' : ''}`}
-                            onClick={() => { setActiveTab('therapists'); setSearchTerm(''); }}
-                        >
-                            Therapists
-                        </button>
+                <aside className="session-section-sidebar">
+                    <button
+                        className={`session-section-btn ${section === 'calendar' ? 'active' : ''}`}
+                        onClick={() => setSection('calendar')}
+                    >
+                        <CalendarIcon size={15} />
+                        <span>Calendar</span>
+                    </button>
+                    <button
+                        className={`session-section-btn ${section === 'recurring' ? 'active' : ''}`}
+                        onClick={() => setSection('recurring')}
+                    >
+                        <Repeat size={15} />
+                        <span>Recurring Session Creation</span>
+                    </button>
+                </aside>
+
+                {section === 'calendar' ? (
+                    <>
+                        <UserFilterSidebar
+                            activeTab={activeTab}
+                            searchTerm={searchTerm}
+                            userLimit={userLimit}
+                            users={users}
+                            selectedUserId={selectedUserId}
+                            isLoadingUsers={isLoadingUsers}
+                            userPage={userPage}
+                            userTotalPages={userTotalPages}
+                            onActiveTabChange={(next) => {
+                                setActiveTab(next);
+                                setSearchTerm('');
+                            }}
+                            onSearchTermChange={setSearchTerm}
+                            onUserLimitChange={setUserLimit}
+                            onUserSelect={handleUserSelect}
+                            onUserPageChange={setUserPage}
+                        />
+
+                        <SessionViewPanel
+                            viewMode={viewMode}
+                            startDate={startDate}
+                            endDate={endDate}
+                            selectedUserId={selectedUserId}
+                            selectedClientId={selectedClientId}
+                            selectedTherapistId={selectedTherapistId}
+                            sessions={sessions}
+                            isLoadingSessions={isLoadingSessions}
+                            page={page}
+                            totalPages={totalPages}
+                            calendarRefreshSignal={calendarRefreshSignal}
+                            onViewModeChange={setViewMode}
+                            onDateChange={handleDateChange}
+                            onClearUser={handleClearUser}
+                            onPageChange={setPage}
+                            onSessionCreated={() => void fetchSessions()}
+                            onOpenReport={setReportSessionId}
+                            formatDateTime={formatDateTime}
+                            formatDateOnlyUtc={formatDateOnlyUtc}
+                            getStatusBadgeClass={getStatusBadgeClass}
+                        />
+                    </>
+                ) : (
+                    <div className="session-list-content recurring-only-content">
+                        <RecurringSessionCreationPanel onSuccess={handleRecurringSuccess} />
                     </div>
-
-                    <div className="session-list-search">
-                        <div className="search-input-wrapper" style={{ display: 'flex', alignItems: 'center', background: 'var(--gray-50)', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                            <Search size={16} color="#64748b" style={{ marginRight: '8px' }} />
-                            <input
-                                type="text"
-                                placeholder={`Search ${activeTab}...`}
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '14px' }}
-                            />
-                            {searchTerm && (
-                                <button onClick={() => setSearchTerm('')} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                                    <X size={14} color="#94a3b8" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="limit-selection-area">
-                        <div className="limit-select-wrapper">
-                            <select
-                                value={userLimit}
-                                onChange={(e) => setUserLimit(Number(e.target.value))}
-                                className="limit-select"
-                            >
-                                <option value={10}>10 / page</option>
-                                <option value={20}>20 / page</option>
-                                <option value={50}>50 / page</option>
-                            </select>
-                            <ChevronDown className="limit-select-icon" size={12} />
-                        </div>
-                    </div>
-
-                    <div className="user-list">
-                        {isLoadingUsers ? (
-                            <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Loading...</div>
-                        ) : users.length === 0 ? (
-                            <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No users found</div>
-                        ) : (
-                            <>
-                                {users.map(user => (
-                                    <div
-                                        key={user.id}
-                                        className={`user-list-item ${selectedUserId === user.id ? 'selected' : ''}`}
-                                        onClick={() => handleUserSelect(user)}
-                                    >
-                                        <div className="user-list-avatar">
-                                            {user.firstName[0]}{user.lastName[0]}
-                                        </div>
-                                        <div className="user-list-info">
-                                            <div className="user-list-name">{user.firstName} {user.lastName}</div>
-                                            <div className="user-list-email">{user.email}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </>
-                        )}
-                    </div>
-
-                    {/* Sidebar Pagination */}
-                    <div className="sidebar-pagination" style={{ padding: '10px', display: 'flex', justifyContent: 'center', gap: '10px', borderTop: '1px solid #e2e8f0' }}>
-                        <button
-                            disabled={userPage === 1}
-                            onClick={() => setUserPage(p => p - 1)}
-                            style={{ padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--gray-200)', background: 'var(--bg-surface)', color: 'var(--gray-600)', cursor: userPage === 1 ? 'not-allowed' : 'pointer', opacity: userPage === 1 ? 0.5 : 1 }}
-                        >
-                            Prev
-                        </button>
-                        <span style={{ fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                            {userPage} / {userTotalPages || 1}
-                        </span>
-                        <button
-                            disabled={userPage >= userTotalPages}
-                            onClick={() => setUserPage(p => p + 1)}
-                            style={{ padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--gray-200)', background: 'var(--bg-surface)', color: 'var(--gray-600)', cursor: userPage >= userTotalPages ? 'not-allowed' : 'pointer', opacity: userPage >= userTotalPages ? 0.5 : 1 }}
-                        >
-                            Next
-                        </button>
-                    </div>
-                </div>
-
-                {/* Main Content: Session Table or Calendar */}
-                <div className="session-list-content">
-                    {/* Header Filters & Toggle */}
-                    <div className="session-header-filters">
-                        <div className="view-toggle" style={{ display: 'flex', background: 'var(--gray-50)', padding: '4px', borderRadius: '8px', marginRight: '16px' }}>
-                            <button
-                                onClick={() => setViewMode('list')}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px',
-                                    padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                                    background: viewMode === 'list' ? 'var(--bg-surface)' : 'transparent',
-                                    boxShadow: viewMode === 'list' ? 'var(--shadow-sm)' : 'none',
-                                    color: viewMode === 'list' ? 'var(--gray-900)' : 'var(--gray-500)',
-                                    fontWeight: 500, fontSize: '13px'
-                                }}
-                            >
-                                <ListIcon size={14} /> List
-                            </button>
-                            <button
-                                onClick={() => setViewMode('calendar')}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px',
-                                    padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                                    background: viewMode === 'calendar' ? 'var(--bg-surface)' : 'transparent',
-                                    boxShadow: viewMode === 'calendar' ? 'var(--shadow-sm)' : 'none',
-                                    color: viewMode === 'calendar' ? 'var(--gray-900)' : 'var(--gray-500)',
-                                    fontWeight: 500, fontSize: '13px'
-                                }}
-                            >
-                                <CalendarIcon size={14} /> Calendar
-                            </button>
-                        </div>
-
-                        {viewMode === 'list' && (
-                            <div className="filter-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <CalendarIcon size={16} color="#64748b" />
-                                <input
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) => handleDateChange('start', e.target.value)}
-                                    className="filter-date-input"
-                                    style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px' }}
-                                />
-                                <span style={{ color: '#94a3b8' }}>to</span>
-                                <input
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => handleDateChange('end', e.target.value)}
-                                    className="filter-date-input"
-                                    style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px' }}
-                                />
-                            </div>
-                        )}
-
-                        {selectedUserId && (
-                            <div className="active-filter-badge" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--primary-50)', color: 'var(--primary-600)', padding: '4px 12px', borderRadius: '16px', fontSize: '13px', fontWeight: 500 }}>
-                                <UserIcon size={14} />
-                                <span>Filtered by user</span>
-                                <button onClick={handleClearUser} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--primary-600)' }}>
-                                    <X size={14} />
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {viewMode === 'list' ? (
-                        <>
-                            <div className="admin-table-container sessions-table-wrapper" style={{ flex: 1, overflow: 'auto', margin: 0 }}>
-                                {isLoadingSessions ? (
-                                    <div className="loading-state">
-                                        <div className="spinner" />
-                                        <p>Loading sessions...</p>
-                                    </div>
-                                ) : sessions.length === 0 ? (
-                                    <div className="empty-state">
-                                        <Filter size={48} color="#cbd5e1" style={{ marginBottom: '16px' }} />
-                                        <h3>No sessions found</h3>
-                                        <p>Select a user or adjust date filters to see results</p>
-                                    </div>
-                                ) : (
-                                    <table className="admin-table sticky-header">
-                                        <thead>
-                                            <tr>
-                                                <th>Date & Time</th>
-                                                <th>Therapist</th>
-                                                <th>Client</th>
-                                                <th>Type</th>
-                                                <th>Status</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {sessions.map((session) => (
-                                                <tr key={session.id}>
-                                                    <td>
-                                                        <div style={{ fontWeight: 500 }}>{formatDateTime(session.scheduledAt)}</div>
-                                                        <div style={{ fontSize: '12px', color: '#64748b' }}>{formatDateOnlyUtc(session.scheduledAt)} • {session.durationMins} mins</div>
-                                                    </td>
-                                                    <td>
-                                                        <div>{session.therapist.firstName} {session.therapist.lastName}</div>
-                                                        <div style={{ fontSize: '12px', color: '#64748b' }}>{session.therapist.email}</div>
-                                                    </td>
-                                                    <td>
-                                                        <div>{session.client.firstName} {session.client.lastName}</div>
-                                                        <div style={{ fontSize: '12px', color: '#64748b' }}>{session.client.email}</div>
-                                                    </td>
-                                                    <td>
-                                                        <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '12px', background: 'var(--gray-50)', color: 'var(--gray-700)' }}>
-                                                            {session.type.replace('_', ' ')}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span className={`status-badge ${getStatusBadgeClass(session.status)}`}>
-                                                            {session.status}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        {session.status === 'COMPLETED' ? (
-                                                            <button
-                                                                onClick={() => setReportSessionId(session.id)}
-                                                                className="btn btn-secondary"
-                                                                style={{ padding: '4px 8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none' }}
-                                                            >
-                                                                <Sparkles size={12} /> Report
-                                                            </button>
-                                                        ) : (
-                                                            <span style={{ color: '#94a3b8', fontSize: '12px' }}>N/A</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
-                            </div>
-
-                            {/* Pagination - Only show in list mode */}
-                            {totalPages > 1 && (
-                                <div className="pagination" style={{ marginTop: 'auto', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                                    <button
-                                        className="pagination-btn"
-                                        disabled={page === 1}
-                                        onClick={() => setPage((p) => p - 1)}
-                                    >
-                                        Previous
-                                    </button>
-                                    <span className="pagination-info">
-                                        Page {page} of {totalPages}
-                                    </span>
-                                    <button
-                                        className="pagination-btn"
-                                        disabled={page === totalPages}
-                                        onClick={() => setPage((p) => p + 1)}
-                                    >
-                                        Next
-                                    </button>
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        <div style={{ flex: 1, overflow: 'visible', position: 'relative' }}>
-                            <SessionCalendar
-                                clientId={selectedClientId}
-                                therapistId={selectedTherapistId}
-                                onSessionCreated={() => fetchSessions()}
-                            />
-                        </div>
-                    )}
-                </div>
+                )}
             </div>
 
             {/* AI Report Modal */}

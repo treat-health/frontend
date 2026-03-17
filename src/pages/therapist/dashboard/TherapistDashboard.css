@@ -156,6 +156,11 @@
     color: var(--gray-600, #4b5563);
 }
 
+.session-utc {
+    color: var(--gray-500, #6b7280);
+    font-weight: 500;
+}
+
 .dot-separator {
     color: var(--gray-300, #d1d5db);
 }
@@ -220,6 +225,15 @@
 
 .btn-zoom:hover {
     background: #eff6ff;
+}
+
+.btn-zoom-disabled {
+    color: var(--gray-500, #6b7280);
+    background: var(--gray-100, #f3f4f6);
+    border-radius: var(--radius-lg, 0.5rem);
+    padding: 0.5rem 0.75rem;
+    cursor: not-allowed;
+    gap: 0.5rem;
 }
 
 /* Modal specific overrides if needed, otherwise reuses modal classes */

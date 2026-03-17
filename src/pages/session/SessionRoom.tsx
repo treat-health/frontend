@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock, Sparkles } from 'lucide-react';
@@ -114,6 +114,14 @@ function canRejoinSession(session: SessionDetails, nowMs = Date.now()) {
 
     const { roomOpenMs, rejoinDeadlineMs } = getSessionTiming(session);
     return nowMs >= roomOpenMs && nowMs <= rejoinDeadlineMs;
+}
+
+function normalizeMeteredRoomUrl(input?: string | null) {
+    if (!input) return '';
+    return input
+        .trim()
+        .replace(/^https?:\/\//i, '')
+        .replace(/\/+$/, '');
 }
 
 function formatSessionDateTime(iso: string) {
@@ -397,11 +405,11 @@ function renderPreJoinStage(params: {
     scheduledRangeLabel: string | null;
     rejoinDeadlineLabel: string | null;
     exitContext: ExitContext;
-    onCloseOverlay: () => void;
+    onCloseOverlay: () => ReactNode;
     onCloseDashboard: () => void;
     onStartJoining: () => void;
     onToggleAcknowledged: (checked: boolean) => void;
-}): JSX.Element | null {
+}): ReactNode {
     const {
         isLoading,
         joinState,
@@ -531,9 +539,9 @@ function renderPreJoinStage(params: {
 
 function useMeteredJoinEffect(params: {
     id?: string;
-    user: { id: string } | null;
+    userId: string | null;
     joinState: JoinState;
-    navigate: (to: string) => void;
+    navigate: (to: string) => void | Promise<void>;
     sessionDetails: SessionDetails | null;
     setAiMonitoringConsent: (value: boolean) => void;
     setIsLoading: (value: boolean) => void;
@@ -553,7 +561,7 @@ function useMeteredJoinEffect(params: {
 }) {
     const {
         id,
-        user,
+        userId,
         joinState,
         navigate,
         sessionDetails,
@@ -575,13 +583,13 @@ function useMeteredJoinEffect(params: {
     } = params;
 
     useEffect(() => {
-        if (!id || !user || joinState !== 'JOINING') return;
+        if (!id || !userId || joinState !== 'JOINING') return;
 
         let isUnmounting = false;
 
         // eslint-disable-next-line sonarjs/cognitive-complexity
         const initMeteredVideo = async () => {
-            if (!id || !user) return;
+            if (!id || !userId) return;
 
             if (!(globalThis as any).Metered?.Meeting) {
                 toast.error('Video SDK not loaded. Please refresh the page.');
@@ -591,7 +599,7 @@ function useMeteredJoinEffect(params: {
 
             try {
                 const response = await api.post(`/sessions/${id}/media-token`);
-                const { token, roomName, aiMonitoringConsent: consentFromServer } = response.data;
+                const { token, roomName, roomUrl, aiMonitoringConsent: consentFromServer } = response.data;
                 setAiMonitoringConsent(!!consentFromServer);
 
                 if (isUnmounting) return;
@@ -748,10 +756,13 @@ function useMeteredJoinEffect(params: {
                     toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
                 });
 
+                const sdkRoomUrl = normalizeMeteredRoomUrl(roomUrl || roomName || id || '');
+
                 await meeting.join({
-                    roomURL: roomName || id,
+                    roomURL: sdkRoomUrl,
+                    accessToken: token,
                     meetingToken: token,
-                    participantName: user.id,
+                    participantName: userId,
                     localStream
                 });
 
@@ -802,7 +813,7 @@ function useMeteredJoinEffect(params: {
         };
     }, [
         id,
-        user,
+        userId,
         joinState,
         navigate,
         sessionDetails,
@@ -827,12 +838,13 @@ function useMeteredJoinEffect(params: {
 function useSessionLifecycleEffects(params: {
     id?: string;
     user: any;
-    navigate: (to: string) => void;
+    navigate: (to: string) => void | Promise<void>;
     sessionDetails: SessionDetails | null;
     setSessionDetails: React.Dispatch<React.SetStateAction<SessionDetails | null>>;
     setSessionNotes: (value: string) => void;
     setJoinState: React.Dispatch<React.SetStateAction<JoinState>>;
     setIsLoading: (value: boolean) => void;
+    isLoading: boolean;
     setTimeRemainingMs: (value: number | null) => void;
     isConnected: boolean;
     joinState: JoinState;
@@ -856,6 +868,7 @@ function useSessionLifecycleEffects(params: {
         setSessionNotes,
         setJoinState,
         setIsLoading,
+        isLoading,
         setTimeRemainingMs,
         isConnected,
         joinState,
@@ -1139,30 +1152,6 @@ export default function SessionRoom() {
     const sessionDetailsRef = useRef<SessionDetails | null>(null);
     const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
 
-    useSessionLifecycleEffects({
-        id,
-        user,
-        navigate: (to: string) => { void navigate(to); },
-        sessionDetails,
-        setSessionDetails,
-        setSessionNotes,
-        setJoinState,
-        setIsLoading,
-        setTimeRemainingMs,
-        isConnected,
-        joinState,
-        isCompletingSession,
-        applyCompletedSessionState,
-        presenceRefreshAbortRef,
-        sessionDetailsRef,
-        setPresenceSummary,
-        setPresenceError,
-        setIsPresenceLoading,
-        setIsSidebarOpen,
-        setSidebarTab,
-        setReportRefreshTrigger,
-    });
-
     // Role detection & feature gating
     let roleInSession: 'CLIENT' | 'THERAPIST' | 'UNKNOWN' = 'UNKNOWN';
     if (user?.id === sessionDetails?.clientId) {
@@ -1191,7 +1180,7 @@ export default function SessionRoom() {
     const localPresence = presenceParticipants.find((participant) => participant.userId === user?.id) ?? null;
     const remotePresenceParticipants = presenceParticipants.filter((participant) => participant.userId !== user?.id);
 
-    const clearVideoContainers = () => {
+    const clearVideoContainers = useCallback(() => {
         if (localVideoRef.current) {
             localVideoRef.current.innerHTML = '';
         }
@@ -1201,7 +1190,7 @@ export default function SessionRoom() {
         // Also remove any dangling audio elements that were appended to body by Metered
         document.querySelectorAll('[id^="metered-remote-audio-"]').forEach(el => el.remove());
         remoteStreamsRef.current.clear();
-    };
+    }, []);
 
     const disconnectRoom = (intent: 'LEAVE' | 'COMPLETE') => {
         disconnectIntentRef.current = intent;
@@ -1243,6 +1232,31 @@ export default function SessionRoom() {
             toast.success(options.toastMessage, { duration: 5000 });
         }
     }, [disconnectRoom]);
+
+    useSessionLifecycleEffects({
+        id,
+        user,
+        navigate,
+        sessionDetails,
+        setSessionDetails,
+        setSessionNotes,
+        setJoinState,
+        setIsLoading,
+        isLoading,
+        setTimeRemainingMs,
+        isConnected,
+        joinState,
+        isCompletingSession,
+        applyCompletedSessionState,
+        presenceRefreshAbortRef,
+        sessionDetailsRef,
+        setPresenceSummary,
+        setPresenceError,
+        setIsPresenceLoading,
+        setIsSidebarOpen,
+        setSidebarTab,
+        setReportRefreshTrigger,
+    });
 
     const startJoining = () => {
         setExitContext(null);
@@ -1294,9 +1308,9 @@ export default function SessionRoom() {
 
     useMeteredJoinEffect({
         id,
-        user: user ? { id: user.id } : null,
+        userId: user?.id ?? null,
         joinState,
-        navigate: (to: string) => { void navigate(to); },
+        navigate,
         sessionDetails,
         setAiMonitoringConsent,
         setIsLoading,
