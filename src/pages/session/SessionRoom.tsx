@@ -15,9 +15,13 @@ import type { MeteredMeeting } from '../../types/metered';
 
 const ROOM_OPEN_EARLY_MINUTES = 15;
 const ROOM_REJOIN_GRACE_MINUTES = 0; // Strict session end
+const SESSION_TAB_LOCK_TTL_MS = 15000;
+const AUTO_RETRY_BASE_DELAY_MS = 2000;
+const AUTO_RETRY_MAX_ATTEMPTS = 2;
 
 type JoinState = 'LOADING' | 'WAITING' | 'ACKNOWLEDGMENT' | 'JOINING' | 'LEFT' | 'COMPLETED';
 type ExitContext = 'LEFT' | 'NETWORK' | null;
+type ConnectionState = 'IDLE' | 'JOINING' | 'WAITING' | 'CONNECTED' | 'RECONNECTING' | 'FAILED';
 
 interface SessionDetails {
     id: string;
@@ -71,6 +75,17 @@ interface PresenceSummary {
     };
     participants: PresenceParticipantSummary[];
     recentEvents: PresenceEventSummary[];
+}
+
+interface SdkRemoteParticipant {
+    id: string;
+    name: string;
+    sourceParticipantId: string;
+    identityKey: string;
+    hasVideo: boolean;
+    hasAudio: boolean;
+    joinedAt: number;
+    lastTrackAt: number;
 }
 
 function parseSessionDate(value: string) {
@@ -152,21 +167,6 @@ function formatDateTime(value?: string | null) {
         timeZone: 'UTC',
         timeZoneName: 'short',
     });
-}
-
-function formatConnectedDuration(totalSeconds: number) {
-    const safeSeconds = Math.max(0, totalSeconds);
-    const hours = Math.floor(safeSeconds / 3600);
-    const minutes = Math.floor((safeSeconds % 3600) / 60);
-    const seconds = safeSeconds % 60;
-
-    if (hours > 0) {
-        return `${hours}h ${minutes}m`;
-    }
-    if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-    }
-    return `${seconds}s`;
 }
 
 function formatRoleLabel(role?: string | null) {
@@ -541,17 +541,18 @@ function renderPreJoinStage(params: {
 function useMeteredJoinEffect(params: {
     id?: string;
     userId: string | null;
+    userDisplayName: string;
     joinState: JoinState;
     navigate: (to: string) => void | Promise<void>;
-    sessionDetails: SessionDetails | null;
     setAiMonitoringConsent: (value: boolean) => void;
     setIsLoading: (value: boolean) => void;
     setIsVideoOff: (value: boolean) => void;
     setAttentionAdapter: (adapter: AttentionRoomAdapter | null) => void;
-    setIsConnected: (value: boolean) => void;
+    setIsInRoom: (value: boolean) => void;
+    setConnectionState: (value: ConnectionState) => void;
+    setRemoteParticipants: React.Dispatch<React.SetStateAction<SdkRemoteParticipant[]>>;
     setExitContext: (value: ExitContext) => void;
     setJoinState: (value: JoinState) => void;
-    localVideoRef: React.RefObject<HTMLDivElement | null>;
     remoteVideoRef: React.RefObject<HTMLDivElement | null>;
     localStreamRef: React.RefObject<MediaStream | null>;
     remoteStreamsRef: React.RefObject<Map<string, HTMLElement>>;
@@ -561,20 +562,23 @@ function useMeteredJoinEffect(params: {
     clearVideoContainers: () => void;
     setLocalPreviewStream: (stream: MediaStream | null) => void;
 }) {
+    const joinAttemptRef = useRef(0);
+    const joinInFlightRef = useRef(false);
     const {
         id,
         userId,
+        userDisplayName,
         joinState,
         navigate,
-        sessionDetails,
         setAiMonitoringConsent,
         setIsLoading,
         setIsVideoOff,
         setAttentionAdapter,
-        setIsConnected,
+        setIsInRoom,
+        setConnectionState,
+        setRemoteParticipants,
         setExitContext,
         setJoinState,
-        localVideoRef,
         remoteVideoRef,
         localStreamRef,
         remoteStreamsRef,
@@ -587,12 +591,39 @@ function useMeteredJoinEffect(params: {
 
     useEffect(() => {
         if (!id || !userId || joinState !== 'JOINING') return;
+        if (joinInFlightRef.current || roomRef.current) return;
 
+        const joinAttemptId = ++joinAttemptRef.current;
         let isUnmounting = false;
+        let joinedMeeting: MeteredMeeting | null = null;
+        const listeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = [];
+        const localTrackCleanupCallbacks: Array<() => void> = [];
+        let joinTimeout: ReturnType<typeof setTimeout> | null = null;
+        let firstRemoteTrackTimeout: ReturnType<typeof setTimeout> | null = null;
+        let hasReceivedRemoteTrack = false;
 
-        // eslint-disable-next-line sonarjs/cognitive-complexity
+        joinInFlightRef.current = true;
+        setConnectionState('JOINING');
+
+        joinTimeout = setTimeout(() => {
+            if (joinAttemptRef.current !== joinAttemptId || isUnmounting) return;
+            console.error('[SessionRoom] join:timeout', { joinAttemptId, sessionId: id, userId });
+            setIsLoading(false);
+            setConnectionState('FAILED');
+            setExitContext('NETWORK');
+            setJoinState('LEFT');
+            roomRef.current?.leaveMeeting?.();
+            roomRef.current = null;
+        }, 20000);
+
         const initMeteredVideo = async () => {
             if (!id || !userId) return;
+
+            console.info('[SessionRoom] join:start', {
+                joinAttemptId,
+                sessionId: id,
+                userId,
+            });
 
             if (!(globalThis as any).Metered?.Meeting) {
                 toast.error('Video SDK not loaded. Please refresh the page.');
@@ -605,7 +636,14 @@ function useMeteredJoinEffect(params: {
                 const { token, roomName, roomUrl, aiMonitoringConsent: consentFromServer } = response.data;
                 setAiMonitoringConsent(!!consentFromServer);
 
-                if (isUnmounting) return;
+                if (isUnmounting || joinAttemptRef.current !== joinAttemptId) return;
+
+                console.info('[SessionRoom] join:token_received', {
+                    joinAttemptId,
+                    roomName,
+                    roomUrl,
+                    tokenLength: typeof token === 'string' ? token.length : 0,
+                });
 
                 let localStream: MediaStream;
                 try {
@@ -626,11 +664,63 @@ function useMeteredJoinEffect(params: {
                     return;
                 }
 
+                if (joinAttemptRef.current !== joinAttemptId) {
+                    localStream.getTracks().forEach((t) => t.stop());
+                    return;
+                }
+
+                console.info('[SessionRoom] join:local_stream_ready', {
+                    joinAttemptId,
+                    localVideoTracks: localStream.getVideoTracks().map((track) => ({
+                        id: track.id,
+                        enabled: track.enabled,
+                        readyState: track.readyState,
+                    })),
+                    localAudioTracks: localStream.getAudioTracks().map((track) => ({
+                        id: track.id,
+                        enabled: track.enabled,
+                        readyState: track.readyState,
+                    })),
+                });
+
                 localStreamRef.current = localStream;
                 setLocalPreviewStream(localStream);
+                localStream.getTracks().forEach((track) => {
+                    const onEnded = () => {
+                        console.warn('[SessionRoom] track:local_ended', {
+                            joinAttemptId,
+                            type: track.kind,
+                            trackId: track.id,
+                            readyState: track.readyState,
+                        });
+                    };
+                    const onMute = () => {
+                        console.warn('[SessionRoom] track:local_muted', {
+                            joinAttemptId,
+                            type: track.kind,
+                            trackId: track.id,
+                        });
+                    };
+                    const onUnmute = () => {
+                        console.info('[SessionRoom] track:local_unmuted', {
+                            joinAttemptId,
+                            type: track.kind,
+                            trackId: track.id,
+                        });
+                    };
+                    track.addEventListener('ended', onEnded);
+                    track.addEventListener('mute', onMute);
+                    track.addEventListener('unmute', onUnmute);
+                    localTrackCleanupCallbacks.push(() => {
+                        track.removeEventListener('ended', onEnded);
+                        track.removeEventListener('mute', onMute);
+                        track.removeEventListener('unmute', onUnmute);
+                    });
+                });
 
                 const meeting = new (globalThis as any).Metered.Meeting();
                 roomRef.current = meeting;
+                joinedMeeting = meeting;
 
                 const videoTracks = localStream.getVideoTracks();
                 const audioTracks = localStream.getAudioTracks();
@@ -646,82 +736,761 @@ function useMeteredJoinEffect(params: {
                 };
                 setAttentionAdapter(adapter);
 
-                meeting.on('remoteTrackStarted', (trackItem: any) => {
-                    if (isUnmounting) return;
-                    if (trackItem.type === 'video') {
-                        const remoteVideo = document.createElement('video');
-                        remoteVideo.id = `metered-remote-video-${trackItem.participantSessionId}`;
-                        remoteVideo.autoplay = true;
-                        remoteVideo.playsInline = true;
-                        remoteVideo.style.width = '100%';
-                        remoteVideo.style.height = '100%';
-                        remoteVideo.style.objectFit = 'cover';
-                        remoteVideo.srcObject = new MediaStream([trackItem.track]);
-                        if (remoteVideoRef.current) {
-                            remoteVideoRef.current.appendChild(remoteVideo);
-                        }
-                        remoteStreamsRef.current.set(`video-${trackItem.participantSessionId}`, remoteVideo);
-                        setIsConnected(true);
-                    } else if (trackItem.type === 'audio') {
-                        const audioEl = document.createElement('audio');
-                        audioEl.id = `metered-remote-audio-${trackItem.participantSessionId}`;
-                        audioEl.autoplay = true;
-                        audioEl.srcObject = new MediaStream([trackItem.track]);
-                        document.body.appendChild(audioEl);
-                        remoteStreamsRef.current.set(`audio-${trackItem.participantSessionId}`, audioEl);
-                        audioEl.play().catch(() => undefined);
-                        setIsConnected(true);
+                const on = (event: string, handler: (...args: unknown[]) => void) => {
+                    meeting.on(event, handler);
+                    listeners.push({ event, handler });
+                };
+
+                const participantRegistry = new Map<string, { participantId: string; participantKey: string; active: boolean; lastUpdatedAt: number }>();
+                const participantTrackMap = new Map<string, { videoTrackId?: string; audioTrackId?: string }>();
+                const bufferedTracks = new Map<string, { participantId: string; participantName: string; videoTrack?: MediaStreamTrack; audioTrack?: MediaStreamTrack; bufferedAt: number }>();
+
+                const parseParticipantIdentity = (participantName: string) => {
+                    const raw = participantName.trim();
+                    if (!raw) {
+                        return { appUserId: '', displayName: '' };
                     }
-                });
+                    const separatorIndex = raw.indexOf('|');
+                    if (separatorIndex <= 0 || separatorIndex >= raw.length - 1) {
+                        return { appUserId: '', displayName: raw };
+                    }
+                    return {
+                        appUserId: raw.slice(0, separatorIndex).trim(),
+                        displayName: raw.slice(separatorIndex + 1).trim(),
+                    };
+                };
 
-                meeting.on('remoteTrackStopped', (trackItem: any) => {
-                    const videoEl = document.getElementById(`metered-remote-video-${trackItem.participantSessionId}`);
-                    videoEl?.remove();
-                    const audioEl = document.getElementById(`metered-remote-audio-${trackItem.participantSessionId}`);
-                    audioEl?.remove();
-                    remoteStreamsRef.current.delete(`video-${trackItem.participantSessionId}`);
-                    remoteStreamsRef.current.delete(`audio-${trackItem.participantSessionId}`);
-                });
+                const normalizeDisplayName = (participantName: string) => {
+                    const normalized = participantName.trim().replace(/\s+/g, ' ');
+                    if (!normalized) return 'Participant';
+                    if (/^anonymous[-_\s]/i.test(normalized)) return 'Participant';
+                    return normalized;
+                };
 
-                meeting.on('participantJoined', (participant: any) => {
-                    toast(`${participant.participantName || 'Participant'} joined the room`);
-                    setIsConnected(true);
-                });
+                const toDomSafeKey = (value: string) => value.replace(/[^a-z0-9_-]/gi, '-');
+                const resolveParticipantMeta = (participantId: string, participantName: string) => {
+                    const normalizedParticipantId = participantId.trim();
+                    const parsedIdentity = parseParticipantIdentity(participantName);
+                    const normalizedParticipantName = (parsedIdentity.displayName || participantName).trim();
+                    const normalizedName = normalizedParticipantName.toLowerCase().replace(/\s+/g, ' ');
+                    const stableIdentity = normalizedParticipantId || parsedIdentity.appUserId;
+                    const identityKey = stableIdentity
+                        ? `sid:${stableIdentity}`
+                        : normalizedName
+                            ? `name:${normalizedName}`
+                            : 'unknown';
+                    const participantKey = toDomSafeKey(identityKey);
+                    const displayName = normalizeDisplayName(normalizedParticipantName);
+                    return { identityKey, participantKey, displayName, stableIdentity };
+                };
 
-                const refreshConnectionState = async () => {
-                    try {
-                        const participants = await meeting.getParticipants?.();
-                        if (!participants || participants.length <= 1) {
-                            setIsConnected(false);
-                            return;
+                const resolveTrackParticipantId = (trackItem: any) => {
+                    const directId = String(trackItem?.participantSessionId ?? trackItem?.participantId ?? '').trim();
+                    if (directId) return directId;
+                    const parsedIdentity = parseParticipantIdentity(String(trackItem?.participantName ?? trackItem?.name ?? ''));
+                    return parsedIdentity.appUserId || '';
+                };
+
+                const resolveTrackType = (trackItem: any): 'video' | 'audio' | 'unknown' => {
+                    // 1. Explicit type field from SDK payload
+                    const typeFromPayload = String(trackItem?.type ?? '').toLowerCase();
+                    if (typeFromPayload === 'video' || typeFromPayload === 'audio') {
+                        return typeFromPayload;
+                    }
+                    // 2. Nested .track.kind
+                    const kindFromTrack = String(trackItem?.track?.kind ?? '').toLowerCase();
+                    if (kindFromTrack === 'video' || kindFromTrack === 'audio') {
+                        return kindFromTrack;
+                    }
+                    // 3. Direct .kind on event (if event IS the track)
+                    const kindDirect = String(trackItem?.kind ?? '').toLowerCase();
+                    if (kindDirect === 'video' || kindDirect === 'audio') {
+                        return kindDirect;
+                    }
+                    // 4. Check alternate property names
+                    const altTrack = trackItem?.mediaStreamTrack ?? trackItem?.mediaTrack ?? trackItem?.streamTrack;
+                    const altKind = String(altTrack?.kind ?? '').toLowerCase();
+                    if (altKind === 'video' || altKind === 'audio') {
+                        return altKind;
+                    }
+                    return 'unknown';
+                };
+
+                const resolveMediaTrack = (trackItem: any, trackType: 'video' | 'audio' | 'unknown') => {
+                    // 1. trackItem.track (most common SDK convention)
+                    if (trackItem?.track instanceof MediaStreamTrack) {
+                        return trackItem.track as MediaStreamTrack;
+                    }
+                    // 2. trackItem itself IS a MediaStreamTrack (some SDKs pass track directly)
+                    if (trackItem instanceof MediaStreamTrack) {
+                        return trackItem;
+                    }
+                    // 3. Alternate property names used by various Metered SDK versions
+                    const altTrack = trackItem?.mediaStreamTrack ?? trackItem?.mediaTrack ?? trackItem?.streamTrack;
+                    if (altTrack instanceof MediaStreamTrack) {
+                        return altTrack as MediaStreamTrack;
+                    }
+                    // 4. Extract from stream/remoteStream
+                    const streamCandidate = trackItem?.stream ?? trackItem?.remoteStream;
+                    if (streamCandidate instanceof MediaStream) {
+                        if (trackType === 'video') {
+                            return streamCandidate.getVideoTracks()[0] ?? null;
                         }
-                        setIsConnected(true);
-                    } catch {
-                        setIsConnected(false);
+                        if (trackType === 'audio') {
+                            return streamCandidate.getAudioTracks()[0] ?? null;
+                        }
+                        return streamCandidate.getTracks()[0] ?? null;
+                    }
+                    return null;
+                };
+
+                const detachElementMedia = (element: HTMLElement | null) => {
+                    if (!element) return;
+                    const mediaElement = element as HTMLMediaElement;
+                    if (mediaElement.srcObject) {
+                        mediaElement.srcObject = null;
                     }
                 };
 
-                meeting.on('participantLeft', (participant: any) => {
-                    toast(`${participant.participantName || 'Participant'} left the room`);
-                    void refreshConnectionState();
+                const upsertRemoteParticipant = (
+                    participantId: string,
+                    participantName: string,
+                    patch?: Partial<Omit<SdkRemoteParticipant, 'id' | 'name' | 'joinedAt' | 'identityKey'>>,
+                ) => {
+                    if (!participantId && !participantName) return;
+                    const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                    if (identityKey === 'unknown') return;
+                    const effectiveSourceId = stableIdentity || participantId;
+                    setRemoteParticipants((current) => {
+                        const existing = current.find((participant) => participant.identityKey === identityKey || participant.sourceParticipantId === effectiveSourceId);
+                        if (!existing) {
+                            return [
+                                ...current,
+                                {
+                                    id: participantKey,
+                                    name: displayName,
+                                    sourceParticipantId: effectiveSourceId,
+                                    identityKey,
+                                    hasVideo: patch?.hasVideo ?? false,
+                                    hasAudio: patch?.hasAudio ?? false,
+                                    joinedAt: Date.now(),
+                                    lastTrackAt: patch?.lastTrackAt ?? Date.now(),
+                                },
+                            ];
+                        }
+                        return current.map((participant) => participant.identityKey === existing.identityKey
+                            ? {
+                                ...participant,
+                                id: participantKey,
+                                name: displayName || participant.name,
+                                sourceParticipantId: effectiveSourceId || participant.sourceParticipantId,
+                                hasVideo: patch?.hasVideo ?? participant.hasVideo,
+                                hasAudio: patch?.hasAudio ?? participant.hasAudio,
+                                lastTrackAt: patch?.lastTrackAt ?? participant.lastTrackAt,
+                            }
+                            : participant);
+                    });
+                };
+
+                const removeRemoteParticipant = (participantId: string, participantName = '') => {
+                    if (!participantId && !participantName) return;
+                    const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                    const effectiveSourceId = stableIdentity || participantId;
+                    setRemoteParticipants((current) => current.filter((participant) => participant.identityKey !== identityKey && participant.sourceParticipantId !== effectiveSourceId && participant.id !== participantKey));
+                };
+
+                const ensureVideoElement = (participantKey: string, track: MediaStreamTrack) => {
+                    const existingElement = document.getElementById(`metered-remote-video-${participantKey}`);
+                    const existingTrackId = (existingElement as HTMLVideoElement | null)?.dataset.trackId;
+                    if (existingElement && existingTrackId === track.id) return;
+                    detachElementMedia(existingElement);
+                    existingElement?.remove();
+                    const remoteVideo = document.createElement('video');
+                    remoteVideo.id = `metered-remote-video-${participantKey}`;
+                    remoteVideo.autoplay = true;
+                    remoteVideo.playsInline = true;
+                    remoteVideo.style.width = '100%';
+                    remoteVideo.style.height = '100%';
+                    remoteVideo.style.objectFit = 'cover';
+                    remoteVideo.srcObject = new MediaStream([track]);
+                    remoteVideo.dataset.trackId = track.id;
+                    if (remoteVideoRef.current) {
+                        remoteVideoRef.current.appendChild(remoteVideo);
+                    }
+                    remoteStreamsRef.current.set(`video-${participantKey}`, remoteVideo);
+                };
+
+                const ensureAudioElement = (participantKey: string, track: MediaStreamTrack) => {
+                    const existingElement = document.getElementById(`metered-remote-audio-${participantKey}`);
+                    const existingTrackId = (existingElement as HTMLAudioElement | null)?.dataset.trackId;
+                    if (existingElement && existingTrackId === track.id) {
+                        // Same track already attached — verify it's actually playing
+                        const existingAudio = existingElement as HTMLAudioElement;
+                        console.info('[SessionRoom] audio:remote_element_reuse', {
+                            joinAttemptId,
+                            participantKey,
+                            trackId: track.id,
+                            paused: existingAudio.paused,
+                            muted: existingAudio.muted,
+                            volume: existingAudio.volume,
+                            readyState: existingAudio.readyState,
+                            srcObjectActive: !!(existingAudio.srcObject as MediaStream)?.active,
+                        });
+                        return;
+                    }
+                    detachElementMedia(existingElement);
+                    existingElement?.remove();
+
+                    const audioElement = document.createElement('audio');
+                    audioElement.id = `metered-remote-audio-${participantKey}`;
+                    audioElement.autoplay = true;
+                    audioElement.muted = false;   // Explicit: never start muted
+                    audioElement.volume = 1.0;    // Explicit: full volume
+                    audioElement.setAttribute('playsinline', 'true');
+                    audioElement.srcObject = new MediaStream([track]);
+                    audioElement.dataset.trackId = track.id;
+                    document.body.appendChild(audioElement);
+                    remoteStreamsRef.current.set(`audio-${participantKey}`, audioElement);
+
+                    // Attempt playback and log the result — never silently swallow autoplay errors
+                    audioElement.play()
+                        .then(() => {
+                            console.info('[SessionRoom] audio:remote_play_success', {
+                                joinAttemptId,
+                                participantKey,
+                                trackId: track.id,
+                                paused: audioElement.paused,
+                                muted: audioElement.muted,
+                                volume: audioElement.volume,
+                                readyState: audioElement.readyState,
+                            });
+                        })
+                        .catch((playError) => {
+                            // Autoplay was blocked — this is the #1 reason for "no audio heard"
+                            console.error('[SessionRoom] audio:remote_play_BLOCKED', {
+                                joinAttemptId,
+                                participantKey,
+                                trackId: track.id,
+                                errorName: playError?.name,
+                                errorMessage: playError?.message,
+                                paused: audioElement.paused,
+                                muted: audioElement.muted,
+                                hint: 'Browser autoplay policy blocked audio. User interaction may be required.',
+                            });
+                        });
+                };
+
+                const removeTrackElements = (participantKey: string) => {
+                    const videoElement = document.getElementById(`metered-remote-video-${participantKey}`);
+                    detachElementMedia(videoElement);
+                    videoElement?.remove();
+                    const audioElement = document.getElementById(`metered-remote-audio-${participantKey}`);
+                    detachElementMedia(audioElement);
+                    audioElement?.remove();
+                    remoteStreamsRef.current.delete(`video-${participantKey}`);
+                    remoteStreamsRef.current.delete(`audio-${participantKey}`);
+                };
+
+                const attachRemoteTrack = (trackItem: any) => {
+                    const participantId = resolveTrackParticipantId(trackItem);
+                    const participantName = String(trackItem?.participantName ?? trackItem?.name ?? 'Participant');
+                    let trackType = resolveTrackType(trackItem);
+                    let mediaTrack = resolveMediaTrack(trackItem, trackType);
+
+                    // ── Audio diagnostic: if trackType is unknown or mediaTrack is null, attempt last-resort extraction ──
+                    if (!mediaTrack || trackType === 'unknown') {
+                        // Scan ALL event properties to find any MediaStreamTrack
+                        const allKeys = trackItem && typeof trackItem === 'object' ? Object.keys(trackItem) : [];
+                        let fallbackTrack: MediaStreamTrack | null = null;
+                        let fallbackSource = '';
+                        for (const key of allKeys) {
+                            const val = trackItem[key];
+                            if (val instanceof MediaStreamTrack) {
+                                fallbackTrack = val;
+                                fallbackSource = key;
+                                break;
+                            }
+                            if (val instanceof MediaStream) {
+                                const tracks = val.getTracks();
+                                if (tracks.length > 0) {
+                                    fallbackTrack = tracks[0];
+                                    fallbackSource = `${key}.getTracks()[0]`;
+                                    break;
+                                }
+                            }
+                        }
+                        console.warn('[SessionRoom] track:fallback_extraction', {
+                            joinAttemptId,
+                            originalTrackType: trackType,
+                            originalMediaTrack: mediaTrack ? 'exists' : 'null',
+                            fallbackFound: !!fallbackTrack,
+                            fallbackSource,
+                            fallbackTrackKind: fallbackTrack?.kind,
+                            fallbackTrackId: fallbackTrack?.id,
+                            fallbackTrackEnabled: fallbackTrack?.enabled,
+                            fallbackTrackReadyState: fallbackTrack?.readyState,
+                            eventKeys: allKeys,
+                        });
+                        if (fallbackTrack) {
+                            mediaTrack = fallbackTrack;
+                            if (trackType === 'unknown') {
+                                trackType = (fallbackTrack.kind === 'audio' || fallbackTrack.kind === 'video')
+                                    ? fallbackTrack.kind
+                                    : 'unknown';
+                            }
+                        }
+                    }
+
+                    const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                    if (identityKey === 'unknown') {
+                        console.warn('[SessionRoom] track:unresolvable_identity_ignored', {
+                            joinAttemptId,
+                            type: trackType,
+                            participantSessionId: trackItem?.participantSessionId,
+                            participantId: trackItem?.participantId,
+                            participantName,
+                            trackId: mediaTrack?.id,
+                        });
+                        return;
+                    }
+                    const effectiveSourceId = stableIdentity || participantId;
+                    const participantState = participantRegistry.get(identityKey);
+                    if (!participantState || !participantState.active) {
+                        if (effectiveSourceId) {
+                            participantRegistry.set(identityKey, {
+                                participantId: effectiveSourceId,
+                                participantKey,
+                                active: true,
+                                lastUpdatedAt: Date.now(),
+                            });
+                            upsertRemoteParticipant(effectiveSourceId, displayName, { lastTrackAt: Date.now() });
+                            console.warn('[SessionRoom] participant:synthesized_from_track', {
+                                joinAttemptId,
+                                participantId: effectiveSourceId,
+                                participantName: displayName,
+                                identityKey,
+                            });
+                        } else {
+                            const buffered = bufferedTracks.get(identityKey) ?? {
+                                participantId,
+                                participantName: displayName,
+                                bufferedAt: Date.now(),
+                            };
+                            if (trackType === 'video' && mediaTrack) {
+                                buffered.videoTrack = mediaTrack;
+                            }
+                            if (trackType === 'audio' && mediaTrack) {
+                                buffered.audioTrack = mediaTrack;
+                            }
+                            bufferedTracks.set(identityKey, buffered);
+                            console.warn('[SessionRoom] track:orphan_buffered', {
+                                joinAttemptId,
+                                participantId: effectiveSourceId,
+                                participantName: displayName,
+                                identityKey,
+                                type: trackType,
+                                trackId: mediaTrack?.id,
+                            });
+                            return;
+                        }
+                    }
+
+                    const existingTracks = participantTrackMap.get(identityKey) ?? {};
+                    if (trackType === 'video' && mediaTrack) {
+                        if (existingTracks.videoTrackId !== mediaTrack.id) {
+                            ensureVideoElement(participantKey, mediaTrack);
+                            participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: mediaTrack.id });
+                        }
+                        upsertRemoteParticipant(effectiveSourceId, displayName, { hasVideo: true, lastTrackAt: Date.now() });
+                    } else if (trackType === 'audio' && mediaTrack) {
+                        if (existingTracks.audioTrackId !== mediaTrack.id) {
+                            ensureAudioElement(participantKey, mediaTrack);
+                            participantTrackMap.set(identityKey, { ...existingTracks, audioTrackId: mediaTrack.id });
+                        }
+                        upsertRemoteParticipant(effectiveSourceId, displayName, { hasAudio: true, lastTrackAt: Date.now() });
+                        console.info('[SessionRoom] audio:track_attached_success', {
+                            joinAttemptId,
+                            participantKey,
+                            trackId: mediaTrack.id,
+                            trackEnabled: mediaTrack.enabled,
+                            trackReadyState: mediaTrack.readyState,
+                            effectiveSourceId,
+                        });
+                    } else {
+                        // CRITICAL: This means audio/video track was NOT recognized or extracted
+                        console.error('[SessionRoom] track:IGNORED_missing_media_track', {
+                            joinAttemptId,
+                            participantId: effectiveSourceId,
+                            participantName: displayName,
+                            type: trackType,
+                            mediaTrackResolved: !!mediaTrack,
+                            eventType: trackItem?.type,
+                            eventKind: trackItem?.kind,
+                            eventKeys: trackItem && typeof trackItem === 'object' ? Object.keys(trackItem) : [],
+                            hint: 'This is WHY hasAudio stays Off — the audio track could not be resolved from the event payload.',
+                        });
+                    }
+                };
+
+                const drainBufferedTracks = (participantId: string, participantName: string) => {
+                    const { identityKey } = resolveParticipantMeta(participantId, participantName);
+                    const buffered = bufferedTracks.get(identityKey);
+                    if (!buffered) return;
+                    if (buffered.videoTrack) {
+                        attachRemoteTrack({
+                            type: 'video',
+                            track: buffered.videoTrack,
+                            participantSessionId: participantId,
+                            participantName,
+                        });
+                    }
+                    if (buffered.audioTrack) {
+                        attachRemoteTrack({
+                            type: 'audio',
+                            track: buffered.audioTrack,
+                            participantSessionId: participantId,
+                            participantName,
+                        });
+                    }
+                    bufferedTracks.delete(identityKey);
+                };
+
+                const bootstrapExistingParticipants = async () => {
+                    try {
+                        const participants = await meeting.getParticipants?.();
+                        if (!Array.isArray(participants)) return;
+                        let discoveredRemote = 0;
+                        participants.forEach((participant: any) => {
+                            const participantId = String(
+                                participant?.participantSessionId
+                                ?? participant?.participantId
+                                ?? participant?.id
+                                ?? '',
+                            ).trim();
+                            const participantName = String(
+                                participant?.participantName
+                                ?? participant?.name
+                                ?? participant?.identity
+                                ?? '',
+                            ).trim();
+                            if (!participantId && !participantName) return;
+                            const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                            if (identityKey === 'unknown') return;
+                            const effectiveSourceId = stableIdentity || participantId;
+                            if (effectiveSourceId && userId && effectiveSourceId === userId) return;
+                            discoveredRemote += 1;
+                            participantRegistry.set(identityKey, {
+                                participantId: effectiveSourceId,
+                                participantKey,
+                                active: true,
+                                lastUpdatedAt: Date.now(),
+                            });
+                            upsertRemoteParticipant(effectiveSourceId, participantName, { lastTrackAt: Date.now() });
+                            drainBufferedTracks(effectiveSourceId, participantName);
+                        });
+                        if (discoveredRemote > 0) {
+                            console.info('[SessionRoom] participants:bootstrapped', {
+                                joinAttemptId,
+                                discoveredRemote,
+                            });
+                            setConnectionState('CONNECTED');
+                        } else {
+                            setConnectionState('WAITING');
+                        }
+                    } catch (error) {
+                        console.warn('[SessionRoom] participants:bootstrap_failed', {
+                            joinAttemptId,
+                            message: error instanceof Error ? error.message : 'unknown',
+                        });
+                    }
+                };
+
+                on('remoteTrackStarted', (trackPayload: unknown) => {
+                    const trackItem = trackPayload as any;
+                    if (isUnmounting) return;
+
+                    // ── RAW PAYLOAD DUMP: Do NOT assume shape ──
+                    const rawKeys = trackItem && typeof trackItem === 'object' ? Object.keys(trackItem) : [];
+                    const candidateTrackFields: Record<string, string> = {};
+                    for (const key of ['track', 'mediaStreamTrack', 'mediaTrack', 'streamTrack', 'stream', 'remoteStream']) {
+                        const val = trackItem?.[key];
+                        candidateTrackFields[key] = val instanceof MediaStreamTrack
+                            ? `MediaStreamTrack(id=${val.id}, kind=${val.kind}, enabled=${val.enabled}, readyState=${val.readyState})`
+                            : val instanceof MediaStream
+                                ? `MediaStream(id=${val.id}, active=${val.active}, tracks=${val.getTracks().length})`
+                                : val === undefined ? 'undefined' : val === null ? 'null' : typeof val;
+                    }
+                    console.info('[SessionRoom] RAW:remoteTrackStarted', {
+                        joinAttemptId,
+                        typeof: typeof trackItem,
+                        isMediaStreamTrack: trackItem instanceof MediaStreamTrack,
+                        keys: rawKeys,
+                        candidateTrackFields,
+                        type: trackItem?.type,
+                        kind: trackItem?.kind,
+                        participantSessionId: trackItem?.participantSessionId,
+                        participantId: trackItem?.participantId,
+                        participantName: trackItem?.participantName,
+                        name: trackItem?.name,
+                        rawPayload: trackItem,
+                    });
+
+                    const participantId = String(trackItem?.participantSessionId ?? trackItem?.participantId ?? '');
+                    const trackType = resolveTrackType(trackItem);
+                    const mediaTrack = resolveMediaTrack(trackItem, trackType);
+                    console.info('[SessionRoom] track:remote_started', {
+                        joinAttemptId,
+                        type: trackType,
+                        participantSessionId: participantId,
+                        trackId: mediaTrack?.id,
+                        trackEnabled: mediaTrack?.enabled,
+                        trackReadyState: mediaTrack?.readyState,
+                        trackMuted: mediaTrack?.muted,
+                        resolvedTrackSource: mediaTrack
+                            ? (trackItem?.track === mediaTrack ? '.track'
+                                : trackItem === mediaTrack ? 'event_itself'
+                                : trackItem?.mediaStreamTrack === mediaTrack ? '.mediaStreamTrack'
+                                : trackItem?.mediaTrack === mediaTrack ? '.mediaTrack'
+                                : trackItem?.streamTrack === mediaTrack ? '.streamTrack'
+                                : 'from_stream')
+                            : 'NOT_RESOLVED',
+                    });
+                    attachRemoteTrack(trackItem);
+
+                    // Audio-specific: verify DOM element was created and is playing
+                    if (trackType === 'audio' && mediaTrack) {
+                        const participantName = String(trackItem?.participantName ?? trackItem?.name ?? '');
+                        const { participantKey } = resolveParticipantMeta(participantId, participantName);
+                        const audioEl = document.getElementById(`metered-remote-audio-${participantKey}`) as HTMLAudioElement | null;
+                        console.info('[SessionRoom] audio:remote_element_verify', {
+                            joinAttemptId,
+                            participantKey,
+                            trackId: mediaTrack.id,
+                            elementExists: !!audioEl,
+                            elementPaused: audioEl?.paused,
+                            elementMuted: audioEl?.muted,
+                            elementVolume: audioEl?.volume,
+                            elementReadyState: audioEl?.readyState,
+                            srcObjectActive: !!(audioEl?.srcObject as MediaStream)?.active,
+                            srcObjectTrackCount: (audioEl?.srcObject as MediaStream)?.getTracks().length,
+                        });
+                    }
+
+                    hasReceivedRemoteTrack = true;
+                    if (firstRemoteTrackTimeout) {
+                        clearTimeout(firstRemoteTrackTimeout);
+                        firstRemoteTrackTimeout = null;
+                    }
                 });
 
-                meeting.on('reconnecting', () => {
+                on('remoteTrackStopped', (trackPayload: unknown) => {
+                    const trackItem = trackPayload as any;
+
+                    // ── RAW PAYLOAD DUMP: Do NOT assume shape ──
+                    const rawKeys = trackItem && typeof trackItem === 'object' ? Object.keys(trackItem) : [];
+                    const candidateTrackFields: Record<string, string> = {};
+                    for (const key of ['track', 'mediaStreamTrack', 'mediaTrack', 'streamTrack', 'stream', 'remoteStream']) {
+                        const val = trackItem?.[key];
+                        candidateTrackFields[key] = val instanceof MediaStreamTrack
+                            ? `MediaStreamTrack(id=${val.id}, kind=${val.kind}, enabled=${val.enabled}, readyState=${val.readyState})`
+                            : val instanceof MediaStream
+                                ? `MediaStream(id=${val.id}, active=${val.active}, tracks=${val.getTracks().length})`
+                                : val === undefined ? 'undefined' : val === null ? 'null' : typeof val;
+                    }
+                    console.info('[SessionRoom] RAW:remoteTrackStopped', {
+                        joinAttemptId,
+                        typeof: typeof trackItem,
+                        isMediaStreamTrack: trackItem instanceof MediaStreamTrack,
+                        keys: rawKeys,
+                        candidateTrackFields,
+                        type: trackItem?.type,
+                        kind: trackItem?.kind,
+                        participantSessionId: trackItem?.participantSessionId,
+                        participantId: trackItem?.participantId,
+                        participantName: trackItem?.participantName,
+                        rawPayload: trackItem,
+                    });
+
+                    const participantId = resolveTrackParticipantId(trackItem);
+                    const participantName = String(trackItem?.participantName ?? trackItem?.name ?? '');
+                    const trackType = resolveTrackType(trackItem);
+                    const mediaTrack = resolveMediaTrack(trackItem, trackType);
+                    const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                    const effectiveSourceId = stableIdentity || participantId;
+                    console.info('[SessionRoom] track:remote_stopped', {
+                        joinAttemptId,
+                        type: trackType,
+                        participantSessionId: effectiveSourceId,
+                        trackId: mediaTrack?.id ?? '(unresolved)',
+                        resolvedTrackSource: mediaTrack
+                            ? (trackItem?.track === mediaTrack ? '.track'
+                                : trackItem === mediaTrack ? 'event_itself'
+                                : trackItem?.mediaStreamTrack === mediaTrack ? '.mediaStreamTrack'
+                                : trackItem?.mediaTrack === mediaTrack ? '.mediaTrack'
+                                : 'from_stream')
+                            : 'NOT_RESOLVED',
+                    });
+                    const existingTracks = participantTrackMap.get(identityKey) ?? {};
+                    if (trackType === 'video') {
+                        const videoElement = document.getElementById(`metered-remote-video-${participantKey}`);
+                        detachElementMedia(videoElement);
+                        videoElement?.remove();
+                        remoteStreamsRef.current.delete(`video-${participantKey}`);
+                        participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: undefined });
+                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId
+                            ? { ...participant, hasVideo: false }
+                            : participant));
+                    }
+                    if (trackType === 'audio') {
+                        const audioElement = document.getElementById(`metered-remote-audio-${participantKey}`) as HTMLAudioElement | null;
+                        // Diagnostic: log element state before removal
+                        console.info('[SessionRoom] audio:remote_element_removing', {
+                            joinAttemptId,
+                            participantKey,
+                            trackId: mediaTrack?.id ?? '(unresolved)',
+                            elementExists: !!audioElement,
+                            elementPaused: audioElement?.paused,
+                            elementMuted: audioElement?.muted,
+                            srcObjectActive: !!(audioElement?.srcObject as MediaStream)?.active,
+                        });
+                        detachElementMedia(audioElement);
+                        audioElement?.remove();
+                        remoteStreamsRef.current.delete(`audio-${participantKey}`);
+                        participantTrackMap.set(identityKey, { ...existingTracks, audioTrackId: undefined });
+                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId
+                            ? { ...participant, hasAudio: false }
+                            : participant));
+                    }
+                });
+
+                on('localTrackStarted', (trackPayload: unknown) => {
+                    const trackItem = trackPayload as any;
+                    const sdkTrackId = trackItem?.track?.id;
+                    const sdkTrackKind = trackItem?.track?.kind ?? trackItem?.type;
+
+                    // Enterprise debug: compare SDK track IDs with localStreamRef to detect stream provenance
+                    const localRefTracks = localStreamRef.current?.getTracks() ?? [];
+                    const matchesLocalRef = localRefTracks.some(t => t.id === sdkTrackId);
+
+                    console.info('[SessionRoom] track:local_started', {
+                        joinAttemptId,
+                        type: sdkTrackKind,
+                        sdkTrackId,
+                        sdkTrackEnabled: trackItem?.track?.enabled,
+                        sdkTrackReadyState: trackItem?.track?.readyState,
+                        localStreamRefTrackIds: localRefTracks.map(t => ({ id: t.id, kind: t.kind })),
+                        matchesLocalRef,
+                        verdict: matchesLocalRef
+                            ? 'SDK is using OUR provided localStream'
+                            : 'SDK created its OWN stream — localStreamRef is ORPHANED',
+                    });
+                });
+
+                on('trackStarted', (trackPayload: unknown) => {
+                    const trackItem = trackPayload as any;
+                    const trackType = resolveTrackType(trackItem);
+                    console.info('[SessionRoom] track:started', {
+                        joinAttemptId,
+                        type: trackType,
+                        participantSessionId: trackItem?.participantSessionId,
+                        trackId: trackItem?.track?.id,
+                    });
+                    if (trackType === 'video' || trackType === 'audio') {
+                        attachRemoteTrack(trackItem);
+                        hasReceivedRemoteTrack = true;
+                        if (firstRemoteTrackTimeout) {
+                            clearTimeout(firstRemoteTrackTimeout);
+                            firstRemoteTrackTimeout = null;
+                        }
+                    }
+                });
+
+                on('trackStopped', (trackPayload: unknown) => {
+                    const trackItem = trackPayload as any;
+                    console.info('[SessionRoom] track:stopped', {
+                        joinAttemptId,
+                        type: trackItem?.type,
+                        participantSessionId: trackItem?.participantSessionId,
+                        trackId: trackItem?.track?.id,
+                    });
+                });
+
+                on('participantJoined', (participantPayload: unknown) => {
+                    const participant = participantPayload as any;
+                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?.id ?? '');
+                    const participantName = String(participant?.participantName ?? participant?.name ?? 'Participant');
+                    const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                    const effectiveSourceId = stableIdentity || participantId;
+                    participantRegistry.set(identityKey, {
+                        participantId: effectiveSourceId,
+                        participantKey,
+                        active: true,
+                        lastUpdatedAt: Date.now(),
+                    });
+                    console.info('[SessionRoom] participant:joined', {
+                        joinAttemptId,
+                        participant,
+                    });
+                    toast(`${displayName} joined the room`);
+                    upsertRemoteParticipant(effectiveSourceId, participantName, { lastTrackAt: Date.now() });
+                    drainBufferedTracks(effectiveSourceId, participantName);
+                });
+
+                on('participantLeft', (participantPayload: unknown) => {
+                    const participant = participantPayload as any;
+                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?.id ?? '');
+                    const participantName = String(participant?.participantName ?? participant?.name ?? '');
+                    const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                    const effectiveSourceId = stableIdentity || participantId;
+                    participantRegistry.set(identityKey, {
+                        participantId: effectiveSourceId,
+                        participantKey,
+                        active: false,
+                        lastUpdatedAt: Date.now(),
+                    });
+                    console.info('[SessionRoom] participant:left', {
+                        joinAttemptId,
+                        participant,
+                    });
+                    toast(`${displayName} left the room`);
+                    removeTrackElements(participantKey);
+                    removeTrackElements(toDomSafeKey(`sid:${participantId}`));
+                    participantTrackMap.delete(identityKey);
+                    bufferedTracks.delete(identityKey);
+                    removeRemoteParticipant(effectiveSourceId, participantName);
+                });
+
+                on('reconnecting', () => {
+                    setConnectionState('RECONNECTING');
                     toast.loading('Connection lost. Reconnecting...', { id: 'reconnect-toast' });
                 });
 
-                meeting.on('reconnected', () => {
+                on('reconnected', () => {
+                    // Safely re-evaluate: if remote participants exist, go CONNECTED; otherwise WAITING.
+                    // Do NOT hard-code WAITING — that regresses a live connection back to waiting state.
+                    setRemoteParticipants((currentParticipants) => {
+                        setConnectionState(currentParticipants.length > 0 ? 'CONNECTED' : 'WAITING');
+                        return currentParticipants; // no mutation, just reading
+                    });
                     toast.success('Reconnected successfully!', { id: 'reconnect-toast' });
+
+                    // Re-bootstrap participants to catch any tracks that arrived during reconnection
+                    bootstrapExistingParticipants().catch(() => undefined);
+
+                    console.info('[SessionRoom] reconnected:state_restored', { joinAttemptId });
                 });
 
-                meeting.on('meetingEnded', () => {
+                on('meetingEnded', () => {
                     toast.dismiss('reconnect-toast');
                     const disconnectIntent = disconnectIntentRef.current;
                     disconnectIntentRef.current = null;
                     const latestSession = sessionDetailsRef.current;
 
                     clearVideoContainers();
-                    setIsConnected(false);
+                    localTrackCleanupCallbacks.forEach((cleanup) => cleanup());
+                    setRemoteParticipants([]);
+                    setIsInRoom(false);
+                    setConnectionState('IDLE');
                     setIsLoading(false);
                     roomRef.current = null;
                     setAttentionAdapter(null);
@@ -741,8 +1510,12 @@ function useMeteredJoinEffect(params: {
                     }
                 });
 
-                meeting.on('error', (err: any) => {
+                on('error', (errorPayload: unknown) => {
+                    const err = errorPayload as any;
                     console.error('[MeteredVideo] Error:', err);
+                    setConnectionState('FAILED');
+                    setExitContext('NETWORK');
+                    setJoinState('LEFT');
                     toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
                 });
 
@@ -752,21 +1525,61 @@ function useMeteredJoinEffect(params: {
                     ? normalizeMeteredRoomUrl(roomUrl)
                     : normalizedCandidate;
 
+                console.info('[SessionRoom] join:resolved_room', {
+                    joinAttemptId,
+                    roomCandidate,
+                    sdkRoomUrl,
+                    usesHttpsPrefix: /^https?:\/\//i.test(String(roomUrl || roomName || '')),
+                });
+
                 await meeting.join({
                     roomURL: sdkRoomUrl,
                     accessToken: token,
                     meetingToken: token,
                     participantName: userId,
+                    video: true,
+                    audio: true,
                     localStream
                 });
 
-                if (isUnmounting) {
+                console.info('[SessionRoom] join:success', {
+                    joinAttemptId,
+                    sessionId: id,
+                    userId,
+                });
+
+                if (isUnmounting || joinAttemptRef.current !== joinAttemptId) {
                     meeting.leaveMeeting?.();
                     return;
                 }
 
-                await refreshConnectionState();
+                if (joinTimeout) {
+                    clearTimeout(joinTimeout);
+                    joinTimeout = null;
+                }
+                localStream.getAudioTracks().forEach((track) => { track.enabled = true; });
+                localStream.getVideoTracks().forEach((track) => { track.enabled = true; });
+                // CRITICAL: startAudio() PUBLISHES audio to the SFU.
+                // unmuteAudio() only unmutes an already-shared track — if audio was never
+                // started, unmuteAudio() has no effect and participant.sharingAudio stays false.
+                meeting.startAudio?.();
+                meeting.startVideo?.();
+                console.info('[SessionRoom] local:publish_forced', {
+                    joinAttemptId,
+                    localAudioTrackCount: localStream.getAudioTracks().length,
+                    localVideoTrackCount: localStream.getVideoTracks().length,
+                    localStreamRefTrackIds: localStream.getTracks().map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
+                    sdkMethodsCalled: ['startAudio', 'startVideo'],
+                });
+                setIsInRoom(true);
                 setIsLoading(false);
+                setConnectionState('WAITING');
+                await bootstrapExistingParticipants();
+                firstRemoteTrackTimeout = setTimeout(() => {
+                    if (joinAttemptRef.current !== joinAttemptId || isUnmounting || !roomRef.current || hasReceivedRemoteTrack) return;
+                    console.warn('[SessionRoom] track:first_remote_timeout', { joinAttemptId, sessionId: id, userId });
+                    setConnectionState('WAITING');
+                }, 15000);
 
                 api.post(`/sessions/${id}/start`).catch((err) => {
                     console.warn('Manual start fallback failed or session already started', err);
@@ -774,12 +1587,21 @@ function useMeteredJoinEffect(params: {
 
             } catch (err: any) {
                 console.error('[SessionRoom] Failed to join Metered room:', err);
+                console.error('[SessionRoom] join:failure', {
+                    joinAttemptId,
+                    sessionId: id,
+                    userId,
+                    name: err?.name,
+                    message: err?.message,
+                    stack: err?.stack,
+                });
 
                 if (err.message?.includes('Permission denied') || err.name === 'NotAllowedError') {
                     toast.error('Browser denied camera/microphone access. Please check your permissions.');
                 } else if (err.response?.data?.message) {
                     toast.error(err.response.data.message);
-                    if (sessionDetails && canRejoinSession(sessionDetails)) {
+                    const latestSession = sessionDetailsRef.current;
+                    if (latestSession && canRejoinSession(latestSession)) {
                         setExitContext('NETWORK');
                         setJoinState('LEFT');
                     } else {
@@ -787,9 +1609,21 @@ function useMeteredJoinEffect(params: {
                     }
                 } else {
                     toast.error(`Could not connect: ${err.message || 'Unknown error'}`);
+                    const latestSession = sessionDetailsRef.current;
+                    if (latestSession && canRejoinSession(latestSession)) {
+                        setExitContext('NETWORK');
+                        setJoinState('LEFT');
+                    }
                 }
 
                 if (!isUnmounting) setIsLoading(false);
+                setConnectionState('FAILED');
+            } finally {
+                joinInFlightRef.current = false;
+                if (joinTimeout) {
+                    clearTimeout(joinTimeout);
+                    joinTimeout = null;
+                }
             }
         };
 
@@ -797,6 +1631,17 @@ function useMeteredJoinEffect(params: {
 
         return () => {
             isUnmounting = true;
+            joinAttemptRef.current += 1;
+            joinInFlightRef.current = false;
+            if (joinTimeout) clearTimeout(joinTimeout);
+            if (firstRemoteTrackTimeout) clearTimeout(firstRemoteTrackTimeout);
+            if (joinedMeeting) {
+                const meetingAny = joinedMeeting as unknown as { off?: (event: string, handler: (...args: unknown[]) => void) => void };
+                listeners.forEach(({ event, handler }) => {
+                    meetingAny.off?.(event, handler);
+                });
+            }
+            localTrackCleanupCallbacks.forEach((cleanup) => cleanup());
             if (roomRef.current) {
                 roomRef.current.leaveMeeting?.();
                 roomRef.current = null;
@@ -806,21 +1651,25 @@ function useMeteredJoinEffect(params: {
                 localStreamRef.current = null;
                 setLocalPreviewStream(null);
             }
+            setRemoteParticipants([]);
+            setIsInRoom(false);
+            setConnectionState('IDLE');
         };
     }, [
         id,
         userId,
+        userDisplayName,
         joinState,
         navigate,
-        sessionDetails,
         setAiMonitoringConsent,
         setIsLoading,
         setIsVideoOff,
         setAttentionAdapter,
-        setIsConnected,
+        setIsInRoom,
+        setConnectionState,
+        setRemoteParticipants,
         setExitContext,
         setJoinState,
-        localVideoRef,
         remoteVideoRef,
         localStreamRef,
         remoteStreamsRef,
@@ -843,7 +1692,8 @@ function useSessionLifecycleEffects(params: {
     setIsLoading: (value: boolean) => void;
     isLoading: boolean;
     setTimeRemainingMs: (value: number | null) => void;
-    isConnected: boolean;
+    isInRoom: boolean;
+    hasRemoteParticipants: boolean;
     joinState: JoinState;
     isCompletingSession: boolean;
     applyCompletedSessionState: (options?: { toastMessage?: string; shouldToast?: boolean }) => void;
@@ -867,7 +1717,8 @@ function useSessionLifecycleEffects(params: {
         setIsLoading,
         isLoading,
         setTimeRemainingMs,
-        isConnected,
+        isInRoom,
+        hasRemoteParticipants,
         joinState,
         isCompletingSession,
         applyCompletedSessionState,
@@ -955,7 +1806,7 @@ function useSessionLifecycleEffects(params: {
     }, [sessionDetails, setJoinState, setIsLoading]);
 
     useEffect(() => {
-        if (!sessionDetails || !isConnected) {
+        if (!sessionDetails || !isInRoom) {
             setTimeRemainingMs(null);
             return;
         }
@@ -981,7 +1832,7 @@ function useSessionLifecycleEffects(params: {
         tick();
         const interval = setInterval(tick, 1000);
         return () => clearInterval(interval);
-    }, [sessionDetails, isConnected, joinState, isCompletingSession, applyCompletedSessionState, setTimeRemainingMs]);
+    }, [sessionDetails, isInRoom, joinState, isCompletingSession, applyCompletedSessionState, setTimeRemainingMs]);
 
     useEffect(() => {
         presenceRefreshAbortRef.current = false;
@@ -1005,10 +1856,31 @@ function useSessionLifecycleEffects(params: {
             }
 
             try {
+                console.info('[SessionRoom] presence:fetch_start', { sessionId: id, silent: !!options?.silent });
                 const res = await api.get(`/sessions/${id}/presence`);
                 if (!mounted || presenceRefreshAbortRef.current) return;
 
                 const nextPresence = res.data.data as PresenceSummary;
+                console.info('[SessionRoom] presence:fetch_success', {
+                    sessionId: id,
+                    status: nextPresence.status,
+                    participants: nextPresence.participants.map((participant) => ({
+                        userId: participant.userId,
+                        state: participant.state,
+                        isConnected: participant.isConnected,
+                        joinCount: participant.joinCount,
+                        reconnectCount: participant.reconnectCount,
+                        lastJoinedAt: participant.lastJoinedAt,
+                        lastLeftAt: participant.lastLeftAt,
+                    })),
+                    recentEvents: nextPresence.recentEvents.slice(0, 5).map((event) => ({
+                        id: event.id,
+                        eventType: event.eventType,
+                        source: event.source,
+                        userId: event.userId,
+                        occurredAt: event.occurredAt,
+                    })),
+                });
                 setPresenceSummary(nextPresence);
                 setPresenceError(null);
 
@@ -1019,6 +1891,10 @@ function useSessionLifecycleEffects(params: {
             } catch (error: unknown) {
                 if (!mounted || presenceRefreshAbortRef.current) return;
                 const axiosMsg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                console.error('[SessionRoom] presence:fetch_failure', {
+                    sessionId: id,
+                    message: axiosMsg ?? (error instanceof Error ? error.message : 'unknown'),
+                });
                 setPresenceError(axiosMsg ?? 'Unable to load live session presence');
             } finally {
                 if (mounted && !presenceRefreshAbortRef.current) {
@@ -1031,6 +1907,7 @@ function useSessionLifecycleEffects(params: {
 
         const socket = getSocket() ?? connectSocket();
         if (!socket) {
+            console.warn('[SessionRoom] presence:socket_unavailable', { sessionId: id });
             return () => {
                 mounted = false;
             };
@@ -1038,6 +1915,7 @@ function useSessionLifecycleEffects(params: {
 
         const handlePresenceUpdated = (data: { sessionId: string }) => {
             if (data.sessionId !== id) return;
+            console.info('[SessionRoom] presence:socket_update_received', data);
             void fetchPresenceSummary({ silent: true });
         };
 
@@ -1094,7 +1972,7 @@ function useSessionLifecycleEffects(params: {
     }, [id, user, applyCompletedSessionState]);
 
     useEffect(() => {
-        if (!isLoading && !isConnected && joinState === 'JOINING') {
+        if (!isLoading && isInRoom && !hasRemoteParticipants && joinState === 'JOINING') {
             const timeout = setTimeout(() => {
                 toast("The other participant hasn't joined yet. You can continue waiting, or leave and follow up with them.", {
                     duration: 8000,
@@ -1104,7 +1982,7 @@ function useSessionLifecycleEffects(params: {
 
             return () => clearTimeout(timeout);
         }
-    }, [isLoading, isConnected, joinState]);
+    }, [isLoading, isInRoom, hasRemoteParticipants, joinState]);
 }
 
 // eslint-disable-next-line sonarjs/cognitive-complexity
@@ -1114,7 +1992,12 @@ export default function SessionRoom() {
     const { user } = useAuthStore();
 
     const [isLoading, setIsLoading] = useState(true);
-    const [isConnected, setIsConnected] = useState(false);
+    const [isInRoom, setIsInRoom] = useState(false);
+    const [remoteParticipants, setRemoteParticipants] = useState<SdkRemoteParticipant[]>([]);
+    const [connectionState, setConnectionState] = useState<ConnectionState>('IDLE');
+    const [retryAttempt, setRetryAttempt] = useState(0);
+    const [retryInMs, setRetryInMs] = useState<number | null>(null);
+    const [isMultiTabBlocked, setIsMultiTabBlocked] = useState(false);
 
     // Media State
     const [isMuted, setIsMuted] = useState(false);
@@ -1139,7 +2022,6 @@ export default function SessionRoom() {
     const [isPresenceLoading, setIsPresenceLoading] = useState(false);
     const [presenceError, setPresenceError] = useState<string | null>(null);
     const [localPreviewStream, setLocalPreviewStream] = useState<MediaStream | null>(null);
-    const [localVideoContainerTick, setLocalVideoContainerTick] = useState(0);
 
     // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
@@ -1151,6 +2033,10 @@ export default function SessionRoom() {
     const presenceRefreshAbortRef = useRef(false);
     const sessionDetailsRef = useRef<SessionDetails | null>(null);
     const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
+    const tabIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const retryTickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const lockHeartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Role detection & feature gating
     let roleInSession: 'CLIENT' | 'THERAPIST' | 'UNKNOWN' = 'UNKNOWN';
@@ -1177,19 +2063,86 @@ export default function SessionRoom() {
         ? `${formatSessionDateTime(sessionDetails.scheduledAt)} – ${formatTimestamp(sessionTiming.scheduledEndMs)}`
         : null;
     const presenceParticipants = presenceSummary?.participants ?? [];
-    const localPresence = presenceParticipants.find((participant) => participant.userId === user?.id) ?? null;
-    const remotePresenceParticipants = presenceParticipants.filter((participant) => participant.userId !== user?.id);
-    const remotePresenceConnected = remotePresenceParticipants.some((participant) => participant.state === 'CONNECTED');
+    const localPresenceState = isInRoom ? 'CONNECTED' : 'NOT_JOINED';
+    const hasRemoteParticipants = remoteParticipants.length > 0;
+    const sessionTabLockKey = id && user?.id ? `treat-health:session-tab-lock:${id}:${user.id}` : null;
+
+    const readSessionTabLock = useCallback((): { tabId: string; updatedAt: number } | null => {
+        if (!sessionTabLockKey) return null;
+        try {
+            const raw = localStorage.getItem(sessionTabLockKey);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw) as unknown;
+            if (!parsed || typeof parsed !== 'object') return null;
+            const candidate = parsed as { tabId?: unknown; updatedAt?: unknown };
+            if (typeof candidate.tabId !== 'string' || typeof candidate.updatedAt !== 'number') return null;
+            return { tabId: candidate.tabId, updatedAt: candidate.updatedAt };
+        } catch {
+            return null;
+        }
+    }, [sessionTabLockKey]);
+
+    const writeSessionTabLock = useCallback((state: 'JOINING' | 'ACTIVE') => {
+        if (!sessionTabLockKey) return;
+        const payload = {
+            tabId: tabIdRef.current,
+            sessionId: id,
+            userId: user?.id,
+            state,
+            updatedAt: Date.now(),
+        };
+        localStorage.setItem(sessionTabLockKey, JSON.stringify(payload));
+    }, [id, sessionTabLockKey, user?.id]);
+
+    const releaseSessionTabLock = useCallback(() => {
+        if (!sessionTabLockKey) return;
+        const current = readSessionTabLock();
+        if (current?.tabId === tabIdRef.current) {
+            localStorage.removeItem(sessionTabLockKey);
+        }
+    }, [readSessionTabLock, sessionTabLockKey]);
+
+    const acquireSessionTabLock = useCallback((state: 'JOINING' | 'ACTIVE') => {
+        if (!sessionTabLockKey) return true;
+        const current = readSessionTabLock();
+        const now = Date.now();
+        const hasFreshForeignLock = !!current
+            && current.tabId !== tabIdRef.current
+            && now - current.updatedAt < SESSION_TAB_LOCK_TTL_MS;
+
+        if (hasFreshForeignLock) {
+            console.warn('[SessionRoom] session:multi_tab_blocked', {
+                sessionId: id,
+                userId: user?.id,
+                holderTabId: current?.tabId,
+                currentTabId: tabIdRef.current,
+            });
+            return false;
+        }
+
+        writeSessionTabLock(state);
+        return true;
+    }, [id, readSessionTabLock, sessionTabLockKey, user?.id, writeSessionTabLock]);
 
     const clearVideoContainers = useCallback(() => {
+        const detachMediaElement = (element: Element) => {
+            const mediaElement = element as HTMLMediaElement;
+            if (mediaElement.srcObject) {
+                mediaElement.srcObject = null;
+            }
+        };
         if (localVideoRef.current) {
+            localVideoRef.current.querySelectorAll('video,audio').forEach(detachMediaElement);
             localVideoRef.current.innerHTML = '';
         }
         if (remoteVideoRef.current) {
+            remoteVideoRef.current.querySelectorAll('video,audio').forEach(detachMediaElement);
             remoteVideoRef.current.innerHTML = '';
         }
-        // Also remove any dangling audio elements that were appended to body by Metered
-        document.querySelectorAll('[id^="metered-remote-audio-"]').forEach(el => el.remove());
+        document.querySelectorAll('[id^="metered-remote-audio-"], [id^="metered-remote-video-"]').forEach((element) => {
+            detachMediaElement(element);
+            element.remove();
+        });
         remoteStreamsRef.current.clear();
     }, []);
 
@@ -1204,10 +2157,12 @@ export default function SessionRoom() {
             localStreamRef.current = null;
         }
         clearVideoContainers();
-        setIsConnected(false);
+        setIsInRoom(false);
+        setRemoteParticipants([]);
         setAttentionAdapter(null);
         setLocalPreviewStream(null);
-    }, [clearVideoContainers, setAttentionAdapter, setIsConnected]);
+        releaseSessionTabLock();
+    }, [clearVideoContainers, releaseSessionTabLock, setAttentionAdapter]);
 
     const applyCompletedSessionState = useCallback((options?: { toastMessage?: string; shouldToast?: boolean }) => {
         disconnectRoom('COMPLETE');
@@ -1246,7 +2201,8 @@ export default function SessionRoom() {
         setIsLoading,
         isLoading,
         setTimeRemainingMs,
-        isConnected,
+        isInRoom,
+        hasRemoteParticipants,
         joinState,
         isCompletingSession,
         applyCompletedSessionState,
@@ -1260,11 +2216,25 @@ export default function SessionRoom() {
         setReportRefreshTrigger,
     });
 
-    const startJoining = () => {
+    const startJoining = useCallback(() => {
+        const lockAcquired = acquireSessionTabLock('JOINING');
+        if (!lockAcquired) {
+            setIsMultiTabBlocked(true);
+            setIsLoading(false);
+            setConnectionState('FAILED');
+            setExitContext('LEFT');
+            setJoinState('LEFT');
+            toast.error('This session is already active in another tab.');
+            return;
+        }
+        setIsMultiTabBlocked(false);
+        setRetryAttempt(0);
+        setRetryInMs(null);
         setExitContext(null);
         setIsLoading(true);
+        setConnectionState('JOINING');
         setJoinState('JOINING');
-    };
+    }, [acquireSessionTabLock]);
 
     const handleLeaveCall = (returnToDashboard = false) => {
         const latestSession = sessionDetailsRef.current;
@@ -1278,6 +2248,7 @@ export default function SessionRoom() {
         setIsSidebarOpen(false);
         disconnectRoom('LEAVE');
         setIsLoading(false);
+        setConnectionState('IDLE');
         setExitContext('LEFT');
         setJoinState(!sessionAlreadyCompleted && rejoinable ? 'LEFT' : 'COMPLETED');
 
@@ -1287,6 +2258,152 @@ export default function SessionRoom() {
             navigate('/dashboard');
         }
     };
+
+    useEffect(() => {
+        const active = joinState === 'JOINING' || isInRoom;
+        if (!active || !sessionTabLockKey) {
+            if (lockHeartbeatRef.current) {
+                clearInterval(lockHeartbeatRef.current);
+                lockHeartbeatRef.current = null;
+            }
+            return;
+        }
+
+        const lockState = isInRoom ? 'ACTIVE' : 'JOINING';
+        const hasLock = acquireSessionTabLock(lockState);
+        if (!hasLock) {
+            setIsMultiTabBlocked(true);
+            setConnectionState('FAILED');
+            setIsLoading(false);
+            setExitContext('LEFT');
+            setJoinState('LEFT');
+            return;
+        }
+        setIsMultiTabBlocked(false);
+        writeSessionTabLock(lockState);
+
+        lockHeartbeatRef.current = setInterval(() => {
+            writeSessionTabLock(isInRoom ? 'ACTIVE' : 'JOINING');
+        }, Math.floor(SESSION_TAB_LOCK_TTL_MS / 3));
+
+        return () => {
+            if (lockHeartbeatRef.current) {
+                clearInterval(lockHeartbeatRef.current);
+                lockHeartbeatRef.current = null;
+            }
+            if (!isInRoom && joinState !== 'JOINING') {
+                releaseSessionTabLock();
+            }
+        };
+    }, [acquireSessionTabLock, isInRoom, joinState, releaseSessionTabLock, sessionTabLockKey, setJoinState, writeSessionTabLock]);
+
+    useEffect(() => {
+        if (!sessionTabLockKey) return;
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key !== sessionTabLockKey) return;
+            const current = readSessionTabLock();
+            if (!current) {
+                setIsMultiTabBlocked(false);
+                return;
+            }
+            const isForeignLock = current.tabId !== tabIdRef.current && Date.now() - current.updatedAt < SESSION_TAB_LOCK_TTL_MS;
+            if (isForeignLock && (isInRoom || joinState === 'JOINING')) {
+                console.warn('[SessionRoom] session:multi_tab_conflict_detected', {
+                    sessionId: id,
+                    userId: user?.id,
+                    holderTabId: current.tabId,
+                    currentTabId: tabIdRef.current,
+                });
+            }
+            setIsMultiTabBlocked(isForeignLock);
+        };
+        window.addEventListener('storage', handleStorage);
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+        };
+    }, [id, isInRoom, joinState, readSessionTabLock, sessionTabLockKey, user?.id]);
+
+    useEffect(() => () => {
+        releaseSessionTabLock();
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+        if (retryTickTimerRef.current) {
+            clearInterval(retryTickTimerRef.current);
+            retryTickTimerRef.current = null;
+        }
+        if (lockHeartbeatRef.current) {
+            clearInterval(lockHeartbeatRef.current);
+            lockHeartbeatRef.current = null;
+        }
+    }, [releaseSessionTabLock]);
+
+    const handleRetryJoin = useCallback(() => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+        if (retryTickTimerRef.current) {
+            clearInterval(retryTickTimerRef.current);
+            retryTickTimerRef.current = null;
+        }
+        setRetryInMs(null);
+        startJoining();
+    }, [startJoining]);
+
+    useEffect(() => {
+        if (connectionState !== 'FAILED' || joinState === 'COMPLETED' || isMultiTabBlocked || retryAttempt >= AUTO_RETRY_MAX_ATTEMPTS) {
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current);
+                retryTimerRef.current = null;
+            }
+            if (retryTickTimerRef.current) {
+                clearInterval(retryTickTimerRef.current);
+                retryTickTimerRef.current = null;
+            }
+            setRetryInMs(null);
+            return;
+        }
+
+        const delayMs = Math.min(15000, AUTO_RETRY_BASE_DELAY_MS * Math.pow(2, retryAttempt));
+        const startAt = Date.now() + delayMs;
+        setRetryInMs(delayMs);
+        toast(`Connection issue detected. Retrying in ${Math.ceil(delayMs / 1000)}s...`, { duration: 3500, icon: '🔄' });
+
+        retryTickTimerRef.current = setInterval(() => {
+            const remaining = Math.max(0, startAt - Date.now());
+            setRetryInMs(remaining);
+        }, 500);
+
+        retryTimerRef.current = setTimeout(() => {
+            if (retryTickTimerRef.current) {
+                clearInterval(retryTickTimerRef.current);
+                retryTickTimerRef.current = null;
+            }
+            setRetryInMs(null);
+            setRetryAttempt((previous) => previous + 1);
+            startJoining();
+        }, delayMs);
+
+        return () => {
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current);
+                retryTimerRef.current = null;
+            }
+            if (retryTickTimerRef.current) {
+                clearInterval(retryTickTimerRef.current);
+                retryTickTimerRef.current = null;
+            }
+        };
+    }, [connectionState, isMultiTabBlocked, joinState, retryAttempt, startJoining]);
+
+    useEffect(() => {
+        if (connectionState === 'CONNECTED') {
+            setRetryAttempt(0);
+            setRetryInMs(null);
+        }
+    }, [connectionState]);
 
     const handleCompleteSession = async () => {
         if (!id || !sessionDetails || !canUserCompleteSession) return;
@@ -1311,17 +2428,18 @@ export default function SessionRoom() {
     useMeteredJoinEffect({
         id,
         userId: user?.id ?? null,
+        userDisplayName: `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || 'Participant',
         joinState,
         navigate,
-        sessionDetails,
         setAiMonitoringConsent,
         setIsLoading,
         setIsVideoOff,
         setAttentionAdapter,
-        setIsConnected,
+        setIsInRoom,
+        setConnectionState,
+        setRemoteParticipants,
         setExitContext,
         setJoinState,
-        localVideoRef,
         remoteVideoRef,
         localStreamRef,
         remoteStreamsRef,
@@ -1331,15 +2449,6 @@ export default function SessionRoom() {
         clearVideoContainers,
         setLocalPreviewStream,
     });
-
-    const handleLocalVideoRef = useCallback((node: HTMLDivElement | null) => {
-        if (localVideoRef.current !== node) {
-            localVideoRef.current = node;
-            if (node) {
-                setLocalVideoContainerTick((prev) => prev + 1);
-            }
-        }
-    }, []);
 
     useEffect(() => {
         if (!localPreviewStream || !localVideoRef.current) return;
@@ -1357,29 +2466,198 @@ export default function SessionRoom() {
         localVideo.style.transform = 'scaleX(-1)';
         localVideo.style.display = 'block';
         localVideoRef.current.appendChild(localVideo);
-    }, [localPreviewStream, localVideoContainerTick]);
+    }, [localPreviewStream, joinState, isLoading]);
 
     useEffect(() => {
-        if (remotePresenceConnected) {
-            setIsConnected(true);
-        }
-    }, [remotePresenceConnected]);
+        const handleBeforeUnload = () => {
+            roomRef.current?.leaveMeeting?.();
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach((track) => track.stop());
+                localStreamRef.current = null;
+            }
+            releaseSessionTabLock();
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current);
+                retryTimerRef.current = null;
+            }
+            if (retryTickTimerRef.current) {
+                clearInterval(retryTickTimerRef.current);
+                retryTickTimerRef.current = null;
+            }
+        };
 
-    // Handlers — toggle Metered audio/video tracks directly on the localStream
-    const toggleMute = () => {
-        if (localStreamRef.current) {
-            const audioTracks = localStreamRef.current.getAudioTracks();
-            audioTracks.forEach(track => { track.enabled = isMuted; }); // flip
-            setIsMuted(!isMuted);
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
+    }, [localStreamRef, releaseSessionTabLock, roomRef]);
+
+    useEffect(() => {
+        console.info('[SessionRoom] state:snapshot', {
+            isInRoom,
+            connectionState,
+            remoteParticipants: remoteParticipants.map((participant) => ({
+                id: participant.id,
+                name: participant.name,
+                hasVideo: participant.hasVideo,
+                hasAudio: participant.hasAudio,
+            })),
+        });
+    }, [isInRoom, remoteParticipants, connectionState]);
+
+    useEffect(() => {
+        if (!isInRoom) {
+            if (connectionState !== 'FAILED' && connectionState !== 'JOINING') {
+                setConnectionState('IDLE');
+            }
+            return;
         }
+        if (connectionState === 'RECONNECTING' || connectionState === 'FAILED') {
+            return;
+        }
+        setConnectionState(hasRemoteParticipants ? 'CONNECTED' : 'WAITING');
+    }, [isInRoom, hasRemoteParticipants, connectionState]);
+
+    const sessionStatusLabel = connectionState === 'CONNECTED'
+        ? 'Connected securely'
+        : isMultiTabBlocked
+            ? 'Blocked by active tab'
+        : connectionState === 'RECONNECTING'
+            ? 'Reconnecting...'
+            : connectionState === 'FAILED'
+                ? 'Connection failed'
+                : 'Waiting for others to join...';
+    const waitingPlaceholderLabel = connectionState === 'RECONNECTING'
+        ? 'Reconnecting to participant...'
+        : isMultiTabBlocked
+            ? 'Session is active in another tab.'
+        : connectionState === 'FAILED'
+            ? retryInMs && retryInMs > 0
+                ? `Connection failed. Retrying in ${Math.max(1, Math.ceil(retryInMs / 1000))}s...`
+                : 'Connection failed. Retry now.'
+            : connectionState === 'JOINING'
+                ? 'Joining secure room...'
+                : 'Waiting for participant to join...';
+
+    // ── Enterprise toggle handlers ──
+    // PRIMARY: Call Metered SDK methods (stopAudio/startAudio, stopVideo/startVideo)
+    //   which properly publish/unpublish tracks to the SFU.
+    // NOTE: muteAudio/unmuteAudio only mutes an ALREADY-shared track.
+    //   stopAudio/startAudio actually starts/stops SHARING — the crucial difference.
+    // FALLBACK: Also sync raw track.enabled for local rendering consistency.
+    // Uses functional setState to prevent stale closure race conditions.
+
+    const toggleMute = () => {
+        const meeting = roomRef.current;
+        const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
+
+        // Compute explicit next state BEFORE any side-effects
+        setIsMuted((prev) => {
+            const nextMuted = !prev;
+
+            // Pre-toggle audit
+            console.info('[SessionRoom] toggle:mute:pre', {
+                currentUiMuted: prev,
+                nextUiMuted: nextMuted,
+                hasMeetingRef: !!meeting,
+                audioTrackCount: audioTracks.length,
+                audioTracks: audioTracks.map(t => ({
+                    id: t.id,
+                    enabled: t.enabled,
+                    readyState: t.readyState,
+                    muted: t.muted,
+                })),
+            });
+
+            // Guard: if track ended (device disconnected), warn loudly
+            const hasDeadTrack = audioTracks.some(t => t.readyState === 'ended');
+            if (hasDeadTrack) {
+                console.error('[SessionRoom] toggle:mute:DEAD_TRACK', {
+                    hint: 'Audio track readyState is "ended". Microphone may have been disconnected. Unmuting will NOT restore audio.',
+                    audioTracks: audioTracks.map(t => ({ id: t.id, readyState: t.readyState })),
+                });
+            }
+
+            // PRIMARY: SDK-level stopAudio/startAudio — this PUBLISHES or UNPUBLISHES
+            // audio to the SFU. This is what changes participant.sharingAudio on the remote side.
+            if (meeting) {
+                try {
+                    if (nextMuted) {
+                        meeting.stopAudio?.();
+                    } else {
+                        meeting.startAudio?.();
+                    }
+                } catch (sdkErr) {
+                    console.error('[SessionRoom] toggle:mute:SDK_ERROR', {
+                        nextMuted,
+                        sdkMethod: nextMuted ? 'stopAudio' : 'startAudio',
+                        error: sdkErr instanceof Error ? sdkErr.message : sdkErr,
+                    });
+                }
+            }
+
+            // FALLBACK: sync raw track.enabled for local consistency
+            audioTracks.forEach(t => {
+                if (t.readyState === 'live') {
+                    t.enabled = !nextMuted;
+                }
+            });
+
+            // Post-toggle verification
+            const postTracks = localStreamRef.current?.getAudioTracks() ?? [];
+            console.info('[SessionRoom] toggle:mute:post', {
+                nowMuted: nextMuted,
+                audioTracks: postTracks.map(t => ({
+                    id: t.id,
+                    enabled: t.enabled,
+                    readyState: t.readyState,
+                    muted: t.muted,
+                })),
+                trackEnabledMatchesUi: postTracks.every(t => t.enabled === !nextMuted),
+            });
+
+            return nextMuted;
+        });
     };
 
     const toggleVideo = () => {
-        if (localStreamRef.current) {
-            const videoTracks = localStreamRef.current.getVideoTracks();
-            videoTracks.forEach(track => { track.enabled = isVideoOff; }); // flip
-            setIsVideoOff(!isVideoOff);
-        }
+        const meeting = roomRef.current;
+
+        setIsVideoOff((prev) => {
+            const nextVideoOff = !prev;
+
+            console.info('[SessionRoom] toggle:video:before', {
+                wasVideoOff: prev,
+                willBeVideoOff: nextVideoOff,
+                hasMeeting: !!meeting,
+                localVideoTracks: localStreamRef.current?.getVideoTracks().map(t => ({
+                    id: t.id, enabled: t.enabled, readyState: t.readyState,
+                })) ?? [],
+            });
+
+            // Primary: SDK-level stop/start video (signals remote side + stops sending track)
+            if (meeting) {
+                if (nextVideoOff) {
+                    meeting.stopVideo?.();
+                } else {
+                    meeting.startVideo?.();
+                }
+            }
+
+            // Fallback: raw track sync for local rendering
+            localStreamRef.current?.getVideoTracks().forEach(t => {
+                t.enabled = !nextVideoOff;
+            });
+
+            console.info('[SessionRoom] toggle:video:after', {
+                nowVideoOff: nextVideoOff,
+                localVideoTracks: localStreamRef.current?.getVideoTracks().map(t => ({
+                    id: t.id, enabled: t.enabled, readyState: t.readyState,
+                })) ?? [],
+            });
+
+            return nextVideoOff;
+        });
     };
 
     const handleSaveNotes = async () => {
@@ -1456,10 +2734,20 @@ export default function SessionRoom() {
                 <div ref={remoteVideoRef} className="remote-video" />
 
                 {/* Waiting placeholder (shown when no remote participant yet) */}
-                {!isConnected && (
+                {!hasRemoteParticipants && (
                     <div className="video-placeholder">
                         <Users size={52} />
-                        <p>Waiting for participant to join...</p>
+                        <p>{waitingPlaceholderLabel}</p>
+                        {connectionState === 'FAILED' && !isMultiTabBlocked && (
+                            <button
+                                type="button"
+                                className="notes-save-btn"
+                                onClick={handleRetryJoin}
+                                style={{ marginTop: '0.75rem' }}
+                            >
+                                Retry connection
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -1468,8 +2756,8 @@ export default function SessionRoom() {
                     <div className="session-info">
                         <h2>Therapy Session</h2>
                         <span className="session-status">
-                            <span className={`status-dot ${isConnected ? 'connected' : 'waiting'}`} />
-                            {isConnected ? 'Connected securely' : 'Waiting for others to join...'}
+                            <span className={`status-dot ${connectionState === 'CONNECTED' ? 'connected' : 'waiting'}`} />
+                            {sessionStatusLabel}
                         </span>
                         {sessionDetails && (
                             <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1510,7 +2798,7 @@ export default function SessionRoom() {
                 {/* ─── Local PIP (bottom-right, above controls) ─── */}
                 <div className="local-video-wrapper">
                     <div
-                        ref={handleLocalVideoRef}
+                        ref={localVideoRef}
                         className="local-video"
                     />
                     {isVideoOff && (
@@ -1623,11 +2911,9 @@ export default function SessionRoom() {
                                 <div className="participant-info">
                                     <span className="participant-name">{userName} (You)</span>
                                     <span className="participant-role">{formatRoleLabel(user?.role)}</span>
-                                    {localPresence && (
-                                        <span className={`participant-presence-badge ${getPresenceStateTone(localPresence.state)}`}>
-                                            {formatPresenceStateLabel(localPresence.state)}
-                                        </span>
-                                    )}
+                                    <span className={`participant-presence-badge ${getPresenceStateTone(localPresenceState)}`}>
+                                        {formatPresenceStateLabel(localPresenceState)}
+                                    </span>
                                 </div>
                             </div>
                             {isPresenceLoading && (
@@ -1639,49 +2925,52 @@ export default function SessionRoom() {
                             {presenceError && (
                                 <div className="presence-panel-error">{presenceError}</div>
                             )}
-                            {remotePresenceParticipants.map((participant) => {
-                                const initials = `${participant.firstName?.[0] || ''}${participant.lastName?.[0] || ''}`.toUpperCase() || 'P';
+                            {remoteParticipants.map((participant) => {
+                                const presenceMatch = presenceParticipants.find((presenceParticipant) => presenceParticipant.userId === participant.sourceParticipantId);
+                                const resolvedName = presenceMatch
+                                    ? `${presenceMatch.firstName ?? ''} ${presenceMatch.lastName ?? ''}`.trim() || participant.name
+                                    : participant.name;
+                                const initials = resolvedName
+                                    .split(' ')
+                                    .map((part) => part[0] ?? '')
+                                    .join('')
+                                    .slice(0, 2)
+                                    .toUpperCase() || 'P';
 
                                 return (
-                                    <div key={participant.userId} className="participant-card presence-card">
+                                    <div key={participant.id} className="participant-card presence-card">
                                         <div className="participant-item participant-item-compact">
                                             <div className="participant-avatar" style={{ background: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' }}>{initials}</div>
                                             <div className="participant-info">
-                                                <span className="participant-name">{participant.firstName} {participant.lastName}</span>
-                                                <span className="participant-role">{formatRoleLabel(participant.role)}</span>
+                                                <span className="participant-name">{resolvedName}</span>
+                                                <span className="participant-role">{formatRoleLabel(presenceMatch?.role ?? 'participant')}</span>
                                             </div>
-                                            <span className={`participant-presence-badge ${getPresenceStateTone(participant.state)}`}>
-                                                {formatPresenceStateLabel(participant.state)}
+                                            <span className={`participant-presence-badge ${getPresenceStateTone('CONNECTED')}`}>
+                                                Live in room
                                             </span>
                                         </div>
 
                                         <div className="presence-meta-grid">
                                             <div className="presence-meta-item">
-                                                <span className="presence-meta-label">Last joined</span>
-                                                <strong>{formatDateTime(participant.lastJoinedAt)}</strong>
+                                                <span className="presence-meta-label">Video</span>
+                                                <strong>{participant.hasVideo ? 'On' : 'Off'}</strong>
                                             </div>
                                             <div className="presence-meta-item">
-                                                <span className="presence-meta-label">Last left</span>
-                                                <strong>{formatDateTime(participant.lastLeftAt)}</strong>
+                                                <span className="presence-meta-label">Audio</span>
+                                                <strong>{participant.hasAudio ? 'On' : 'Off'}</strong>
                                             </div>
                                             <div className="presence-meta-item">
-                                                <span className="presence-meta-label">Connected time</span>
-                                                <strong>{formatConnectedDuration(participant.totalConnectedSeconds)}</strong>
-                                            </div>
-                                            <div className="presence-meta-item">
-                                                <span className="presence-meta-label">Rejoins</span>
-                                                <strong>{participant.reconnectCount}</strong>
+                                                <span className="presence-meta-label">Joined</span>
+                                                <strong>{formatDateTime(new Date(participant.joinedAt).toISOString())}</strong>
                                             </div>
                                         </div>
-
-                                        {canViewDetailedPresence && participant.lastDisconnectReason && (
-                                            <div className="presence-footnote">
-                                                Last disconnect reason: {participant.lastDisconnectReason}
-                                            </div>
-                                        )}
                                     </div>
                                 );
                             })}
+
+                            {remoteParticipants.length === 0 && (
+                                <div className="presence-panel-state compact">Participants not joined yet.</div>
+                            )}
 
                             {presenceSummary && canViewDetailedPresence && (
                                 <div className="presence-audit-card">
@@ -1728,8 +3017,34 @@ export default function SessionRoom() {
                         <>
                             <div className="info-row">
                                 <span className="info-label">Status</span>
-                                <span className="info-value">{isConnected ? '🟢 In Progress' : '🟡 Waiting'}</span>
+                                <span className="info-value">
+                                    {connectionState === 'CONNECTED'
+                                        ? '🟢 In Progress'
+                                        : connectionState === 'RECONNECTING'
+                                            ? '🟠 Reconnecting'
+                                            : connectionState === 'FAILED'
+                                                ? '🔴 Failed'
+                                                : '🟡 Waiting'}
+                                </span>
                             </div>
+                            {connectionState === 'FAILED' && !isMultiTabBlocked && (
+                                <div className="info-row">
+                                    <span className="info-label">Recovery</span>
+                                    <button
+                                        type="button"
+                                        className="notes-save-btn"
+                                        onClick={handleRetryJoin}
+                                        style={{ padding: '0.35rem 0.65rem', minWidth: 'auto' }}
+                                    >
+                                        Retry now
+                                    </button>
+                                </div>
+                            )}
+                            {isMultiTabBlocked && (
+                                <div className="presence-panel-error">
+                                    Another tab is already using this session. Close that tab to continue here.
+                                </div>
+                            )}
                             <div className="info-row">
                                 <span className="info-label">Encryption</span>
                                 <span className="info-value">Encrypted (TLS)</span>

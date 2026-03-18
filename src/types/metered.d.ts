@@ -21,10 +21,15 @@ export interface MeteredMeeting {
     on(event: string, handler: (...args: unknown[]) => void): void;
     /** Retrieve current participant list */
     getParticipants?: () => Promise<unknown[]>;
-    /** Audio controls */
+
+    /** Audio publishing — start/stop sharing audio track to the SFU */
+    startAudio?: () => void;
+    stopAudio?: () => void;
+    /** Audio muting — mute/unmute an ALREADY‑shared audio track (does not start sharing) */
     muteAudio?: () => void;
     unmuteAudio?: () => void;
-    /** Video controls */
+
+    /** Video publishing */
     stopVideo?: () => void;
     startVideo?: () => void;
     /** Screen share */
