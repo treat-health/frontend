@@ -120,6 +120,7 @@ function normalizeMeteredRoomUrl(input?: string | null) {
     if (!input) return '';
     return input
         .trim()
+        .replace(/[`"'']/g, '')
         .replace(/^https?:\/\//i, '')
         .replace(/\/+$/, '');
 }
@@ -558,6 +559,7 @@ function useMeteredJoinEffect(params: {
     sessionDetailsRef: React.RefObject<SessionDetails | null>;
     disconnectIntentRef: React.RefObject<'LEAVE' | 'COMPLETE' | null>;
     clearVideoContainers: () => void;
+    setLocalPreviewStream: (stream: MediaStream | null) => void;
 }) {
     const {
         id,
@@ -580,6 +582,7 @@ function useMeteredJoinEffect(params: {
         sessionDetailsRef,
         disconnectIntentRef,
         clearVideoContainers,
+        setLocalPreviewStream,
     } = params;
 
     useEffect(() => {
@@ -624,24 +627,7 @@ function useMeteredJoinEffect(params: {
                 }
 
                 localStreamRef.current = localStream;
-
-                if (localVideoRef.current) {
-                    localVideoRef.current.innerHTML = '';
-                    const videoTracks = localStream.getVideoTracks();
-                    if (videoTracks.length > 0) {
-                        const localVideo = document.createElement('video');
-                        localVideo.autoplay = true;
-                        localVideo.muted = true;
-                        localVideo.playsInline = true;
-                        localVideo.srcObject = new MediaStream([videoTracks[0]]);
-                        localVideo.style.width = '100%';
-                        localVideo.style.height = '100%';
-                        localVideo.style.objectFit = 'cover';
-                        localVideo.style.transform = 'scaleX(-1)';
-                        localVideo.style.display = 'block';
-                        localVideoRef.current.appendChild(localVideo);
-                    }
-                }
+                setLocalPreviewStream(localStream);
 
                 const meeting = new (globalThis as any).Metered.Meeting();
                 roomRef.current = meeting;
@@ -683,6 +669,8 @@ function useMeteredJoinEffect(params: {
                         audioEl.srcObject = new MediaStream([trackItem.track]);
                         document.body.appendChild(audioEl);
                         remoteStreamsRef.current.set(`audio-${trackItem.participantSessionId}`, audioEl);
+                        audioEl.play().catch(() => undefined);
+                        setIsConnected(true);
                     }
                 });
 
@@ -703,9 +691,11 @@ function useMeteredJoinEffect(params: {
                 const refreshConnectionState = async () => {
                     try {
                         const participants = await meeting.getParticipants?.();
-                        if (!participants || participants.length === 0) {
+                        if (!participants || participants.length <= 1) {
                             setIsConnected(false);
+                            return;
                         }
+                        setIsConnected(true);
                     } catch {
                         setIsConnected(false);
                     }
@@ -756,7 +746,11 @@ function useMeteredJoinEffect(params: {
                     toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
                 });
 
-                const sdkRoomUrl = normalizeMeteredRoomUrl(roomUrl || roomName || id || '');
+                const roomCandidate = (roomUrl || roomName || id || '').trim();
+                const normalizedCandidate = normalizeMeteredRoomUrl(roomCandidate);
+                const sdkRoomUrl = roomUrl
+                    ? normalizeMeteredRoomUrl(roomUrl)
+                    : normalizedCandidate;
 
                 await meeting.join({
                     roomURL: sdkRoomUrl,
@@ -771,6 +765,7 @@ function useMeteredJoinEffect(params: {
                     return;
                 }
 
+                await refreshConnectionState();
                 setIsLoading(false);
 
                 api.post(`/sessions/${id}/start`).catch((err) => {
@@ -809,6 +804,7 @@ function useMeteredJoinEffect(params: {
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach((t) => t.stop());
                 localStreamRef.current = null;
+                setLocalPreviewStream(null);
             }
         };
     }, [
@@ -832,6 +828,7 @@ function useMeteredJoinEffect(params: {
         sessionDetailsRef,
         disconnectIntentRef,
         clearVideoContainers,
+        setLocalPreviewStream,
     ]);
 }
 
@@ -1015,9 +1012,10 @@ function useSessionLifecycleEffects(params: {
                 setPresenceSummary(nextPresence);
                 setPresenceError(null);
 
-                if (sessionDetails && nextPresence.status !== sessionDetails.status) {
-                    setSessionDetails({ ...sessionDetails, status: nextPresence.status });
-                }
+                setSessionDetails((current) => {
+                    if (!current || nextPresence.status === current.status) return current;
+                    return { ...current, status: nextPresence.status };
+                });
             } catch (error: unknown) {
                 if (!mounted || presenceRefreshAbortRef.current) return;
                 const axiosMsg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -1049,7 +1047,7 @@ function useSessionLifecycleEffects(params: {
             mounted = false;
             socket.off('session:presence_updated', handlePresenceUpdated);
         };
-    }, [id, sessionDetails, user, presenceRefreshAbortRef, setIsPresenceLoading, setPresenceSummary, setPresenceError, setSessionDetails]);
+    }, [id, user, presenceRefreshAbortRef, setIsPresenceLoading, setPresenceSummary, setPresenceError, setSessionDetails]);
 
     useEffect(() => {
         const socket = getSocket();
@@ -1140,6 +1138,8 @@ export default function SessionRoom() {
     const [presenceSummary, setPresenceSummary] = useState<PresenceSummary | null>(null);
     const [isPresenceLoading, setIsPresenceLoading] = useState(false);
     const [presenceError, setPresenceError] = useState<string | null>(null);
+    const [localPreviewStream, setLocalPreviewStream] = useState<MediaStream | null>(null);
+    const [localVideoContainerTick, setLocalVideoContainerTick] = useState(0);
 
     // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
@@ -1179,6 +1179,7 @@ export default function SessionRoom() {
     const presenceParticipants = presenceSummary?.participants ?? [];
     const localPresence = presenceParticipants.find((participant) => participant.userId === user?.id) ?? null;
     const remotePresenceParticipants = presenceParticipants.filter((participant) => participant.userId !== user?.id);
+    const remotePresenceConnected = remotePresenceParticipants.some((participant) => participant.state === 'CONNECTED');
 
     const clearVideoContainers = useCallback(() => {
         if (localVideoRef.current) {
@@ -1192,7 +1193,7 @@ export default function SessionRoom() {
         remoteStreamsRef.current.clear();
     }, []);
 
-    const disconnectRoom = (intent: 'LEAVE' | 'COMPLETE') => {
+    const disconnectRoom = useCallback((intent: 'LEAVE' | 'COMPLETE') => {
         disconnectIntentRef.current = intent;
         if (roomRef.current) {
             roomRef.current.leaveMeeting?.();
@@ -1205,7 +1206,8 @@ export default function SessionRoom() {
         clearVideoContainers();
         setIsConnected(false);
         setAttentionAdapter(null);
-    };
+        setLocalPreviewStream(null);
+    }, [clearVideoContainers, setAttentionAdapter, setIsConnected]);
 
     const applyCompletedSessionState = useCallback((options?: { toastMessage?: string; shouldToast?: boolean }) => {
         disconnectRoom('COMPLETE');
@@ -1327,13 +1329,41 @@ export default function SessionRoom() {
         sessionDetailsRef,
         disconnectIntentRef,
         clearVideoContainers,
+        setLocalPreviewStream,
     });
 
-    // Attach local video after DOM mounts (Metered streams local tracks during join; handled inline)
-    // This effect is a no-op for Metered but kept to avoid breaking any future local-video re-attachment logic.
+    const handleLocalVideoRef = useCallback((node: HTMLDivElement | null) => {
+        if (localVideoRef.current !== node) {
+            localVideoRef.current = node;
+            if (node) {
+                setLocalVideoContainerTick((prev) => prev + 1);
+            }
+        }
+    }, []);
+
     useEffect(() => {
-        // Local video is already attached during initMeteredVideo's getUserMedia step
-    }, [isLoading]);
+        if (!localPreviewStream || !localVideoRef.current) return;
+        localVideoRef.current.innerHTML = '';
+        const videoTracks = localPreviewStream.getVideoTracks();
+        if (videoTracks.length === 0) return;
+        const localVideo = document.createElement('video');
+        localVideo.autoplay = true;
+        localVideo.muted = true;
+        localVideo.playsInline = true;
+        localVideo.srcObject = new MediaStream([videoTracks[0]]);
+        localVideo.style.width = '100%';
+        localVideo.style.height = '100%';
+        localVideo.style.objectFit = 'cover';
+        localVideo.style.transform = 'scaleX(-1)';
+        localVideo.style.display = 'block';
+        localVideoRef.current.appendChild(localVideo);
+    }, [localPreviewStream, localVideoContainerTick]);
+
+    useEffect(() => {
+        if (remotePresenceConnected) {
+            setIsConnected(true);
+        }
+    }, [remotePresenceConnected]);
 
     // Handlers — toggle Metered audio/video tracks directly on the localStream
     const toggleMute = () => {
@@ -1480,7 +1510,7 @@ export default function SessionRoom() {
                 {/* ─── Local PIP (bottom-right, above controls) ─── */}
                 <div className="local-video-wrapper">
                     <div
-                        ref={localVideoRef}
+                        ref={handleLocalVideoRef}
                         className="local-video"
                     />
                     {isVideoOff && (
