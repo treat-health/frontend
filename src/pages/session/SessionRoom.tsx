@@ -1557,20 +1557,18 @@ function useMeteredJoinEffect(params: {
                     clearTimeout(joinTimeout);
                     joinTimeout = null;
                 }
+
+                // Ensure the initial local tracks are unmuted locally before publishing
                 localStream.getAudioTracks().forEach((track) => { track.enabled = true; });
                 localStream.getVideoTracks().forEach((track) => { track.enabled = true; });
-                // CRITICAL: startAudio() PUBLISHES audio to the SFU.
-                // unmuteAudio() only unmutes an already-shared track — if audio was never
-                // started, unmuteAudio() has no effect and participant.sharingAudio stays false.
-                meeting.startAudio?.();
-                meeting.startVideo?.();
-                console.info('[SessionRoom] local:publish_forced', {
+
+                console.info('[SessionRoom] local:stream_configured', {
                     joinAttemptId,
                     localAudioTrackCount: localStream.getAudioTracks().length,
                     localVideoTrackCount: localStream.getVideoTracks().length,
                     localStreamRefTrackIds: localStream.getTracks().map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
-                    sdkMethodsCalled: ['startAudio', 'startVideo'],
                 });
+
                 setIsInRoom(true);
                 setIsLoading(false);
                 setConnectionState('WAITING');

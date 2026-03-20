@@ -108,10 +108,11 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
     // Create socket connection
     socket = io(SOCKET_URL, {
         auth: { token },
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'], // Default order is safer for VPS Nginx reverse proxies
         reconnection: true,
-        reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        randomizationFactor: 0.5,
     });
 
     // Connection events
@@ -129,12 +130,9 @@ export function connectSocket(handlers?: SocketEventHandlers): Socket | null {
     socket.on('connect_error', (error) => {
         console.error('[Socket] Connection error:', error.message);
         connectErrorCount++;
-        if (connectErrorCount >= 5) {
-            console.warn('[Socket] Too many connection errors, recreating socket');
-            socket?.disconnect();
-            socket = null;
-            connectErrorCount = 0;
-        }
+        // We DO NOT destroy the socket here. Socket.io will automatically 
+        // backoff and keep retrying natively. Destroying it means it never recovers 
+        // without a hard browser refresh if the VPS restarts or internet drops.
         eventHandlers.onError?.(error);
     });
 
