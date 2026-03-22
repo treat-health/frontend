@@ -15,6 +15,7 @@ import {
     ChevronRight,
     Sun,
     Moon,
+    HelpCircle,
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
@@ -22,6 +23,7 @@ import { useChatStore } from '../../stores/chatStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { getSocket } from '../../lib/socket';
 import BrandLogo from '../common/BrandLogo';
+import HelpWizard from '../common/HelpWizard';
 import '../../styles/layout.css';
 import type { AppNotification } from '../../stores/notificationStore';
 
@@ -50,6 +52,7 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
         case 'PROGRAM_DIRECTOR':
             return [
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+                { path: '/admin/issues', icon: HelpCircle, label: 'Issue Management' },
                 { path: '/admin/users', icon: Users, label: 'User Management' },
                 { path: '/admin/sessions', icon: Calendar, label: 'Sessions' },
                 { path: '/clients', icon: UserPlus, label: 'Clients' },
@@ -119,6 +122,7 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
     } = useNotificationStore();
     const [showDropdown, setShowDropdown] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [showHelpWizard, setShowHelpWizard] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const notificationPanelRef = useRef<HTMLDivElement | null>(null);
@@ -319,6 +323,11 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
                         <h1>{getPageTitle()}</h1>
                     </div>
                     <div className="header-right">
+                        {user?.role !== 'ADMIN' && user?.role !== 'PROGRAM_DIRECTOR' && (
+                            <button className="btn btn-icon btn-ghost header-btn" onClick={() => setShowHelpWizard(true)} title="Help & Support">
+                                <HelpCircle size={20} />
+                            </button>
+                        )}
                         <button className="btn btn-icon btn-ghost header-btn" onClick={toggleTheme} title="Toggle Dark Mode">
                             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                         </button>
@@ -439,6 +448,9 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
                     {children}
                 </main>
             </div>
+
+            {/* Help & Support Wizard */}
+            <HelpWizard isOpen={showHelpWizard} onClose={() => setShowHelpWizard(false)} />
         </div>
     );
 }

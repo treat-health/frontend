@@ -20,6 +20,8 @@ import SettingsPage from './pages/settings/SettingsPage';
 import SessionRoom from './pages/session/SessionRoom';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import Layout from './components/layout/Layout';
+import MyIssues from './pages/issues/MyIssues';
+import AdminIssues from './pages/admin/issues/AdminIssues';
 
 /**
  * Protected Route Component
@@ -193,6 +195,17 @@ export default function App() {
                         </ProtectedRoute>
                     }
                 />
+                
+                {/* Admin Issues */}
+                <Route
+                    path="/admin/issues"
+                    element={
+                        <ProtectedRoute>
+                            <AdminIssues />
+                        </ProtectedRoute>
+                    }
+                />
+
                 <Route
                     path="/admin/sessions"
                     element={
@@ -245,6 +258,16 @@ export default function App() {
                     element={
                         <ProtectedRoute>
                             <NotificationsPage />
+                        </ProtectedRoute>
+                    }
+                />
+                
+                {/* My Issues Route */}
+                <Route
+                    path="/issues"
+                    element={
+                        <ProtectedRoute>
+                            <MyIssues />
                         </ProtectedRoute>
                     }
                 />
