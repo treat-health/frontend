@@ -129,15 +129,14 @@ export default function HelpWizard({ isOpen, onClose }: HelpWizardProps) {
 
     return (
         <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-                <div className="modal-header" style={{ paddingBottom: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', marginBottom: '1rem' }}>
-                        <h3 style={{ margin: 0 }}>Help & Support</h3>
-                        <button className="btn btn-icon btn-ghost" onClick={onClose} style={{ marginTop: '-0.5rem', marginRight: '-0.5rem' }}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', position: 'relative' }}>
+                <div className="modal-header" style={{ paddingBottom: 0, paddingRight: '3rem' }}>
+                    <button className="btn btn-icon btn-ghost" onClick={onClose} style={{ position: 'absolute', top: '0.75rem', right: '0.75rem' }}>
                             <X size={20} />
-                        </button>
+                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', width: '100%', marginBottom: '0.5rem' }}>
+                        <h3 style={{ margin: 0, whiteSpace: 'nowrap' }}>Help & Support</h3>
                     </div>
-                    {/* Tabs */}
                     <div style={{ display: 'flex', gap: '1.5rem', borderBottom: '1px solid var(--border-color)', width: '100%' }}>
                         <button 
                             style={{ background: 'none', border: 'none', padding: '0.75rem 0', fontWeight: activeTab === 'report' ? 600 : 400, color: activeTab === 'report' ? 'var(--primary-color)' : 'var(--text-muted)', borderBottom: activeTab === 'report' ? '2px solid var(--primary-color)' : '2px solid transparent', cursor: 'pointer', outline: 'none' }}

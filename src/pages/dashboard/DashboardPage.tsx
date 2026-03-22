@@ -8,14 +8,24 @@ import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { schedulingService } from '../../services/scheduling.service';
 import type { Appointment } from '../../services/scheduling.service';
+import { quoteService } from '../../services/quote.service';
+import type { HealthQuote } from '../../services/quote.service';
+
+const DEFAULT_QUOTE: HealthQuote = {
+    text: 'Your health is an investment, not an expense.',
+    author: 'Unknown',
+};
 
 export default function DashboardPage() {
     const { user } = useAuthStore();
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [quote, setQuote] = useState<HealthQuote>(DEFAULT_QUOTE);
+    const [isQuoteLoading, setIsQuoteLoading] = useState(true);
 
     useEffect(() => {
         fetchAppointments();
+        fetchTodayQuote();
     }, []);
 
     const fetchAppointments = async () => {
@@ -31,23 +41,66 @@ export default function DashboardPage() {
         }
     };
 
+    const fetchTodayQuote = async () => {
+        try {
+            const todayQuote = await quoteService.getTodayQuote();
+            setQuote(todayQuote);
+        } catch (error) {
+            console.error('Failed to fetch quote of the day:', error);
+            setQuote(DEFAULT_QUOTE);
+        } finally {
+            setIsQuoteLoading(false);
+        }
+    };
+
     return (
         <div className="page-content">
-            {/* Welcome Card */}
             <div className="card" style={{
                 background: 'var(--gradient-bg)',
                 color: 'white',
                 marginBottom: 'var(--spacing-xl)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 'var(--spacing-lg)',
+                flexWrap: 'wrap',
             }}>
-                <h2 style={{ color: 'white', marginBottom: 'var(--spacing-sm)' }}>
-                    Welcome back, {user?.firstName}! 👋
-                </h2>
-                <p style={{ opacity: 0.9 }}>
-                    Your wellness journey continues. Here's an overview of your progress.
-                </p>
+                <div style={{ flex: '1 1 320px' }}>
+                    <h2 style={{ color: 'white', marginBottom: 'var(--spacing-sm)' }}>
+                        Welcome back, {user?.firstName}! 👋
+                    </h2>
+                    <p style={{ opacity: 0.9 }}>
+                        Your wellness journey continues. Here's an overview of your progress.
+                    </p>
+                </div>
+                <div style={{ flex: '1 1 280px', maxWidth: '420px', marginLeft: 'auto', textAlign: 'right' }}>
+                    {isQuoteLoading ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
+                            <div style={{ height: '14px', width: '100%', borderRadius: '6px', backgroundColor: 'rgba(255, 255, 255, 0.28)' }} />
+                            <div style={{ height: '14px', width: '72%', marginLeft: 'auto', borderRadius: '6px', backgroundColor: 'rgba(255, 255, 255, 0.2)' }} />
+                        </div>
+                    ) : (
+                        <div style={{ opacity: 0.8, transition: 'opacity 350ms ease-in' }}>
+                            <p style={{
+                                fontSize: '0.9rem',
+                                fontStyle: 'italic',
+                                lineHeight: 1.45,
+                                marginBottom: '6px',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                            }}>
+                                "{quote.text}"
+                            </p>
+                            <p style={{ fontSize: '0.78rem', opacity: 0.92 }}>
+                                — {quote.author}
+                            </p>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {/* Stats Grid */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
@@ -83,13 +136,11 @@ export default function DashboardPage() {
                 ))}
             </div>
 
-            {/* Main Content Grid */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
                 gap: 'var(--spacing-xl)',
             }}>
-                {/* Upcoming Sessions */}
                 <div className="card">
                     <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Upcoming Sessions</h3>
                     {isLoading ? (
@@ -129,7 +180,6 @@ export default function DashboardPage() {
                     )}
                 </div>
 
-                {/* Quick Actions */}
                 <div className="card">
                     <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Quick Actions</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
