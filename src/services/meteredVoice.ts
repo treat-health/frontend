@@ -75,13 +75,19 @@ class MeteredVoiceService {
             this.bindMeetingEvents();
 
             await meeting.join({
-                roomURL: roomName, // Backend returns the full room URL or room ID
-                participantName: identity || 'participant',
-                meetingToken: token,
-                // Audio only for voice calls
-                video: false,
-                audio: true
+                roomURL: roomName,
+                name: identity || 'participant',
+                accessToken: token,
             });
+
+            // Following the same enterprise-grade pattern as SessionRoom.tsx:
+            // join() only establishes connectivity; startAudio() publishes the media.
+            try {
+                await meeting.startAudio();
+            } catch (audioErr) {
+                console.error('[MeteredVoiceService] Failed to start audio:', audioErr);
+                throw audioErr;
+            }
 
             this.updateState({ activeMeteredCall: this.meeting });
 

@@ -14,7 +14,7 @@ import './SessionRoom.css';
 import type { MeteredMeeting } from '../../types/metered';
 
 const ROOM_OPEN_EARLY_MINUTES = 15;
-const ROOM_REJOIN_GRACE_MINUTES = 0; // Strict session end
+const ROOM_REJOIN_GRACE_MINUTES = 5; // Enterprise: 5-min grace period for reconnection after session end
 const SESSION_TAB_LOCK_TTL_MS = 15000;
 const AUTO_RETRY_BASE_DELAY_MS = 2000;
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
@@ -131,13 +131,16 @@ function canRejoinSession(session: SessionDetails, nowMs = Date.now()) {
     return nowMs >= roomOpenMs && nowMs <= rejoinDeadlineMs;
 }
 
-function normalizeMeteredRoomUrl(input?: string | null) {
+function normalizeMeteredRoomUrl(input?: string | null): string {
     if (!input) return '';
+    // The Metered SDK v1.4.6 expects roomURL WITHOUT the https:// protocol prefix.
+    // The SDK uses socket.io internally and adds its own protocol (wss://) when connecting.
+    // Format must be: "treatmh.metered.live/room-id"
     return input
         .trim()
-        .replace(/[`"'']/g, '')
-        .replace(/^https?:\/\//i, '')
-        .replace(/\/+$/, '');
+        .replace(/[`"''']/g, '')          // remove stray quote characters
+        .replace(/^https?:\/\//i, '')     // strip any existing protocol
+        .replace(/\/+$/, '');             // strip trailing slashes
 }
 
 function formatSessionDateTime(iso: string) {
@@ -597,7 +600,6 @@ function useMeteredJoinEffect(params: {
         let isUnmounting = false;
         let joinedMeeting: MeteredMeeting | null = null;
         const listeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = [];
-        const localTrackCleanupCallbacks: Array<() => void> = [];
         let joinTimeout: ReturnType<typeof setTimeout> | null = null;
         let firstRemoteTrackTimeout: ReturnType<typeof setTimeout> | null = null;
         let hasReceivedRemoteTrack = false;
@@ -645,96 +647,40 @@ function useMeteredJoinEffect(params: {
                     tokenLength: typeof token === 'string' ? token.length : 0,
                 });
 
-                let localStream: MediaStream;
+                // ── Pre-join permission check (non-blocking) ──
                 try {
-                    localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
-                } catch (err: any) {
-                    if (err.message?.includes('video') || err.name === 'NotReadableError') {
-                        console.warn('Video unavailable, falling back to audio-only:', err.message);
-                        toast.error('Camera unavailable. Joining with audio only.', { duration: 5000 });
-                        localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-                        setIsVideoOff(true);
-                    } else {
-                        throw err;
-                    }
-                }
-
-                if (isUnmounting) {
-                    localStream.getTracks().forEach((t) => t.stop());
-                    return;
-                }
-
-                if (joinAttemptRef.current !== joinAttemptId) {
-                    localStream.getTracks().forEach((t) => t.stop());
-                    return;
-                }
-
-                console.info('[SessionRoom] join:local_stream_ready', {
-                    joinAttemptId,
-                    localVideoTracks: localStream.getVideoTracks().map((track) => ({
-                        id: track.id,
-                        enabled: track.enabled,
-                        readyState: track.readyState,
-                    })),
-                    localAudioTracks: localStream.getAudioTracks().map((track) => ({
-                        id: track.id,
-                        enabled: track.enabled,
-                        readyState: track.readyState,
-                    })),
-                });
-
-                localStreamRef.current = localStream;
-                setLocalPreviewStream(localStream);
-                localStream.getTracks().forEach((track) => {
-                    const onEnded = () => {
-                        console.warn('[SessionRoom] track:local_ended', {
-                            joinAttemptId,
-                            type: track.kind,
-                            trackId: track.id,
-                            readyState: track.readyState,
-                        });
-                    };
-                    const onMute = () => {
-                        console.warn('[SessionRoom] track:local_muted', {
-                            joinAttemptId,
-                            type: track.kind,
-                            trackId: track.id,
-                        });
-                    };
-                    const onUnmute = () => {
-                        console.info('[SessionRoom] track:local_unmuted', {
-                            joinAttemptId,
-                            type: track.kind,
-                            trackId: track.id,
-                        });
-                    };
-                    track.addEventListener('ended', onEnded);
-                    track.addEventListener('mute', onMute);
-                    track.addEventListener('unmute', onUnmute);
-                    localTrackCleanupCallbacks.push(() => {
-                        track.removeEventListener('ended', onEnded);
-                        track.removeEventListener('mute', onMute);
-                        track.removeEventListener('unmute', onUnmute);
+                    const [camPerm, micPerm] = await Promise.all([
+                        navigator.permissions?.query?.({ name: 'camera' as PermissionName }).catch(() => null),
+                        navigator.permissions?.query?.({ name: 'microphone' as PermissionName }).catch(() => null),
+                    ]);
+                    console.info('[SessionRoom] join:permissions_check', {
+                        joinAttemptId,
+                        camera: camPerm?.state ?? 'unknown',
+                        microphone: micPerm?.state ?? 'unknown',
                     });
-                });
+                    if (micPerm?.state === 'denied') {
+                        toast.error('Microphone access is blocked. Please allow microphone in browser settings.', { duration: 8000 });
+                    }
+                } catch {
+                    // permissions API not available — continue anyway
+                }
+
+                if (isUnmounting || joinAttemptRef.current !== joinAttemptId) return;
+
+                // ── SDK creates and owns the media streams ──
+                // We do NOT call getUserMedia() manually. The Metered SDK acquires
+                // camera/mic via startVideo()/startAudio() after join resolves.
+                // localStreamRef is built from SDK's localTrackStarted events.
+                localStreamRef.current = new MediaStream();
+
+                // Flag to prevent duplicate autoplay-resume click listeners (Risk 4)
+                let autoplayResumeAttached = false;
 
                 const meeting = new (globalThis as any).Metered.Meeting();
                 roomRef.current = meeting;
                 joinedMeeting = meeting;
 
-                const videoTracks = localStream.getVideoTracks();
-                const audioTracks = localStream.getAudioTracks();
-
-                const videoAdapters = videoTracks.map((t) => createTrackAdapter(t, 'video'));
-                const audioAdapters = audioTracks.map((t) => createTrackAdapter(t, 'audio'));
-                const adapter: AttentionRoomAdapter = {
-                    localParticipant: {
-                        videoTracks: new Map(videoAdapters.map((a, i) => [`video-${i}`, { track: a, isEnabled: videoAdapters[i].isEnabled }])),
-                        audioTracks: new Map(audioAdapters.map((a, i) => [`audio-${i}`, { track: a, isEnabled: audioAdapters[i].isEnabled }])),
-                        on: (_event: string, _handler: any) => { /* not used for local */ }
-                    }
-                };
-                setAttentionAdapter(adapter);
+                // Attention adapter is built lazily from SDK tracks in localTrackStarted handler
 
                 const on = (event: string, handler: (...args: unknown[]) => void) => {
                     meeting.on(event, handler);
@@ -977,6 +923,23 @@ function useMeteredJoinEffect(params: {
                                 muted: audioElement.muted,
                                 hint: 'Browser autoplay policy blocked audio. User interaction may be required.',
                             });
+                            // ── Autoplay recovery: prompt user to click ──
+                            toast('Click anywhere to enable session audio', {
+                                duration: 10000,
+                                icon: '🔊',
+                                id: 'autoplay-blocked',
+                            });
+                            if (!autoplayResumeAttached) {
+                                autoplayResumeAttached = true;
+                                const resumeHandler = () => {
+                                    // Resume ALL audio elements, not just the one that triggered
+                                    document.querySelectorAll<HTMLAudioElement>('audio[id^="metered-remote-audio-"]').forEach(el => {
+                                        el.play().catch(() => { /* swallow */ });
+                                    });
+                                    toast.dismiss('autoplay-blocked');
+                                };
+                                document.addEventListener('click', resumeHandler, { once: true });
+                            }
                         });
                 };
 
@@ -1365,25 +1328,61 @@ function useMeteredJoinEffect(params: {
 
                 on('localTrackStarted', (trackPayload: unknown) => {
                     const trackItem = trackPayload as any;
-                    const sdkTrackId = trackItem?.track?.id;
-                    const sdkTrackKind = trackItem?.track?.kind ?? trackItem?.type;
-
-                    // Enterprise debug: compare SDK track IDs with localStreamRef to detect stream provenance
-                    const localRefTracks = localStreamRef.current?.getTracks() ?? [];
-                    const matchesLocalRef = localRefTracks.some(t => t.id === sdkTrackId);
+                    const sdkTrack = trackItem?.track as MediaStreamTrack | undefined;
+                    const sdkTrackKind = sdkTrack?.kind ?? trackItem?.type;
 
                     console.info('[SessionRoom] track:local_started', {
                         joinAttemptId,
                         type: sdkTrackKind,
-                        sdkTrackId,
-                        sdkTrackEnabled: trackItem?.track?.enabled,
-                        sdkTrackReadyState: trackItem?.track?.readyState,
-                        localStreamRefTrackIds: localRefTracks.map(t => ({ id: t.id, kind: t.kind })),
-                        matchesLocalRef,
-                        verdict: matchesLocalRef
-                            ? 'SDK is using OUR provided localStream'
-                            : 'SDK created its OWN stream — localStreamRef is ORPHANED',
+                        sdkTrackId: sdkTrack?.id,
+                        sdkTrackEnabled: sdkTrack?.enabled,
+                        sdkTrackReadyState: sdkTrack?.readyState,
                     });
+
+                    if (!sdkTrack) return;
+
+                    // Build localStreamRef from SDK-managed tracks with deduplication
+                    if (!localStreamRef.current) {
+                        localStreamRef.current = new MediaStream();
+                    }
+                    const alreadyExists = localStreamRef.current.getTracks().some(t => t.id === sdkTrack.id);
+                    if (!alreadyExists) {
+                        // Remove existing track of same kind before adding replacement (device switch)
+                        localStreamRef.current.getTracks()
+                            .filter(t => t.kind === sdkTrack.kind)
+                            .forEach(t => localStreamRef.current!.removeTrack(t));
+                        localStreamRef.current.addTrack(sdkTrack);
+                    }
+                    setLocalPreviewStream(new MediaStream(localStreamRef.current.getTracks()));
+
+                    // Rebuild attention adapter from SDK-owned tracks
+                    const currentTracks = localStreamRef.current.getTracks();
+                    const videoTracks = currentTracks.filter(t => t.kind === 'video');
+                    const audioTracks = currentTracks.filter(t => t.kind === 'audio');
+                    const videoAdapters = videoTracks.map(t => createTrackAdapter(t, 'video'));
+                    const audioAdapters = audioTracks.map(t => createTrackAdapter(t, 'audio'));
+                    const adapter: AttentionRoomAdapter = {
+                        localParticipant: {
+                            videoTracks: new Map(videoAdapters.map((a, i) => [`video-${i}`, { track: a, isEnabled: videoAdapters[i].isEnabled }])),
+                            audioTracks: new Map(audioAdapters.map((a, i) => [`audio-${i}`, { track: a, isEnabled: audioAdapters[i].isEnabled }])),
+                            on: (_event: string, _handler: any) => { /* not used for local */ }
+                        }
+                    };
+                    setAttentionAdapter(adapter);
+                });
+
+                on('localTrackStopped', (trackPayload: unknown) => {
+                    const trackItem = trackPayload as any;
+                    const sdkTrack = trackItem?.track as MediaStreamTrack | undefined;
+                    console.info('[SessionRoom] track:local_stopped', {
+                        joinAttemptId,
+                        type: sdkTrack?.kind ?? trackItem?.type,
+                        sdkTrackId: sdkTrack?.id,
+                    });
+                    if (sdkTrack && localStreamRef.current) {
+                        localStreamRef.current.removeTrack(sdkTrack);
+                        setLocalPreviewStream(new MediaStream(localStreamRef.current.getTracks()));
+                    }
                 });
 
                 on('trackStarted', (trackPayload: unknown) => {
@@ -1487,7 +1486,12 @@ function useMeteredJoinEffect(params: {
                     const latestSession = sessionDetailsRef.current;
 
                     clearVideoContainers();
-                    localTrackCleanupCallbacks.forEach((cleanup) => cleanup());
+                    // Stop all SDK-managed local tracks to release camera/mic
+                    if (localStreamRef.current) {
+                        localStreamRef.current.getTracks().forEach(t => t.stop());
+                        localStreamRef.current = null;
+                        setLocalPreviewStream(null);
+                    }
                     setRemoteParticipants([]);
                     setIsInRoom(false);
                     setConnectionState('IDLE');
@@ -1532,15 +1536,46 @@ function useMeteredJoinEffect(params: {
                     usesHttpsPrefix: /^https?:\/\//i.test(String(roomUrl || roomName || '')),
                 });
 
-                await meeting.join({
-                    roomURL: sdkRoomUrl,
-                    accessToken: token,
-                    meetingToken: token,
-                    participantName: userId,
-                    video: true,
-                    audio: true,
-                    localStream
-                });
+                // ── Join with retry + timeout ──
+                // Inner retry: re-attempts join() on same instance for transient network errors.
+                // If the instance itself is corrupted, the outer handleRetryJoin mechanism
+                // does full teardown → fresh Meeting() → re-register all listeners.
+                const MAX_JOIN_RETRIES = 2;
+                const joinWithRetries = async () => {
+                    for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
+                        try {
+                            await meeting.join({
+                                roomURL: sdkRoomUrl,
+                                name: `${userId}|${userDisplayName}`,
+                                accessToken: token,
+                            });
+                            return;
+                        } catch (joinErr) {
+                            // Dump ALL properties of the raw error for deep debugging
+                            const rawErrDump: Record<string, unknown> = {};
+                            if (joinErr && typeof joinErr === 'object') {
+                                for (const key of Object.getOwnPropertyNames(joinErr)) {
+                                    try { rawErrDump[key] = (joinErr as Record<string, unknown>)[key]; } catch {}
+                                }
+                            }
+                            console.error(`[SessionRoom] join:attempt_${attempt}_failed`, {
+                                joinAttemptId,
+                                attempt,
+                                maxRetries: MAX_JOIN_RETRIES,
+                                error: joinErr instanceof Error ? joinErr.message : joinErr,
+                                rawErrorDump: rawErrDump,
+                                roomURLSent: sdkRoomUrl,
+                                nameSent: `${userId}|${userDisplayName}`,
+                                tokenLength: typeof token === 'string' ? token.length : 0,
+                            });
+                            if (attempt === MAX_JOIN_RETRIES) throw joinErr;
+                            await new Promise(r => setTimeout(r, 1500 * attempt));
+                            if (isUnmounting || joinAttemptRef.current !== joinAttemptId) return;
+                        }
+                    }
+                };
+
+                await joinWithRetries();
 
                 console.info('[SessionRoom] join:success', {
                     joinAttemptId,
@@ -1558,15 +1593,49 @@ function useMeteredJoinEffect(params: {
                     joinTimeout = null;
                 }
 
-                // Ensure the initial local tracks are unmuted locally before publishing
-                localStream.getAudioTracks().forEach((track) => { track.enabled = true; });
-                localStream.getVideoTracks().forEach((track) => { track.enabled = true; });
+                // ── SDK media start: camera + microphone ──
+                // Each call is individually wrapped so camera failure doesn't block audio
+                let videoFailed = false;
+                let audioFailed = false;
+                try {
+                    await meeting.startVideo?.();
+                    console.info('[SessionRoom] join:video_started', { joinAttemptId });
+                } catch (videoErr) {
+                    videoFailed = true;
+                    console.warn('[SessionRoom] join:video_failed_audio_only', {
+                        joinAttemptId,
+                        error: videoErr instanceof Error ? videoErr.message : videoErr,
+                    });
+                    setIsVideoOff(true);
+                    toast.error('Camera unavailable. Joining with audio only.', { duration: 5000 });
+                }
+                try {
+                    await meeting.startAudio?.();
+                    console.info('[SessionRoom] join:audio_started', { joinAttemptId });
+                } catch (audioErr) {
+                    audioFailed = true;
+                    console.error('[SessionRoom] join:audio_failed', {
+                        joinAttemptId,
+                        error: audioErr instanceof Error ? audioErr.message : audioErr,
+                    });
+                    toast.error('Microphone unavailable. Others will not hear you.', { duration: 8000 });
+                }
 
-                console.info('[SessionRoom] local:stream_configured', {
+                // Both video AND audio failed — session is unusable
+                if (videoFailed && audioFailed) {
+                    console.error('[SessionRoom] join:BOTH_MEDIA_FAILED', { joinAttemptId });
+                    toast.error('Unable to access camera or microphone. Please check browser permissions and try again.', { duration: 10000 });
+                    setConnectionState('FAILED');
+                    setExitContext('NETWORK');
+                    setJoinState('LEFT');
+                    meeting.leaveMeeting?.();
+                    roomRef.current = null;
+                    return;
+                }
+
+                console.info('[SessionRoom] join:media_configured', {
                     joinAttemptId,
-                    localAudioTrackCount: localStream.getAudioTracks().length,
-                    localVideoTrackCount: localStream.getVideoTracks().length,
-                    localStreamRefTrackIds: localStream.getTracks().map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
+                    localTracks: localStreamRef.current?.getTracks().map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled, readyState: t.readyState })) ?? [],
                 });
 
                 setIsInRoom(true);
@@ -1639,7 +1708,7 @@ function useMeteredJoinEffect(params: {
                     meetingAny.off?.(event, handler);
                 });
             }
-            localTrackCleanupCallbacks.forEach((cleanup) => cleanup());
+
             if (roomRef.current) {
                 roomRef.current.leaveMeeting?.();
                 roomRef.current = null;
@@ -2538,82 +2607,41 @@ export default function SessionRoom() {
                 : 'Waiting for participant to join...';
 
     // ── Enterprise toggle handlers ──
-    // PRIMARY: Call Metered SDK methods (stopAudio/startAudio, stopVideo/startVideo)
-    //   which properly publish/unpublish tracks to the SFU.
-    // NOTE: muteAudio/unmuteAudio only mutes an ALREADY-shared track.
-    //   stopAudio/startAudio actually starts/stops SHARING — the crucial difference.
-    // FALLBACK: Also sync raw track.enabled for local rendering consistency.
-    // Uses functional setState to prevent stale closure race conditions.
+    // MUTE: Uses muteAudio/unmuteAudio which silences the already-published track.
+    //   This avoids renegotiation or track destruction that stopAudio/startAudio would cause.
+    // VIDEO: Uses stopVideo/startVideo which properly unpublishes/republishes the video track.
+    // SDK owns the tracks — we do NOT manipulate track.enabled directly.
 
     const toggleMute = () => {
         const meeting = roomRef.current;
-        const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
 
-        // Compute explicit next state BEFORE any side-effects
         setIsMuted((prev) => {
             const nextMuted = !prev;
 
-            // Pre-toggle audit
             console.info('[SessionRoom] toggle:mute:pre', {
                 currentUiMuted: prev,
                 nextUiMuted: nextMuted,
                 hasMeetingRef: !!meeting,
-                audioTrackCount: audioTracks.length,
-                audioTracks: audioTracks.map(t => ({
-                    id: t.id,
-                    enabled: t.enabled,
-                    readyState: t.readyState,
-                    muted: t.muted,
-                })),
             });
 
-            // Guard: if track ended (device disconnected), warn loudly
-            const hasDeadTrack = audioTracks.some(t => t.readyState === 'ended');
-            if (hasDeadTrack) {
-                console.error('[SessionRoom] toggle:mute:DEAD_TRACK', {
-                    hint: 'Audio track readyState is "ended". Microphone may have been disconnected. Unmuting will NOT restore audio.',
-                    audioTracks: audioTracks.map(t => ({ id: t.id, readyState: t.readyState })),
-                });
-            }
-
-            // PRIMARY: SDK-level stopAudio/startAudio — this PUBLISHES or UNPUBLISHES
-            // audio to the SFU. This is what changes participant.sharingAudio on the remote side.
+            // SDK-level muteAudio/unmuteAudio — keeps the track published but silences it
             if (meeting) {
                 try {
                     if (nextMuted) {
-                        meeting.stopAudio?.();
+                        meeting.muteAudio?.();
                     } else {
-                        meeting.startAudio?.();
+                        meeting.unmuteAudio?.();
                     }
                 } catch (sdkErr) {
                     console.error('[SessionRoom] toggle:mute:SDK_ERROR', {
                         nextMuted,
-                        sdkMethod: nextMuted ? 'stopAudio' : 'startAudio',
+                        sdkMethod: nextMuted ? 'muteAudio' : 'unmuteAudio',
                         error: sdkErr instanceof Error ? sdkErr.message : sdkErr,
                     });
                 }
             }
 
-            // FALLBACK: sync raw track.enabled for local consistency
-            audioTracks.forEach(t => {
-                if (t.readyState === 'live') {
-                    t.enabled = !nextMuted;
-                }
-            });
-
-            // Post-toggle verification
-            const postTracks = localStreamRef.current?.getAudioTracks() ?? [];
-            console.info('[SessionRoom] toggle:mute:post', {
-                nowMuted: nextMuted,
-                audioTracks: postTracks.map(t => ({
-                    id: t.id,
-                    enabled: t.enabled,
-                    readyState: t.readyState,
-                    muted: t.muted,
-                })),
-                trackEnabledMatchesUi: postTracks.every(t => t.enabled === !nextMuted),
-            });
-
+            console.info('[SessionRoom] toggle:mute:post', { nowMuted: nextMuted });
             return nextMuted;
         });
     };
@@ -2628,32 +2656,25 @@ export default function SessionRoom() {
                 wasVideoOff: prev,
                 willBeVideoOff: nextVideoOff,
                 hasMeeting: !!meeting,
-                localVideoTracks: localStreamRef.current?.getVideoTracks().map(t => ({
-                    id: t.id, enabled: t.enabled, readyState: t.readyState,
-                })) ?? [],
             });
 
-            // Primary: SDK-level stop/start video (signals remote side + stops sending track)
+            // SDK-level stop/start video (properly unpublishes/republishes the video track)
             if (meeting) {
-                if (nextVideoOff) {
-                    meeting.stopVideo?.();
-                } else {
-                    meeting.startVideo?.();
+                try {
+                    if (nextVideoOff) {
+                        meeting.stopVideo?.();
+                    } else {
+                        meeting.startVideo?.();
+                    }
+                } catch (sdkErr) {
+                    console.error('[SessionRoom] toggle:video:SDK_ERROR', {
+                        nextVideoOff,
+                        error: sdkErr instanceof Error ? sdkErr.message : sdkErr,
+                    });
                 }
             }
 
-            // Fallback: raw track sync for local rendering
-            localStreamRef.current?.getVideoTracks().forEach(t => {
-                t.enabled = !nextVideoOff;
-            });
-
-            console.info('[SessionRoom] toggle:video:after', {
-                nowVideoOff: nextVideoOff,
-                localVideoTracks: localStreamRef.current?.getVideoTracks().map(t => ({
-                    id: t.id, enabled: t.enabled, readyState: t.readyState,
-                })) ?? [],
-            });
-
+            console.info('[SessionRoom] toggle:video:after', { nowVideoOff: nextVideoOff });
             return nextVideoOff;
         });
     };
