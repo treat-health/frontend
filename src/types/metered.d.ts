@@ -11,7 +11,7 @@ export interface MeteredMeeting {
     /** Join a meeting room — only documented parameters are typed */
     join(options: {
         roomURL: string;
-        name?: string;
+        name: string;
         accessToken?: string;
         receiveVideoStreamType?: 'none' | 'only_individual' | 'only_composed' | 'all';
         receiveAudioStreamType?: 'none' | 'only_individual' | 'only_composed' | 'all';

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Metered SDK Join Test</title>
+    <script src="https://cdn.metered.ca/sdk/video/1.4.6/sdk.min.js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+        .log { background: #f4f4f4; padding: 10px; border-radius: 6px; margin: 8px 0; font-size: 13px; word-break: break-all; }
+        .ok { background: #d4edda; }
+        .err { background: #f8d7da; }
+        .warn { background: #fff3cd; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 5px; }
+        h1 { font-size: 22px; }
+    </style>
+</head>
+<body>
+    <h1>Metered SDK Join Diagnostic</h1>
+    <p>This page tests joining a Metered room directly via the SDK to isolate the issue.</p>
+
+    <div>
+        <label>Backend API URL: <input id="apiUrl" value="" placeholder="https://api.treatmh.com" style="width:300px"/></label>
+    </div>
+    <br>
+    <button onclick="testPublicRoom()">Test 1: Join PUBLIC room (no token)</button>
+    <button onclick="testPrivateRoom()">Test 2: Join PRIVATE room (with token from backend)</button>
+    <button onclick="testVoiceRoom()">Test 3: Join VOICE room (audioOnly, with token)</button>
+    <hr>
+    <div id="output"></div>
+
+    <script>
+        const METERED_DOMAIN = 'treatmh.metered.live';
+        const output = document.getElementById('output');
+
+        function log(msg, type) {
+            const div = document.createElement('div');
+            div.className = 'log ' + (type || '');
+            div.textContent = new Date().toISOString().slice(11, 23) + ' — ' + msg;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+            console.log(msg);
+        }
+
+        function getApiUrl() {
+            return (document.getElementById('apiUrl').value || 'https://api.treatmh.com').replace(/\/+$/, '');
+        }
+
+        // ——— Test 1: Create a PUBLIC room via Metered REST API (from browser, needs secret key) ———
+        // We'll try joining a known public test room. If this fails, the account is blocked/exhausted.
+        async function testPublicRoom() {
+            output.innerHTML = '';
+            log('=== TEST 1: Public room join (no token) ===');
+
+            try {
+                // Create fresh public room via backend diag endpoint
+                const apiUrl = getApiUrl();
+                log('Calling backend diagnostic endpoint...');
+                const res = await fetch(apiUrl + '/api/sessions/metered-join-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-diag-key': 'treat-metered-diag-2026' },
+                    body: JSON.stringify({ mode: 'public' })
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    log('Backend returned error: ' + res.status + ' ' + errText, 'err');
+                    log('Falling back: trying to join Metered demo room directly...', 'warn');
+                    await joinRoom(METERED_DOMAIN + '/metered-test-' + Date.now(), 'TestUser', null);
+                    return;
+                }
+
+                const data = await res.json();
+                log('Got test room: ' + JSON.stringify(data.data), 'ok');
+                await joinRoom(data.data.roomUrl, 'TestUser', null);
+
+            } catch (err) {
+                log('FAILED: ' + (err.message || err), 'err');
+            }
+        }
+
+        // ——— Test 2: Private room with token (matches video session flow) ———
+        async function testPrivateRoom() {
+            output.innerHTML = '';
+            log('=== TEST 2: Private room join (with token) ===');
+
+            try {
+                const apiUrl = getApiUrl();
+                log('Calling backend diagnostic endpoint...');
+                const res = await fetch(apiUrl + '/api/sessions/metered-join-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-diag-key': 'treat-metered-diag-2026' },
+                    body: JSON.stringify({ mode: 'private' })
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    log('Backend returned error: ' + res.status + ' ' + errText, 'err');
+                    return;
+                }
+
+                const data = await res.json();
+                log('Got test room: ' + JSON.stringify(data.data), 'ok');
+                await joinRoom(data.data.roomUrl, data.data.name || 'TestUser', data.data.token);
+
+            } catch (err) {
+                log('FAILED: ' + (err.message || err), 'err');
+            }
+        }
+
+        // ——— Test 3: Voice/audio-only room (matches voice call flow) ———
+        async function testVoiceRoom() {
+            output.innerHTML = '';
+            log('=== TEST 3: Audio-only room join (with token) ===');
+
+            try {
+                const apiUrl = getApiUrl();
+                log('Calling backend diagnostic endpoint...');
+                const res = await fetch(apiUrl + '/api/sessions/metered-join-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-diag-key': 'treat-metered-diag-2026' },
+                    body: JSON.stringify({ mode: 'voice' })
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    log('Backend returned error: ' + res.status + ' ' + errText, 'err');
+                    return;
+                }
+
+                const data = await res.json();
+                log('Got test room: ' + JSON.stringify(data.data), 'ok');
+                await joinRoom(data.data.roomUrl, data.data.name || 'TestUser', data.data.token);
+
+            } catch (err) {
+                log('FAILED: ' + (err.message || err), 'err');
+            }
+        }
+
+        // ——— Core join logic ———
+        async function joinRoom(roomUrl, name, token) {
+            log('Creating Metered.Meeting instance...');
+            const meeting = new Metered.Meeting();
+
+            meeting.on('participantJoined', (p) => log('Event: participantJoined ' + JSON.stringify(p), 'ok'));
+            meeting.on('onlineParticipants', (p) => log('Event: onlineParticipants count=' + (p?.length || 0), 'ok'));
+            meeting.on('meetingEnded', () => log('Event: meetingEnded', 'warn'));
+            meeting.on('error', (err) => log('Event: error ' + JSON.stringify(err), 'err'));
+
+            const joinOpts = { roomURL: roomUrl, name: name };
+            if (token) joinOpts.accessToken = token;
+
+            log('Calling meeting.join(' + JSON.stringify(joinOpts).substring(0, 200) + '...)');
+
+            try {
+                const info = await meeting.join(joinOpts);
+                log('JOIN SUCCEEDED! meetingInfo=' + JSON.stringify(info), 'ok');
+                log('Leaving meeting in 3 seconds...', 'ok');
+                setTimeout(() => {
+                    try { meeting.leaveMeeting(); } catch (e) {}
+                    log('Left meeting.', 'ok');
+                }, 3000);
+            } catch (err) {
+                const errMsg = err?.message || String(err);
+                log('JOIN FAILED: ' + errMsg, 'err');
+
+                if (errMsg.includes('Internal server error')) {
+                    log('', '');
+                    log('DIAGNOSIS: "Internal server error" from Metered signaling server.', 'err');
+                    log('This typically means:', 'err');
+                    log('  1. Account credit/balance is exhausted ($30 free credit used up)', 'err');
+                    log('  2. Account is suspended or restricted', 'err');
+                    log('  3. Metered infrastructure issue (check status.metered.ca)', 'err');
+                    log('', '');
+                    log('ACTION: Go to https://dashboard.metered.ca → Billing/Usage and check your balance.', 'warn');
+                    log('REST API calls (room creation, tokens) are FREE management calls.', 'warn');
+                    log('meeting.join() allocates PAID media resources ($0.003/min for video).', 'warn');
+                }
+            }
+        }
+    </script>
+</body>
+</html>

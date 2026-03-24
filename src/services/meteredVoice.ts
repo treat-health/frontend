@@ -13,6 +13,16 @@ import api from '../lib/api';
 // Metered SDK types are globally declared in src/types/metered.d.ts
 import type { MeteredMeeting } from '../types/metered';
 
+function normalizeMeteredRoomUrl(input?: string | null): string {
+    if (!input) return '';
+
+    return input
+        .trim()
+        .replaceAll(/[`"']/g, '')
+        .replace(/\/+$/, '')
+        .replace(/^https?:\/\//i, '');
+}
+
 class MeteredVoiceService {
     private meeting: MeteredMeeting | null = null;
 
@@ -75,7 +85,7 @@ class MeteredVoiceService {
             this.bindMeetingEvents();
 
             await meeting.join({
-                roomURL: roomName,
+                roomURL: normalizeMeteredRoomUrl(roomName),
                 name: identity || 'participant',
                 accessToken: token,
             });

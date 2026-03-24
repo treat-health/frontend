@@ -133,14 +133,15 @@ function canRejoinSession(session: SessionDetails, nowMs = Date.now()) {
 
 function normalizeMeteredRoomUrl(input?: string | null): string {
     if (!input) return '';
-    // The Metered SDK v1.4.6 expects roomURL WITHOUT the https:// protocol prefix.
-    // The SDK uses socket.io internally and adds its own protocol (wss://) when connecting.
-    // Format must be: "treatmh.metered.live/room-id"
-    return input
+    const cleanedInput = input
         .trim()
-        .replace(/[`"''']/g, '')          // remove stray quote characters
-        .replace(/^https?:\/\//i, '')     // strip any existing protocol
-        .replace(/\/+$/, '');             // strip trailing slashes
+        .replaceAll(/[`"']/g, '')
+        .replace(/\/+$/, '');
+
+    // Metered SDK expects roomURL in the form:
+    //   appname.metered.live/room-name
+    // without an http/https scheme.
+    return cleanedInput.replace(/^https?:\/\//i, '');
 }
 
 function formatSessionDateTime(iso: string) {
@@ -565,7 +566,7 @@ function useMeteredJoinEffect(params: {
     clearVideoContainers: () => void;
     setLocalPreviewStream: (stream: MediaStream | null) => void;
 }) {
-    const joinAttemptRef = useRef(0);
+    const joinAttemptRef = useRef('');
     const joinInFlightRef = useRef(false);
     const {
         id,
@@ -596,7 +597,8 @@ function useMeteredJoinEffect(params: {
         if (!id || !userId || joinState !== 'JOINING') return;
         if (joinInFlightRef.current || roomRef.current) return;
 
-        const joinAttemptId = ++joinAttemptRef.current;
+        const joinAttemptId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        joinAttemptRef.current = joinAttemptId;
         let isUnmounting = false;
         let joinedMeeting: MeteredMeeting | null = null;
         const listeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = [];
@@ -634,16 +636,79 @@ function useMeteredJoinEffect(params: {
             }
 
             try {
-                const response = await api.post(`/sessions/${id}/media-token`);
-                const { token, roomName, roomUrl, aiMonitoringConsent: consentFromServer } = response.data;
+                console.log('[JOIN_FLOW][REQUEST_TOKEN]', {
+                    joinAttemptId,
+                    sessionId: id,
+                    userId,
+                    currentTime: new Date().toISOString(),
+                });
+                const response = await api.post(`/sessions/${id}/media-token`, { joinAttemptId });
+                const {
+                    token,
+                    roomName,
+                    roomUrl,
+                    participantName,
+                    aiMonitoringConsent: consentFromServer,
+                } = response.data;
                 setAiMonitoringConsent(!!consentFromServer);
 
                 if (isUnmounting || joinAttemptRef.current !== joinAttemptId) return;
 
+                let decodedExpireUnixSec: number | string | null = null;
+                let decodedRoomName: string | null = null;
+                if (typeof token === 'string') {
+                    const tokenParts = token.split('.');
+                    if (tokenParts.length >= 2) {
+                        try {
+                            const payloadBase64 = tokenParts[1]
+                                .replace(/-/g, '+')
+                                .replace(/_/g, '/')
+                                .padEnd(Math.ceil(tokenParts[1].length / 4) * 4, '=');
+                            const payload = JSON.parse(globalThis.atob(payloadBase64)) as {
+                                expireUnixSec?: number | string;
+                                roomName?: string;
+                                data?: {
+                                    expireUnixSec?: number | string;
+                                    roomName?: string;
+                                };
+                            };
+                            decodedExpireUnixSec = payload.data?.expireUnixSec ?? payload.expireUnixSec ?? null;
+                            decodedRoomName = payload.data?.roomName ?? payload.roomName ?? null;
+                        } catch {
+                            decodedExpireUnixSec = null;
+                            decodedRoomName = null;
+                        }
+                    }
+                }
+                console.log('[JOIN_FLOW][TOKEN_RECEIVED]', {
+                    joinAttemptId,
+                    roomName,
+                    roomUrl,
+                    participantName,
+                    tokenLength: typeof token === 'string' ? token.length : 0,
+                    expireUnixSec: decodedExpireUnixSec,
+                    tokenRoomName: decodedRoomName,
+                    currentTime: new Date().toISOString(),
+                });
+                let secondsLeft: number | null = null;
+                if (decodedExpireUnixSec !== null && decodedExpireUnixSec !== undefined) {
+                    const expiryRaw = Number(decodedExpireUnixSec);
+                    const expiryTime = Number.isFinite(expiryRaw) && String(decodedExpireUnixSec).trim() !== ''
+                        ? new Date(expiryRaw > 9999999999 ? expiryRaw : expiryRaw * 1000).getTime()
+                        : new Date(String(decodedExpireUnixSec)).getTime();
+                    if (Number.isFinite(expiryTime)) {
+                        secondsLeft = Math.floor((expiryTime - Date.now()) / 1000);
+                    }
+                }
+                console.log('[JOIN_FLOW][TOKEN_VALIDITY]', {
+                    joinAttemptId,
+                    secondsLeft,
+                });
                 console.info('[SessionRoom] join:token_received', {
                     joinAttemptId,
                     roomName,
                     roomUrl,
+                    participantName,
                     tokenLength: typeof token === 'string' ? token.length : 0,
                 });
 
@@ -1516,23 +1581,34 @@ function useMeteredJoinEffect(params: {
 
                 on('error', (errorPayload: unknown) => {
                     const err = errorPayload as any;
+                    const genericMeteredJoinFailure = typeof err?.message === 'string'
+                        && /internal server error occurred when joining the meeting/i.test(err.message);
                     console.error('[MeteredVideo] Error:', err);
                     setConnectionState('FAILED');
                     setExitContext('NETWORK');
                     setJoinState('LEFT');
-                    toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
+                    if (genericMeteredJoinFailure) {
+                        toast.error('Could not join the video room. This usually means the Metered room is invalid or the Metered account has a quota / billing issue.', { duration: 9000 });
+                    } else {
+                        toast.error(`Could not connect: ${err?.message || 'Unknown error'}`);
+                    }
                 });
 
                 const roomCandidate = (roomUrl || roomName || id || '').trim();
+                const normalizedRoomUrl = normalizeMeteredRoomUrl(roomUrl);
                 const normalizedCandidate = normalizeMeteredRoomUrl(roomCandidate);
-                const sdkRoomUrl = roomUrl
-                    ? normalizeMeteredRoomUrl(roomUrl)
-                    : normalizedCandidate;
+                const sdkRoomCandidates = Array.from(new Set([
+                    normalizedRoomUrl,
+                    normalizedCandidate,
+                ].filter(Boolean)));
+                const sdkRoomUrl = sdkRoomCandidates[0] || normalizedCandidate;
 
                 console.info('[SessionRoom] join:resolved_room', {
                     joinAttemptId,
                     roomCandidate,
                     sdkRoomUrl,
+                    sdkRoomCandidates,
+                    preferredCandidate: sdkRoomCandidates[0] || null,
                     usesHttpsPrefix: /^https?:\/\//i.test(String(roomUrl || roomName || '')),
                 });
 
@@ -1542,40 +1618,84 @@ function useMeteredJoinEffect(params: {
                 // does full teardown → fresh Meeting() → re-register all listeners.
                 const MAX_JOIN_RETRIES = 2;
                 const joinWithRetries = async () => {
+                    const name = String(participantName || `${userId}|${userDisplayName}`).trim();
                     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
-                        try {
-                            await meeting.join({
-                                roomURL: sdkRoomUrl,
-                                name: `${userId}|${userDisplayName}`,
-                                accessToken: token,
-                            });
-                            return;
-                        } catch (joinErr) {
-                            // Dump ALL properties of the raw error for deep debugging
-                            const rawErrDump: Record<string, unknown> = {};
-                            if (joinErr && typeof joinErr === 'object') {
-                                for (const key of Object.getOwnPropertyNames(joinErr)) {
-                                    try { rawErrDump[key] = (joinErr as Record<string, unknown>)[key]; } catch {}
+                        for (let candidateIndex = 0; candidateIndex < sdkRoomCandidates.length; candidateIndex++) {
+                            const activeRoomUrl = sdkRoomCandidates[candidateIndex] || sdkRoomUrl;
+                            try {
+                                console.log('[JOIN_FLOW][JOIN_CALL]', {
+                                    joinAttemptId,
+                                    roomURL: activeRoomUrl,
+                                    roomCandidateIndex: candidateIndex,
+                                    roomCandidateCount: sdkRoomCandidates.length,
+                                    name,
+                                    nameSentToSdk: true,
+                                    tokenLength: typeof token === 'string' ? token.length : 0,
+                                    currentTime: new Date().toISOString(),
+                                });
+                                const joinOptions: {
+                                    roomURL: string;
+                                    name: string;
+                                    accessToken?: string;
+                                } = {
+                                    roomURL: activeRoomUrl,
+                                    name: name || 'Participant',
+                                };
+
+                                // The Metered SDK requires `name` even when using an accessToken.
+                                // The SDK reference marks `name` as required for join(options).
+                                if (token) {
+                                    joinOptions.accessToken = token;
                                 }
+
+                                await meeting.join(joinOptions);
+                                return;
+                            } catch (joinErr) {
+                                // Dump ALL properties of the raw error for deep debugging
+                                const rawErrDump: Record<string, unknown> = {};
+                                if (joinErr && typeof joinErr === 'object') {
+                                    for (const key of Object.getOwnPropertyNames(joinErr)) {
+                                        try { rawErrDump[key] = (joinErr as Record<string, unknown>)[key]; } catch {}
+                                    }
+                                }
+                                console.error(`[SessionRoom] join:attempt_${attempt}_failed`, {
+                                    joinAttemptId,
+                                    attempt,
+                                    candidateIndex,
+                                    maxRetries: MAX_JOIN_RETRIES,
+                                    error: joinErr instanceof Error ? joinErr.message : joinErr,
+                                    rawErrorDump: rawErrDump,
+                                    roomURLSent: activeRoomUrl,
+                                    roomCandidatesTried: sdkRoomCandidates,
+                                    nameSent: name,
+                                    tokenLength: typeof token === 'string' ? token.length : 0,
+                                });
+                                console.error('[JOIN_FLOW][JOIN_FAILED]', {
+                                    joinAttemptId,
+                                    attempt,
+                                    candidateIndex,
+                                    roomURL: activeRoomUrl,
+                                    errorMessage: (joinErr as { message?: string })?.message,
+                                    errorName: (joinErr as { name?: string })?.name,
+                                    stack: (joinErr as { stack?: string })?.stack,
+                                    currentTime: new Date().toISOString(),
+                                });
+
+                                const isLastCandidate = candidateIndex === sdkRoomCandidates.length - 1;
+                                if (attempt === MAX_JOIN_RETRIES && isLastCandidate) throw joinErr;
+                                if (!isLastCandidate) continue;
+                                await new Promise(r => setTimeout(r, 1500 * attempt));
+                                if (isUnmounting || joinAttemptRef.current !== joinAttemptId) return;
                             }
-                            console.error(`[SessionRoom] join:attempt_${attempt}_failed`, {
-                                joinAttemptId,
-                                attempt,
-                                maxRetries: MAX_JOIN_RETRIES,
-                                error: joinErr instanceof Error ? joinErr.message : joinErr,
-                                rawErrorDump: rawErrDump,
-                                roomURLSent: sdkRoomUrl,
-                                nameSent: `${userId}|${userDisplayName}`,
-                                tokenLength: typeof token === 'string' ? token.length : 0,
-                            });
-                            if (attempt === MAX_JOIN_RETRIES) throw joinErr;
-                            await new Promise(r => setTimeout(r, 1500 * attempt));
-                            if (isUnmounting || joinAttemptRef.current !== joinAttemptId) return;
                         }
                     }
                 };
 
                 await joinWithRetries();
+                console.log('[JOIN_FLOW][JOIN_SUCCESS]', {
+                    joinAttemptId,
+                    currentTime: new Date().toISOString(),
+                });
 
                 console.info('[SessionRoom] join:success', {
                     joinAttemptId,
@@ -1663,8 +1783,18 @@ function useMeteredJoinEffect(params: {
                     stack: err?.stack,
                 });
 
+                const genericMeteredJoinFailure = typeof err?.message === 'string'
+                    && /internal server error occurred when joining the meeting/i.test(err.message);
+
                 if (err.message?.includes('Permission denied') || err.name === 'NotAllowedError') {
                     toast.error('Browser denied camera/microphone access. Please check your permissions.');
+                } else if (genericMeteredJoinFailure) {
+                    toast.error('Could not join the video room. This usually means the Metered room is invalid or the Metered account has a quota / billing issue.', { duration: 9000 });
+                    const latestSession = sessionDetailsRef.current;
+                    if (latestSession && canRejoinSession(latestSession)) {
+                        setExitContext('NETWORK');
+                        setJoinState('LEFT');
+                    }
                 } else if (err.response?.data?.message) {
                     toast.error(err.response.data.message);
                     const latestSession = sessionDetailsRef.current;
@@ -1698,7 +1828,7 @@ function useMeteredJoinEffect(params: {
 
         return () => {
             isUnmounting = true;
-            joinAttemptRef.current += 1;
+            joinAttemptRef.current = `cancelled-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
             joinInFlightRef.current = false;
             if (joinTimeout) clearTimeout(joinTimeout);
             if (firstRemoteTrackTimeout) clearTimeout(firstRemoteTrackTimeout);
