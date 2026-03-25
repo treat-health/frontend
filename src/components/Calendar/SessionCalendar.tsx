@@ -19,8 +19,10 @@ interface CalendarSession {
     endTime: string;
     durationMins: number;
     type: string;
+    isGroupSession?: boolean;
     client: { id: string; firstName: string; lastName: string; email: string };
     therapist: { id: string; firstName: string; lastName: string; email: string };
+    participants?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
     notes?: string;
 }
 

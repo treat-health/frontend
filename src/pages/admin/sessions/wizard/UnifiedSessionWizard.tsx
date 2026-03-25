@@ -18,6 +18,8 @@ const validateStepOne = (state: ReturnType<typeof useUnifiedSessionStore.getStat
   if (!state.selectedState) return 'Please select a state before choosing participants.';
   if (!state.therapistId) return 'Please select a Therapist.';
   if (state.clientIds.length === 0) return 'Please select at least one Client.';
+  if (state.type === 'GROUP_THERAPY' && state.clientIds.length < 2) return 'Group therapy requires at least 2 clients.';
+  if (state.type !== 'GROUP_THERAPY' && state.clientIds.length !== 1) return 'Non-group sessions must have exactly 1 client.';
   return null;
 };
 

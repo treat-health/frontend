@@ -1,0 +1,94 @@
+.dashboard-hero-card {
+    background: var(--gradient-bg);
+    color: white;
+    margin-bottom: var(--spacing-xl);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+}
+
+.dashboard-hero-copy {
+    flex: 1 1 320px;
+    min-width: 0;
+}
+
+.dashboard-hero-title {
+    color: white;
+    margin-bottom: var(--spacing-sm);
+}
+
+.dashboard-hero-subtitle {
+    max-width: 38rem;
+    font-size: 1rem;
+    line-height: 1.7;
+    opacity: 0.9;
+}
+
+.dashboard-hero-quote-shell {
+    flex: 1 1 280px;
+    max-width: 420px;
+    margin-left: auto;
+}
+
+.dashboard-hero-quote {
+    width: 100%;
+    margin-top: 0.15rem;
+    text-align: left;
+    opacity: 0.88;
+    transition: opacity 350ms ease-in;
+}
+
+.dashboard-hero-quote-text {
+    margin: 0 0 0.45rem;
+    font-size: 1.05rem;
+    font-style: italic;
+    font-weight: 500;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.96);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.dashboard-hero-quote-author {
+    font-size: 0.86rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.dashboard-hero-quote-loading {
+    width: 100%;
+    margin-top: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.dashboard-hero-quote-loading-line {
+    height: 0.95rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.dashboard-hero-quote-loading-line.short {
+    width: 74%;
+    margin-left: auto;
+    background: rgba(255, 255, 255, 0.18);
+}
+
+@media (max-width: 900px) {
+    .dashboard-hero-quote-shell {
+        margin-left: 0;
+        max-width: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .dashboard-hero-quote-text {
+        font-size: 1rem;
+    }
+}

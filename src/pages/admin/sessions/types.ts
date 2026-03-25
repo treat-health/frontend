@@ -6,8 +6,14 @@ export interface Session {
     durationMins: number;
     status: string;
     type: string;
+    isGroupSession?: boolean;
     client: { id: string; firstName: string; lastName: string; email: string };
     therapist: { id: string; firstName: string; lastName: string; email: string };
+    participants?: Array<{
+        id: string;
+        clientId: string;
+        client: { id: string; firstName: string; lastName: string; email: string };
+    }>;
 }
 
 export interface UserSummary {

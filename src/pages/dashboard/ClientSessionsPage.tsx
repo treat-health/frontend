@@ -13,8 +13,10 @@ interface CalendarSession {
     endTime: string;
     durationMins: number;
     type: string;
+    isGroupSession?: boolean;
     client: { id: string; firstName: string; lastName: string; email: string };
     therapist: { id: string; firstName: string; lastName: string; email: string };
+    participants?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
     notes?: string;
 }
 
@@ -33,6 +35,27 @@ interface SessionCompletedEvent {
 }
 
 const createUtcDate = (year: number, monthIndex: number, day: number) => new Date(Date.UTC(year, monthIndex, day));
+
+const isGroupCalendarSession = (session: CalendarSession) => session.isGroupSession || session.type === 'GROUP_THERAPY';
+
+const getSessionParticipants = (session: CalendarSession) => {
+    if (session.participants && session.participants.length > 0) {
+        return session.participants;
+    }
+
+    return session.client ? [session.client] : [];
+};
+
+const formatParticipantNames = (participants: Array<{ firstName: string; lastName: string }>) => {
+    const names = participants
+        .map((participant) => `${participant.firstName} ${participant.lastName}`.trim())
+        .filter(Boolean);
+
+    if (names.length === 0) return 'Participants will appear here';
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
+};
 
 export default function ClientSessionsPage() {
     const [currentMonth, setCurrentMonth] = useState(() => createUtcDate(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
@@ -347,6 +370,12 @@ export default function ClientSessionsPage() {
                                         </div>
                                         {sessions.map(s => (
                                             <div key={s.id} className="client-popover-session" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                                                {(() => {
+                                                    const isGroup = isGroupCalendarSession(s);
+                                                    const participants = getSessionParticipants(s);
+                                                    const participantSummary = formatParticipantNames(participants);
+
+                                                    return (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                     <span className={`client-popover-dot ${getStatusClass(s.status)}`} />
                                                     <div className="client-popover-info">
@@ -356,9 +385,50 @@ export default function ClientSessionsPage() {
                                                         <span className="client-popover-meta">
                                                             {formatDateTimeUtc(s.startTime)}
                                                         </span>
-                                                        <span className="client-popover-meta">
-                                                            {s.type.replace(/_/g, ' ')} • {s.therapist.firstName} {s.therapist.lastName}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                                            <span
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 4,
+                                                                    padding: '2px 8px',
+                                                                    borderRadius: 999,
+                                                                    background: isGroup ? 'var(--primary-50)' : 'var(--gray-100)',
+                                                                    color: isGroup ? 'var(--primary-700)' : 'var(--gray-700)',
+                                                                    fontSize: '0.7rem',
+                                                                    fontWeight: 700,
+                                                                    textTransform: 'uppercase',
+                                                                    letterSpacing: '0.04em',
+                                                                }}
+                                                            >
+                                                                <Users size={11} /> {isGroup ? 'Group Session' : '1:1 Session'}
+                                                            </span>
+                                                            <span className="client-popover-meta" style={{ margin: 0 }}>
+                                                                {s.type.replace(/_/g, ' ')} • {s.therapist.firstName} {s.therapist.lastName}
+                                                            </span>
+                                                        </div>
+                                                        <span className="client-popover-meta" style={{ marginTop: 6 }}>
+                                                            {isGroup ? `${participants.length} participants` : 'Assigned participant'} • {participantSummary}
                                                         </span>
+                                                        {participants.length > 0 && (
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                                                {participants.map((participant) => (
+                                                                    <span
+                                                                        key={participant.id}
+                                                                        style={{
+                                                                            padding: '4px 8px',
+                                                                            borderRadius: 999,
+                                                                            background: 'var(--gray-100)',
+                                                                            color: 'var(--gray-700)',
+                                                                            fontSize: '0.72rem',
+                                                                            fontWeight: 600,
+                                                                        }}
+                                                                    >
+                                                                        {participant.firstName} {participant.lastName}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                         {(s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS') && (
                                                             <Link
                                                                 to={`/sessions/${s.id}/room`}
@@ -384,6 +454,8 @@ export default function ClientSessionsPage() {
                                                         {s.status.toLowerCase().replace(/_/g, ' ')}
                                                     </span>
                                                 </div>
+                                                    );
+                                                })()}
 
                                                 {s.status === 'SCHEDULED' && (() => {
                                                     const now = new Date();

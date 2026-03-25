@@ -1,5 +1,6 @@
 import { Calendar, MessageSquare, Settings } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { useChatStore } from '../../stores/chatStore';
 import { Link } from 'react-router-dom';
 
 /**
@@ -10,6 +11,7 @@ import { schedulingService } from '../../services/scheduling.service';
 import type { Appointment } from '../../services/scheduling.service';
 import { quoteService } from '../../services/quote.service';
 import type { HealthQuote } from '../../services/quote.service';
+import './DashboardPage.css';
 
 const DEFAULT_QUOTE: HealthQuote = {
     text: 'Your health is an investment, not an expense.',
@@ -18,6 +20,7 @@ const DEFAULT_QUOTE: HealthQuote = {
 
 export default function DashboardPage() {
     const { user } = useAuthStore();
+    const { totalUnread, fetchUnreadMessagesCount } = useChatStore();
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [quote, setQuote] = useState<HealthQuote>(DEFAULT_QUOTE);
@@ -26,13 +29,14 @@ export default function DashboardPage() {
     useEffect(() => {
         fetchAppointments();
         fetchTodayQuote();
-    }, []);
+        fetchUnreadMessagesCount();
+    }, [fetchUnreadMessagesCount]);
 
     const fetchAppointments = async () => {
         try {
             const data = await schedulingService.getMyAppointments(false);
             // Sort by earliest first
-            const sorted = data.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+            const sorted = [...data].sort((a: Appointment, b: Appointment) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
             setAppointments(sorted.slice(0, 5)); // Show next 5
         } catch (error) {
             console.error('Failed to fetch appointments:', error);
@@ -40,6 +44,46 @@ export default function DashboardPage() {
             setIsLoading(false);
         }
     };
+
+    let upcomingSessionsContent;
+
+    if (isLoading) {
+        upcomingSessionsContent = <p>Loading sessions...</p>;
+    } else if (appointments.length === 0) {
+        upcomingSessionsContent = (
+            <div className="text-center py-8 text-gray-500">
+                <Calendar size={32} className="mx-auto mb-2 opacity-50" />
+                <p>No upcoming sessions.</p>
+            </div>
+        );
+    } else {
+        upcomingSessionsContent = appointments.map((session) => (
+            <div key={session.id} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: 'var(--spacing-md) 0',
+                borderBottom: '1px solid var(--gray-100)',
+            }}>
+                <div>
+                    <p style={{ fontWeight: 500 }}>{session.type.replaceAll('_', ' ')}</p>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
+                        with {session.therapist.firstName} {session.therapist.lastName}
+                    </p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--primary-600)' }}>
+                        {new Date(session.scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                    {(session.status === 'SCHEDULED' || session.status === 'IN_PROGRESS') && (
+                        <Link to={`/sessions/${session.id}/room`} className="btn btn-sm btn-primary" style={{ marginTop: 'var(--spacing-xs)', display: 'inline-block' }}>
+                            Join Session
+                        </Link>
+                    )}
+                </div>
+            </div>
+        ));
+    }
 
     const fetchTodayQuote = async () => {
         try {
@@ -55,45 +99,27 @@ export default function DashboardPage() {
 
     return (
         <div className="page-content">
-            <div className="card" style={{
-                background: 'var(--gradient-bg)',
-                color: 'white',
-                marginBottom: 'var(--spacing-xl)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: 'var(--spacing-lg)',
-                flexWrap: 'wrap',
-            }}>
-                <div style={{ flex: '1 1 320px' }}>
-                    <h2 style={{ color: 'white', marginBottom: 'var(--spacing-sm)' }}>
+            <div className="card dashboard-hero-card">
+                <div className="dashboard-hero-copy">
+                    <h2 className="dashboard-hero-title">
                         Welcome back, {user?.firstName}! 👋
                     </h2>
-                    <p style={{ opacity: 0.9 }}>
+                    <p className="dashboard-hero-subtitle">
                         Your wellness journey continues. Here's an overview of your progress.
                     </p>
                 </div>
-                <div style={{ flex: '1 1 280px', maxWidth: '420px', marginLeft: 'auto', textAlign: 'right' }}>
+                <div className="dashboard-hero-quote-shell">
                     {isQuoteLoading ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
-                            <div style={{ height: '14px', width: '100%', borderRadius: '6px', backgroundColor: 'rgba(255, 255, 255, 0.28)' }} />
-                            <div style={{ height: '14px', width: '72%', marginLeft: 'auto', borderRadius: '6px', backgroundColor: 'rgba(255, 255, 255, 0.2)' }} />
+                        <div className="dashboard-hero-quote-loading">
+                            <div className="dashboard-hero-quote-loading-line" />
+                            <div className="dashboard-hero-quote-loading-line short" />
                         </div>
                     ) : (
-                        <div style={{ opacity: 0.8, transition: 'opacity 350ms ease-in' }}>
-                            <p style={{
-                                fontSize: '0.9rem',
-                                fontStyle: 'italic',
-                                lineHeight: 1.45,
-                                marginBottom: '6px',
-                                display: '-webkit-box',
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                            }}>
-                                "{quote.text}"
+                        <div className="dashboard-hero-quote">
+                            <p className="dashboard-hero-quote-text">
+                                {quote.text}
                             </p>
-                            <p style={{ fontSize: '0.78rem', opacity: 0.92 }}>
+                            <p className="dashboard-hero-quote-author">
                                 — {quote.author}
                             </p>
                         </div>
@@ -109,12 +135,14 @@ export default function DashboardPage() {
             }}>
                 {[
                     { label: 'Upcoming Sessions', value: appointments.length.toString(), icon: Calendar, color: 'var(--primary-500)' },
-                    { label: 'Unread Messages', value: '5', icon: MessageSquare, color: 'var(--accent-500)' },
-                ].map((stat) => (
-                    <div key={stat.label} className="card" style={{
+                    { label: 'Unread Messages', value: totalUnread.toString(), icon: MessageSquare, color: 'var(--accent-500)', to: '/messages' },
+                ].map((stat) => {
+                    const cardContent = (
+                        <div className="card" style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 'var(--spacing-lg)',
+                        cursor: stat.to ? 'pointer' : 'default',
                     }}>
                         <div style={{
                             width: '48px',
@@ -133,7 +161,23 @@ export default function DashboardPage() {
                             <p style={{ fontSize: '1.5rem', fontWeight: 600 }}>{stat.value}</p>
                         </div>
                     </div>
-                ))}
+                    );
+
+                    if (stat.to) {
+                        return (
+                            <Link
+                                key={stat.label}
+                                to={stat.to}
+                                style={{ color: 'inherit', textDecoration: 'none' }}
+                                aria-label={`Open ${stat.label.toLowerCase()}`}
+                            >
+                                {cardContent}
+                            </Link>
+                        );
+                    }
+
+                    return <div key={stat.label}>{cardContent}</div>;
+                })}
             </div>
 
             <div style={{
@@ -143,41 +187,7 @@ export default function DashboardPage() {
             }}>
                 <div className="card">
                     <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Upcoming Sessions</h3>
-                    {isLoading ? (
-                        <p>Loading sessions...</p>
-                    ) : appointments.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            <Calendar size={32} className="mx-auto mb-2 opacity-50" />
-                            <p>No upcoming sessions.</p>
-                        </div>
-                    ) : (
-                        appointments.map((session) => (
-                            <div key={session.id} style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                padding: 'var(--spacing-md) 0',
-                                borderBottom: '1px solid var(--gray-100)',
-                            }}>
-                                <div>
-                                    <p style={{ fontWeight: 500 }}>{session.type.replace(/_/g, ' ')}</p>
-                                    <p style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
-                                        with {session.therapist.firstName} {session.therapist.lastName}
-                                    </p>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                    <p style={{ fontSize: '0.875rem', color: 'var(--primary-600)' }}>
-                                        {new Date(session.scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                                    </p>
-                                    {(session.status === 'SCHEDULED' || session.status === 'IN_PROGRESS') && (
-                                        <Link to={`/sessions/${session.id}/room`} className="btn btn-sm btn-primary" style={{ marginTop: 'var(--spacing-xs)', display: 'inline-block' }}>
-                                            Join Session
-                                        </Link>
-                                    )}
-                                </div>
-                            </div>
-                        ))
-                    )}
+                    {upcomingSessionsContent}
                 </div>
 
                 <div className="card">

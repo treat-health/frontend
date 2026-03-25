@@ -355,7 +355,12 @@ export default function Step1Details() {
                 <div className="wizard-form-group">
                   <label htmlFor="wizard-client-state" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span>Client State</span>
-                    <Info size={14} color="var(--gray-500)" title="Participants can only be selected from one state at a time." />
+                      <span
+                        title="Participants can only be selected from one state at a time."
+                        style={{ display: 'inline-flex', alignItems: 'center' }}
+                      >
+                        <Info size={14} color="var(--gray-500)" />
+                      </span>
                   </label>
                   <select id="wizard-client-state" className="wizard-select" value={selectedState} onChange={(e) => handleStateSelection(e.target.value)}>
                     <option value="">-- Select a State --</option>

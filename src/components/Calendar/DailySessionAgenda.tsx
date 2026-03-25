@@ -8,8 +8,10 @@ interface Session {
     endTime: string;
     durationMins: number;
     type: string;
+    isGroupSession?: boolean;
     client: { id: string; firstName: string; lastName: string; email: string };
     therapist: { id: string; firstName: string; lastName: string; email: string };
+    participants?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
 }
 
 interface Props {
@@ -53,7 +55,10 @@ export default function DailySessionAgenda({ date, sessions, onClose }: Props) {
                     ) : (
                         <div className="agenda-timeline">
                             {sorted.map(s => {
-                                const isGroup = s.type === 'GROUP_THERAPY';
+                                const isGroup = s.isGroupSession || s.type === 'GROUP_THERAPY';
+                                const clientList = isGroup && s.participants && s.participants.length > 0
+                                    ? s.participants
+                                    : [s.client];
                                 
                                 return (
                                     <div key={s.id} className="agenda-card">
@@ -65,18 +70,20 @@ export default function DailySessionAgenda({ date, sessions, onClose }: Props) {
                                         
                                         <div className="agenda-card-details">
                                             <div className="agenda-card-row" style={{marginBottom: 8}}>
-                                                <strong style={{fontSize: 15}}>{s.type.replace(/_/g, ' ')}</strong>
+                                                <strong style={{fontSize: 15}}>{s.type.replace(/_/g, ' ')}{isGroup ? ' (Group)' : ''}</strong>
                                                 <span className={`status-badge ${s.status.toLowerCase()}`}>
                                                     {s.status.toLowerCase().replace(/_/g, ' ')}
                                                 </span>
                                             </div>
                                             
-                                            <div className="agenda-card-row text-muted">
-                                                <div className="agenda-participant">
-                                                    {isGroup ? <Users size={14}/> : <User size={14}/>}
-                                                    <span>Client: <strong style={{color: 'var(--gray-800)'}}>{s.client.firstName} {s.client.lastName}</strong></span>
+                                            {clientList.map(c => (
+                                                <div key={c.id} className="agenda-card-row text-muted">
+                                                    <div className="agenda-participant">
+                                                        {isGroup ? <Users size={14}/> : <User size={14}/>}
+                                                        <span>Client: <strong style={{color: 'var(--gray-800)'}}>{c.firstName} {c.lastName}</strong></span>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            ))}
                                             <div className="agenda-card-row text-muted" style={{marginTop: 4}}>
                                                 <div className="agenda-participant">
                                                     <User size={14} color="var(--primary-color)" />

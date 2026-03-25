@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
-import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock, Sparkles } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock } from 'lucide-react';
 import api from '../../lib/api';
 import { connectSocket, getSocket } from '../../lib/socket';
 import toast from 'react-hot-toast';
-import SessionReportPanel from '../../components/session/SessionReportPanel';
 import { useAttentionMonitor, type AttentionRoomAdapter } from '../../hooks/useAttentionMonitor';
 import './SessionRoom.css';
 
@@ -31,6 +30,12 @@ interface SessionDetails {
     clientId: string;
     therapistId: string;
     notes?: string | null;
+    isGroupSession?: boolean;
+    participants?: Array<{
+        id: string;
+        clientId: string;
+        client?: { id: string; firstName: string; lastName: string; email: string };
+    }>;
 }
 
 interface PresenceParticipantSummary {
@@ -1940,9 +1945,6 @@ function useSessionLifecycleEffects(params: {
     setPresenceSummary: React.Dispatch<React.SetStateAction<PresenceSummary | null>>;
     setPresenceError: (value: string | null) => void;
     setIsPresenceLoading: (value: boolean) => void;
-    setIsSidebarOpen: (value: boolean) => void;
-    setSidebarTab: (value: 'info' | 'people' | 'report') => void;
-    setReportRefreshTrigger: React.Dispatch<React.SetStateAction<number>>;
 }) {
     const {
         id,
@@ -1965,9 +1967,6 @@ function useSessionLifecycleEffects(params: {
         setPresenceSummary,
         setPresenceError,
         setIsPresenceLoading,
-        setIsSidebarOpen,
-        setSidebarTab,
-        setReportRefreshTrigger,
     } = params;
 
     useEffect(() => {
@@ -2171,10 +2170,7 @@ function useSessionLifecycleEffects(params: {
 
         const handleTranscriptionReady = (data: { sessionId: string }) => {
             if (data.sessionId === id) {
-                toast.success('AI Session Report is ready!', { duration: 5000, icon: '✨' });
-                setReportRefreshTrigger((prev) => prev + 1);
-                setIsSidebarOpen(true);
-                setSidebarTab('report');
+                toast.success('AI Session Report is ready and can be reviewed after the live session ends.', { duration: 5000, icon: '✨' });
             }
         };
 
@@ -2182,7 +2178,7 @@ function useSessionLifecycleEffects(params: {
         return () => {
             socket.off('session:transcription_ready', handleTranscriptionReady);
         };
-    }, [id, setReportRefreshTrigger, setIsSidebarOpen, setSidebarTab]);
+    }, [id]);
 
     useEffect(() => {
         if (!id || !user) return;
@@ -2243,9 +2239,8 @@ export default function SessionRoom() {
 
     // Sidebar panel
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [sidebarTab, setSidebarTab] = useState<'info' | 'people' | 'report'>('people');
+    const [sidebarTab, setSidebarTab] = useState<'info' | 'people'>('people');
     const [sessionNotes, setSessionNotes] = useState('');
-    const [reportRefreshTrigger, setReportRefreshTrigger] = useState(0);
     const [showExitDialog, setShowExitDialog] = useState(false);
     const [isCompletingSession, setIsCompletingSession] = useState(false);
     const [exitContext, setExitContext] = useState<ExitContext>(null);
@@ -2278,7 +2273,8 @@ export default function SessionRoom() {
 
     // Role detection & feature gating
     let roleInSession: 'CLIENT' | 'THERAPIST' | 'UNKNOWN' = 'UNKNOWN';
-    if (user?.id === sessionDetails?.clientId) {
+    if (user?.id === sessionDetails?.clientId
+        || sessionDetails?.participants?.some(p => p.clientId === user?.id || p.client?.id === user?.id)) {
         roleInSession = 'CLIENT';
     } else if (user?.id === sessionDetails?.therapistId) {
         roleInSession = 'THERAPIST';
@@ -2449,9 +2445,6 @@ export default function SessionRoom() {
         setPresenceSummary,
         setPresenceError,
         setIsPresenceLoading,
-        setIsSidebarOpen,
-        setSidebarTab,
-        setReportRefreshTrigger,
     });
 
     const startJoining = useCallback(() => {
@@ -2775,7 +2768,17 @@ export default function SessionRoom() {
                 : 'Connection failed. Retry now.'
             : connectionState === 'JOINING'
                 ? 'Joining secure room...'
-                : 'Waiting for participant to join...';
+                : sessionDetails?.isGroupSession || (sessionDetails?.participants?.length ?? 0) > 1
+                    ? 'Waiting for participants to join...'
+                    : 'Waiting for participant to join...';
+
+    const isGroupSession = !!sessionDetails?.isGroupSession || (sessionDetails?.participants?.length ?? 0) > 1;
+    const sessionParticipants = (sessionDetails?.participants?.map((participant) => participant.client).filter(Boolean) ?? []) as Array<{ id: string; firstName: string; lastName: string; email: string }>;
+    const participantChips = sessionParticipants.length > 0
+        ? sessionParticipants
+        : sessionDetails?.clientId
+            ? [{ id: sessionDetails.clientId, firstName: 'Primary', lastName: 'Client', email: '' }]
+            : [];
 
     // ── Enterprise toggle handlers ──
     // MUTE: Uses muteAudio/unmuteAudio which silences the already-published track.
@@ -2944,13 +2947,27 @@ export default function SessionRoom() {
                 {/* ─── Floating Header ─── */}
                 <header className="session-room-header">
                     <div className="session-info">
-                        <h2>Therapy Session</h2>
+                        <h2>{isGroupSession ? 'Group Therapy Session' : 'Therapy Session'}</h2>
                         <span className="session-status">
                             <span className={`status-dot ${connectionState === 'CONNECTED' ? 'connected' : 'waiting'}`} />
                             {sessionStatusLabel}
                         </span>
                         {sessionDetails && (
                             <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {isGroupSession && (
+                                    <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        padding: '2px 8px',
+                                        borderRadius: 999,
+                                        background: '#dbeafe',
+                                        color: '#1d4ed8',
+                                        fontWeight: 700,
+                                    }}>
+                                        <Users size={12} /> {participantChips.length || sessionDetails.participants?.length || 0} participants
+                                    </span>
+                                )}
                                 <span>
                                     Scheduled {formatSessionDateTime(sessionDetails.scheduledAt)}
                                     {' '}–{' '}
@@ -3078,24 +3095,30 @@ export default function SessionRoom() {
                     >
                         <Info size={14} /> Notes
                     </button>
-                    <button
-                        className={`sidebar-tab ${sidebarTab === 'report' ? 'active' : ''}`}
-                        onClick={() => setSidebarTab('report')}
-                    >
-                        <Sparkles size={14} /> AI Report
-                    </button>
                 </div>
 
                 <div className="sidebar-content">
-                    {sidebarTab === 'report' && (
-                        <SessionReportPanel
-                            sessionId={id!}
-                            refreshTrigger={reportRefreshTrigger}
-                        />
-                    )}
-
                     {sidebarTab === 'people' && (
                         <>
+                            {isGroupSession && participantChips.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                                    {participantChips.map((participant) => (
+                                        <span
+                                            key={participant.id}
+                                            style={{
+                                                padding: '4px 8px',
+                                                borderRadius: 999,
+                                                background: '#eff6ff',
+                                                color: '#1d4ed8',
+                                                fontSize: '0.72rem',
+                                                fontWeight: 600,
+                                            }}
+                                        >
+                                            {participant.firstName} {participant.lastName}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                             <div className="participant-item">
                                 <div className="participant-avatar">{userInitial}</div>
                                 <div className="participant-info">
@@ -3159,7 +3182,9 @@ export default function SessionRoom() {
                             })}
 
                             {remoteParticipants.length === 0 && (
-                                <div className="presence-panel-state compact">Participants not joined yet.</div>
+                                <div className="presence-panel-state compact">
+                                    {isGroupSession ? 'Other participants have not joined yet.' : 'The other participant has not joined yet.'}
+                                </div>
                             )}
 
                             {presenceSummary && canViewDetailedPresence && (
@@ -3243,6 +3268,12 @@ export default function SessionRoom() {
                                 <span className="info-label">Session ID</span>
                                 <span className="info-value" style={{ fontSize: '0.7rem', wordBreak: 'break-all' }}>{id?.slice(0, 8)}...</span>
                             </div>
+                            {sessionDetails && (
+                                <div className="info-row" style={{ alignItems: 'flex-start' }}>
+                                    <span className="info-label">Format</span>
+                                    <span className="info-value">{isGroupSession ? `Group session • ${participantChips.length || sessionDetails.participants?.length || 0} participants` : 'One-on-one session'}</span>
+                                </div>
+                            )}
                             {rejoinDeadlineLabel && (
                                 <div className="info-row">
                                     <span className="info-label">Rejoin window</span>

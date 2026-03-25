@@ -15,8 +15,10 @@ interface CalendarSession {
     endTime: string;
     durationMins: number;
     type: string;
+    isGroupSession?: boolean;
     client: { id: string; firstName: string; lastName: string; email: string };
     therapist: { id: string; firstName: string; lastName: string; email: string };
+    participants?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
     notes?: string;
 }
 
@@ -36,6 +38,27 @@ interface SessionCompletedEvent {
 
 const createUtcDate = (year: number, monthIndex: number, day: number) => new Date(Date.UTC(year, monthIndex, day));
 
+const isGroupCalendarSession = (session: CalendarSession) => session.isGroupSession || session.type === 'GROUP_THERAPY';
+
+const getSessionParticipants = (session: CalendarSession) => {
+    if (session.participants && session.participants.length > 0) {
+        return session.participants;
+    }
+
+    return session.client ? [session.client] : [];
+};
+
+const formatParticipantNames = (participants: Array<{ firstName: string; lastName: string }>) => {
+    const names = participants
+        .map((participant) => `${participant.firstName} ${participant.lastName}`.trim())
+        .filter(Boolean);
+
+    if (names.length === 0) return 'participants';
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
+};
+
 export default function TherapistAppointmentsPage() {
     const [currentMonth, setCurrentMonth] = useState(() => createUtcDate(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     const [calendarData, setCalendarData] = useState<CalendarData>({});
@@ -52,7 +75,8 @@ export default function TherapistAppointmentsPage() {
 
     // Complete modal
     const [completingSessionId, setCompletingSessionId] = useState<string | null>(null);
-    const [completingClientName, setCompletingClientName] = useState('');
+    const [completingAudienceLabel, setCompletingAudienceLabel] = useState('');
+    const [completingIsGroup, setCompletingIsGroup] = useState(false);
     const [completionNotes, setCompletionNotes] = useState('');
 
     const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -130,8 +154,11 @@ export default function TherapistAppointmentsPage() {
 
     // ── Actions ──
     const handleCompleteClick = (session: CalendarSession) => {
+        const participants = getSessionParticipants(session);
+        const isGroup = isGroupCalendarSession(session);
         setCompletingSessionId(session.id);
-        setCompletingClientName(`${session.client.firstName} ${session.client.lastName}`);
+        setCompletingAudienceLabel(formatParticipantNames(participants));
+        setCompletingIsGroup(isGroup);
         setCompletionNotes('');
     };
 
@@ -365,6 +392,12 @@ export default function TherapistAppointmentsPage() {
                                 </div>
                                 {sessions.map(s => (
                                     <div key={s.id} className="client-popover-session" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                                        {(() => {
+                                            const isGroup = isGroupCalendarSession(s);
+                                            const participants = getSessionParticipants(s);
+                                            const participantSummary = formatParticipantNames(participants);
+
+                                            return (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                             <span className={`client-popover-dot ${getStatusClass(s.status)}`} />
                                             <div className="client-popover-info">
@@ -374,14 +407,57 @@ export default function TherapistAppointmentsPage() {
                                                 <span className="client-popover-meta">
                                                     {formatDateTimeUtc(s.startTime)}
                                                 </span>
-                                                <span className="client-popover-meta">
-                                                    {s.client.firstName} {s.client.lastName} • {s.type.replace(/_/g, ' ')}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                                    <span
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 4,
+                                                            padding: '2px 8px',
+                                                            borderRadius: 999,
+                                                            background: isGroup ? 'var(--primary-50)' : 'var(--gray-100)',
+                                                            color: isGroup ? 'var(--primary-700)' : 'var(--gray-700)',
+                                                            fontSize: '0.7rem',
+                                                            fontWeight: 700,
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: '0.04em',
+                                                        }}
+                                                    >
+                                                        <Users size={11} /> {isGroup ? 'Group Session' : '1:1 Session'}
+                                                    </span>
+                                                    <span className="client-popover-meta" style={{ margin: 0 }}>
+                                                        {s.type.replace(/_/g, ' ')}
+                                                    </span>
+                                                </div>
+                                                <span className="client-popover-meta" style={{ marginTop: 6 }}>
+                                                    {isGroup ? `${participants.length} participants` : 'Participant'} • {participantSummary}
                                                 </span>
+                                                {participants.length > 0 && (
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                                        {participants.map((participant) => (
+                                                            <span
+                                                                key={participant.id}
+                                                                style={{
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: 999,
+                                                                    background: 'var(--gray-100)',
+                                                                    color: 'var(--gray-700)',
+                                                                    fontSize: '0.72rem',
+                                                                    fontWeight: 600,
+                                                                }}
+                                                            >
+                                                                {participant.firstName} {participant.lastName}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                             <span className={`client-popover-badge ${getStatusClass(s.status)}`}>
                                                 {s.status.toLowerCase().replace(/_/g, ' ')}
                                             </span>
                                         </div>
+                                            );
+                                        })()}
 
                                         {s.status === 'SCHEDULED' && (() => {
                                             const now = new Date();
@@ -431,7 +507,11 @@ export default function TherapistAppointmentsPage() {
                 <div className="complete-modal-overlay" onClick={() => setCompletingSessionId(null)}>
                     <div className="complete-modal" onClick={e => e.stopPropagation()}>
                         <h3>Complete Session</h3>
-                        <p>Add session notes for {completingClientName}. Notes are private to clinical staff.</p>
+                        <p>
+                            {completingIsGroup
+                                ? `Add group session notes for ${completingAudienceLabel}. Notes remain private to clinical staff.`
+                                : `Add session notes for ${completingAudienceLabel}. Notes remain private to clinical staff.`}
+                        </p>
                         <form onSubmit={submitCompletion}>
                             <textarea
                                 value={completionNotes}
