@@ -4,16 +4,26 @@ import { AlertCircle, CalendarRange } from 'lucide-react';
 export default function Step3Preview() {
   const { previewStatus, previewSessions, previewSummary } = useUnifiedSessionStore();
 
-  const formatUtcExact = (isoString: string) => {
-      const d = new Date(isoString);
-      const year = d.getUTCFullYear();
-      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(d.getUTCDate()).padStart(2, '0');
-      const hrs = d.getUTCHours();
-      const mins = String(d.getUTCMinutes()).padStart(2, '0');
-      const ampm = hrs >= 12 ? 'PM' : 'AM';
-      const h12 = hrs % 12 || 12;
-      return `${month}/${day}/${year} at ${h12}:${mins} ${ampm} UTC`;
+    const formatUtcRange = (startIsoString: string, endIsoString: string) => {
+            const start = new Date(startIsoString);
+            const end = new Date(endIsoString);
+            const month = String(start.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(start.getUTCDate()).padStart(2, '0');
+            const year = start.getUTCFullYear();
+
+            const toUtcClock = (value: Date) => {
+                    const hrs = value.getUTCHours();
+                    const mins = String(value.getUTCMinutes()).padStart(2, '0');
+                    const ampm = hrs >= 12 ? 'PM' : 'AM';
+                    const h12 = hrs % 12 || 12;
+                    return `${h12}:${mins} ${ampm}`;
+            };
+
+            const endsNextDay = end.getUTCDate() !== start.getUTCDate()
+                || end.getUTCMonth() !== start.getUTCMonth()
+                || end.getUTCFullYear() !== start.getUTCFullYear();
+
+            return `${month}/${day}/${year} • ${toUtcClock(start)} – ${toUtcClock(end)} UTC${endsNextDay ? ' (next day)' : ''}`;
   };
 
   if (previewStatus === 'IDLE' || previewStatus === 'LOADING') {
@@ -49,14 +59,14 @@ export default function Step3Preview() {
         </div>
 
         <div className="preview-list">
-            {previewSessions.map((ps, idx) => (
-                <div key={idx} className={`preview-item ${ps.conflict ? 'has-conflict' : ''}`}>
+            {previewSessions.map((ps) => (
+                <div key={`${ps.startTime}-${ps.endTime}-${ps.clientIds.join('-')}`} className={`preview-item ${ps.conflict ? 'has-conflict' : ''}`}>
                     <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
                         <div style={{background: ps.conflict ? 'rgba(239, 68, 68, 0.15)' : 'var(--gray-100)', padding: 8, borderRadius: 6}}>
                             <CalendarRange size={20} color={ps.conflict ? 'var(--error-500)' : 'var(--gray-600)'}/>
                         </div>
                         <div>
-                            <div style={{fontWeight: 600, color: 'var(--gray-900)', fontSize: 14}}>{formatUtcExact(ps.startTime)}</div>
+                            <div style={{fontWeight: 600, color: 'var(--gray-900)', fontSize: 14}}>{formatUtcRange(ps.startTime, ps.endTime)}</div>
                             <div style={{fontSize: 13, color: 'var(--gray-600)', marginTop: 2}}>Duration: {ps.durationMins} minutes</div>
                         </div>
                     </div>

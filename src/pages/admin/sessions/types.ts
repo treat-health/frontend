@@ -16,6 +16,8 @@ export interface UserSummary {
     lastName: string;
     email: string;
     role: string;
+    state: string | null;
+    timezone?: string | null;
 }
 
 export interface SessionCompletedEvent {

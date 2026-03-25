@@ -1,4 +1,10 @@
 import { create } from 'zustand';
+import {
+  DEFAULT_SESSION_DURATION_MINS,
+  addMinutesToUtcTime,
+  calculateDurationBetweenUtcTimes,
+  getDefaultUtcStartTime,
+} from './sessionWizardUtils';
 
 export type SessionType = 'INDIVIDUAL_THERAPY' | 'GROUP_THERAPY' | 'PSYCHIATRIC_EVAL' | 'PSYCHIATRIC_FOLLOWUP' | 'BPS_ASSESSMENT' | 'INTAKE_CALL';
 export type SchedulingMode = 'CUSTOM_DATES' | 'RECURRING';
@@ -7,7 +13,8 @@ export type RecurrenceType = 'WEEKLY' | 'MONTHLY';
 export interface CustomDateParam {
   id: string; // generated client-side for keys
   date: string; // YYYY-MM-DD
-  time: string; // HH:mm
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
   durationMins: number;
 }
 
@@ -15,7 +22,8 @@ export interface RecurrenceConfig {
   recurrenceType: RecurrenceType;
   weeklyDays: number[]; // 1-7 (1=Monday)
   monthlyDates: number[]; // 1-31
-  time: string; // HH:mm
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
   durationMins: number;
   startDate: string; // YYYY-MM-DD
   endDate: string | null; // YYYY-MM-DD
@@ -41,6 +49,8 @@ export interface PreviewSession {
 interface UnifiedSessionState {
   step: number;
   type: SessionType;
+  selectedState: string;
+  participantTimezone: string | null;
   clientIds: string[];
   therapistId: string | null;
   mode: SchedulingMode;
@@ -57,6 +67,8 @@ interface UnifiedSessionState {
   // Actions
   setStep: (step: number) => void;
   setType: (type: SessionType) => void;
+  setSelectedState: (state: string) => void;
+  setParticipantTimezone: (timezone: string | null) => void;
   setClientIds: (ids: string[]) => void;
   setTherapistId: (id: string | null) => void;
   setMode: (mode: SchedulingMode) => void;
@@ -74,20 +86,37 @@ const defaultRecurrence: RecurrenceConfig = {
   recurrenceType: 'WEEKLY',
   weeklyDays: [],
   monthlyDates: [],
-  time: '12:00',
-  durationMins: 50,
+  startTime: getDefaultUtcStartTime(),
+  endTime: addMinutesToUtcTime(getDefaultUtcStartTime(), DEFAULT_SESSION_DURATION_MINS),
+  durationMins: DEFAULT_SESSION_DURATION_MINS,
   startDate: new Date().toISOString().split('T')[0],
   endDate: null
+};
+
+const buildDefaultCustomDate = (): CustomDateParam => {
+  const startTime = getDefaultUtcStartTime();
+  const endTime = addMinutesToUtcTime(startTime, DEFAULT_SESSION_DURATION_MINS);
+  const durationMins = calculateDurationBetweenUtcTimes(startTime, endTime).durationMins ?? DEFAULT_SESSION_DURATION_MINS;
+
+  return {
+    id: `cd-${Date.now()}`,
+    date: new Date().toISOString().split('T')[0],
+    startTime,
+    endTime,
+    durationMins,
+  };
 };
 
 export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   step: 1,
   type: 'INDIVIDUAL_THERAPY',
+  selectedState: '',
+  participantTimezone: null,
   clientIds: [],
   therapistId: null,
   mode: 'CUSTOM_DATES',
   
-  customDates: [{ id: 'cd-1', date: new Date().toISOString().split('T')[0], time: '12:00', durationMins: 50 }],
+  customDates: [{ ...buildDefaultCustomDate(), id: 'cd-1' }],
   recurrenceConfig: { ...defaultRecurrence },
 
   previewSessions: [],
@@ -95,7 +124,9 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   previewSummary: null,
 
   setStep: (step) => set({ step }),
-  setType: (type) => set({ type, clientIds: type === 'INDIVIDUAL_THERAPY' ? [] : [] }),
+  setType: (type) => set({ type, clientIds: [] }),
+  setSelectedState: (selectedState) => set({ selectedState }),
+  setParticipantTimezone: (participantTimezone) => set({ participantTimezone }),
   setClientIds: (ids) => set({ clientIds: ids }),
   setTherapistId: (id) => set({ therapistId: id }),
   setMode: (mode) => set({ mode }),
@@ -103,12 +134,20 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   addCustomDate: () => set((state) => ({
     customDates: [
       ...state.customDates,
-      { id: `cd-${Date.now()}`, date: new Date().toISOString().split('T')[0], time: '12:00', durationMins: 50 }
+      buildDefaultCustomDate(),
     ]
   })),
   
   updateCustomDate: (id, field, value) => set((state) => ({
-    customDates: state.customDates.map(cd => cd.id === id ? { ...cd, [field]: value } : cd)
+    customDates: state.customDates.map(cd => {
+      if (cd.id !== id) return cd;
+      const next = { ...cd, [field]: value };
+      const derivedDuration = calculateDurationBetweenUtcTimes(next.startTime, next.endTime).durationMins;
+      return {
+        ...next,
+        durationMins: derivedDuration ?? next.durationMins,
+      };
+    })
   })),
 
   removeCustomDate: (id) => set((state) => ({
@@ -116,7 +155,14 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   })),
 
   updateRecurrence: (updates) => set((state) => ({
-    recurrenceConfig: { ...state.recurrenceConfig, ...updates }
+    recurrenceConfig: (() => {
+      const next = { ...state.recurrenceConfig, ...updates };
+      const derivedDuration = calculateDurationBetweenUtcTimes(next.startTime, next.endTime).durationMins;
+      return {
+        ...next,
+        durationMins: derivedDuration ?? next.durationMins,
+      };
+    })()
   })),
 
   setPreviewResults: (sessions, status, summary) => set({
@@ -128,10 +174,12 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   reset: () => set({
     step: 1,
     type: 'INDIVIDUAL_THERAPY',
+    selectedState: '',
+    participantTimezone: null,
     clientIds: [],
     therapistId: null,
     mode: 'CUSTOM_DATES',
-    customDates: [{ id: 'cd-1', date: new Date().toISOString().split('T')[0], time: '12:00', durationMins: 50 }],
+    customDates: [{ ...buildDefaultCustomDate(), id: 'cd-1' }],
     recurrenceConfig: { ...defaultRecurrence },
     previewSessions: [],
     previewStatus: 'IDLE',

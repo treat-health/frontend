@@ -6,6 +6,7 @@ import Step2Schedule from './Step2Schedule';
 import Step3Preview from './Step3Preview';
 import api from '../../../../lib/api';
 import { toast } from 'react-hot-toast';
+import { MAX_SESSION_DURATION_MINS, MIN_SESSION_DURATION_MINS, calculateDurationBetweenUtcTimes } from './sessionWizardUtils';
 import './UnifiedSessionWizard.css';
 
 interface Props {
@@ -13,7 +14,74 @@ interface Props {
   onSuccess: () => void;
 }
 
-export default function UnifiedSessionWizard({ onClose, onSuccess }: Props) {
+const validateStepOne = (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
+  if (!state.selectedState) return 'Please select a state before choosing participants.';
+  if (!state.therapistId) return 'Please select a Therapist.';
+  if (state.clientIds.length === 0) return 'Please select at least one Client.';
+  return null;
+};
+
+const validateStepTwo = (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
+  if (state.mode === 'CUSTOM_DATES') {
+    if (state.customDates.length === 0) return 'Please add at least one date.';
+    const missingDates = state.customDates.some(c => !c.date || !c.startTime || !c.endTime);
+    if (missingDates) return 'Please completely fill out all added dates.';
+    const invalidDate = state.customDates.find(c => {
+      const duration = calculateDurationBetweenUtcTimes(c.startTime, c.endTime).durationMins ?? 0;
+      return duration < MIN_SESSION_DURATION_MINS || duration > MAX_SESSION_DURATION_MINS;
+    });
+    if (invalidDate) return `Each session must be between ${MIN_SESSION_DURATION_MINS} and ${MAX_SESSION_DURATION_MINS} minutes.`;
+    return null;
+  }
+
+  if (state.recurrenceConfig.recurrenceType === 'WEEKLY' && state.recurrenceConfig.weeklyDays.length === 0) {
+    return 'Select at least one day of the week for weekly recurrence.';
+  }
+
+  if (state.recurrenceConfig.recurrenceType === 'MONTHLY' && state.recurrenceConfig.monthlyDates?.length === 0) {
+    return 'Select at least one day of the month for monthly recurrence.';
+  }
+
+  if (!state.recurrenceConfig.startDate) return 'Start Date is absolutely required.';
+  const recurringDuration = calculateDurationBetweenUtcTimes(state.recurrenceConfig.startTime, state.recurrenceConfig.endTime).durationMins ?? 0;
+  if (recurringDuration < MIN_SESSION_DURATION_MINS || recurringDuration > MAX_SESSION_DURATION_MINS) {
+    return `Recurring sessions must be between ${MIN_SESSION_DURATION_MINS} and ${MAX_SESSION_DURATION_MINS} minutes.`;
+  }
+  return null;
+};
+
+const buildSessionPayload = (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
+  const basePayload: any = {
+    clientIds: state.clientIds,
+    therapistId: state.therapistId,
+    type: state.type,
+    mode: state.mode,
+  };
+
+  if (state.mode === 'CUSTOM_DATES') {
+    return {
+      ...basePayload,
+      customDates: state.customDates.map(c => ({
+        date: c.date,
+        startTime: c.startTime,
+        endTime: c.endTime,
+      })),
+    };
+  }
+
+  return {
+    ...basePayload,
+    recurrenceType: state.recurrenceConfig.recurrenceType,
+    weeklyDays: state.recurrenceConfig.weeklyDays,
+    monthlyDates: state.recurrenceConfig.monthlyDates,
+    startTime: state.recurrenceConfig.startTime,
+    endTime: state.recurrenceConfig.endTime,
+    startDate: state.recurrenceConfig.startDate,
+    endDate: state.recurrenceConfig.endDate || null,
+  };
+};
+
+export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Props>) {
   const { step, setStep, reset, previewStatus } = useUnifiedSessionStore();
 
   useEffect(() => {
@@ -27,55 +95,19 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Props) {
     
     // Step 1 Validation
     if (step === 1) {
-      if (!state.therapistId) return toast.error('Please select a Therapist.');
-      if (state.clientIds.length === 0) return toast.error('Please select at least one Client.');
+      const validationMessage = validateStepOne(state);
+      if (validationMessage) return toast.error(validationMessage);
       setStep(2);
     } 
     // Step 2 Validation & Trigger Preview
     else if (step === 2) {
-      if (state.mode === 'CUSTOM_DATES') {
-         if (state.customDates.length === 0) return toast.error('Please add at least one date.');
-         const missingDates = state.customDates.some(c => !c.date || !c.time || !c.durationMins);
-         if (missingDates) return toast.error('Please completely fill out all added dates.');
-      } else {
-         if (state.recurrenceConfig.recurrenceType === 'WEEKLY' && state.recurrenceConfig.weeklyDays.length === 0) {
-            return toast.error('Select at least one day of the week for weekly recurrence.');
-         }
-         if (state.recurrenceConfig.recurrenceType === 'MONTHLY' && state.recurrenceConfig.monthlyDates?.length === 0) {
-            return toast.error('Select at least one day of the month for monthly recurrence.');
-         }
-         if (!state.recurrenceConfig.startDate) return toast.error('Start Date is absolutely required.');
-      }
+      const validationMessage = validateStepTwo(state);
+      if (validationMessage) return toast.error(validationMessage);
 
       // Fire Preview Endpoint
       try {
         useUnifiedSessionStore.setState({ previewStatus: 'LOADING' });
-        
-        let payload: any = {
-           clientIds: state.clientIds,
-           therapistId: state.therapistId,
-           type: state.type,
-           mode: state.mode,
-        };
-
-        if (state.mode === 'CUSTOM_DATES') {
-          payload.customDates = state.customDates.map(c => ({
-              date: c.date,
-              time: c.time,
-              durationMins: c.durationMins
-          }));
-        } else {
-          payload = {
-              ...payload,
-              recurrenceType: state.recurrenceConfig.recurrenceType,
-              weeklyDays: state.recurrenceConfig.weeklyDays,
-              monthlyDates: state.recurrenceConfig.monthlyDates,
-              time: state.recurrenceConfig.time,
-              durationMins: state.recurrenceConfig.durationMins,
-              startDate: state.recurrenceConfig.startDate,
-              endDate: state.recurrenceConfig.endDate || null
-          };
-        }
+        const payload = buildSessionPayload(state);
 
         const res = await api.post('/admin/sessions/preview', payload);
         useUnifiedSessionStore.setState({
@@ -101,28 +133,7 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Props) {
 
      try {
         const toastId = toast.loading('Bulk generating sessions safely...');
-        
-        let payload: any = {
-           clientIds: state.clientIds,
-           therapistId: state.therapistId,
-           type: state.type,
-           mode: state.mode,
-        };
-
-        if (state.mode === 'CUSTOM_DATES') {
-          payload.customDates = state.customDates.map(c => ({ date: c.date, time: c.time, durationMins: c.durationMins }));
-        } else {
-          payload = {
-              ...payload,
-              recurrenceType: state.recurrenceConfig.recurrenceType,
-              weeklyDays: state.recurrenceConfig.weeklyDays,
-              monthlyDates: state.recurrenceConfig.monthlyDates,
-              time: state.recurrenceConfig.time,
-              durationMins: state.recurrenceConfig.durationMins,
-              startDate: state.recurrenceConfig.startDate,
-              endDate: state.recurrenceConfig.endDate || null
-          };
-        }
+        const payload = buildSessionPayload(state);
 
         await api.post('/admin/sessions/bulk-create', payload);
         toast.success('Successfully created sessions!', { id: toastId });

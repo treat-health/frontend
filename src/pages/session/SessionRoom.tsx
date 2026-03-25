@@ -920,15 +920,33 @@ function useMeteredJoinEffect(params: {
                     remoteVideo.id = `metered-remote-video-${participantKey}`;
                     remoteVideo.autoplay = true;
                     remoteVideo.playsInline = true;
+                    remoteVideo.muted = false;
                     remoteVideo.style.width = '100%';
                     remoteVideo.style.height = '100%';
                     remoteVideo.style.objectFit = 'cover';
                     remoteVideo.srcObject = new MediaStream([track]);
                     remoteVideo.dataset.trackId = track.id;
+
+                    // WebRTC tracks may arrive muted initially; ensure playback resumes on unmute
+                    const playVideo = () => { remoteVideo.play().catch(() => {}); };
+                    track.addEventListener('unmute', playVideo);
+                    remoteVideo.addEventListener('loadedmetadata', playVideo);
+                    // Explicit play attempt — autoplay attribute alone may not suffice
+                    playVideo();
+
                     if (remoteVideoRef.current) {
                         remoteVideoRef.current.appendChild(remoteVideo);
                     }
                     remoteStreamsRef.current.set(`video-${participantKey}`, remoteVideo);
+
+                    console.info('[SessionRoom] video:element_created', {
+                        joinAttemptId,
+                        participantKey,
+                        trackId: track.id,
+                        trackMuted: track.muted,
+                        trackEnabled: track.enabled,
+                        trackReadyState: track.readyState,
+                    });
                 };
 
                 const ensureAudioElement = (participantKey: string, track: MediaStreamTrack) => {
@@ -1083,7 +1101,29 @@ function useMeteredJoinEffect(params: {
                     }
                     const effectiveSourceId = stableIdentity || participantId;
                     const participantState = participantRegistry.get(identityKey);
+
+                    // Cross-reference: if no direct match, check for an existing participant by display name
+                    let crossRefResolved = false;
                     if (!participantState || !participantState.active) {
+                        const normalizedDisplayForMatch = displayName !== 'Participant' ? displayName.toLowerCase().replace(/\s+/g, ' ') : '';
+                        if (normalizedDisplayForMatch) {
+                            const nameKey = `name:${normalizedDisplayForMatch}`;
+                            const nameBasedState = participantRegistry.get(nameKey);
+                            if (nameBasedState?.active) {
+                                // Merge: register track's sid identity as alias for existing participant
+                                participantRegistry.set(identityKey, { ...nameBasedState, lastUpdatedAt: Date.now() });
+                                crossRefResolved = true;
+                                console.info('[SessionRoom] participant:cross_referenced_by_name', {
+                                    joinAttemptId,
+                                    trackIdentityKey: identityKey,
+                                    existingIdentityKey: nameKey,
+                                    participantName: displayName,
+                                });
+                            }
+                        }
+                    }
+
+                    if (!crossRefResolved && (!participantState || !participantState.active)) {
                         if (effectiveSourceId) {
                             participantRegistry.set(identityKey, {
                                 participantId: effectiveSourceId,
@@ -1192,6 +1232,7 @@ function useMeteredJoinEffect(params: {
                             const participantId = String(
                                 participant?.participantSessionId
                                 ?? participant?.participantId
+                                ?? participant?._id
                                 ?? participant?.id
                                 ?? '',
                             ).trim();
@@ -1481,7 +1522,7 @@ function useMeteredJoinEffect(params: {
 
                 on('participantJoined', (participantPayload: unknown) => {
                     const participant = participantPayload as any;
-                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?.id ?? '');
+                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?._id ?? participant?.id ?? '');
                     const participantName = String(participant?.participantName ?? participant?.name ?? 'Participant');
                     const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     const effectiveSourceId = stableIdentity || participantId;
@@ -1502,7 +1543,7 @@ function useMeteredJoinEffect(params: {
 
                 on('participantLeft', (participantPayload: unknown) => {
                     const participant = participantPayload as any;
-                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?.id ?? '');
+                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?._id ?? participant?.id ?? '');
                     const participantName = String(participant?.participantName ?? participant?.name ?? '');
                     const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     const effectiveSourceId = stableIdentity || participantId;
