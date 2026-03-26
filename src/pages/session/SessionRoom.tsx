@@ -1124,7 +1124,10 @@ function useMeteredJoinEffect(params: {
                     // Explicit play attempt — autoplay attribute alone may not suffice
                     playVideo();
 
-                    if (remoteVideoRef.current) {
+                    const visibleTileContainer = document.getElementById(`video-tile-${participantKey}`);
+                    if (visibleTileContainer) {
+                        visibleTileContainer.appendChild(remoteVideo);
+                    } else if (remoteVideoRef.current) {
                         remoteVideoRef.current.appendChild(remoteVideo);
                     }
                     remoteStreamsRef.current.set(`video-${participantKey}`, remoteVideo);
@@ -3058,16 +3061,22 @@ export default function SessionRoom() {
         syncLocalVideoTrackState(!isVideoOff);
     }, [isVideoOff, localPreviewStream, syncLocalVideoTrackState]);
 
-    // Redistribute video elements from hidden staging container to per-participant tile containers
+    // Redistribute video elements from hidden staging container or detached cache to per-participant tile containers
     useEffect(() => {
         remoteParticipants.forEach((p) => {
             const tileContainer = document.getElementById(`video-tile-${p.id}`);
-            const videoEl = document.getElementById(`metered-remote-video-${p.id}`);
+            const cachedVideoElement = remoteStreamsRef.current.get(`video-${p.id}`);
+            const videoEl = (document.getElementById(`metered-remote-video-${p.id}`) || cachedVideoElement) as HTMLVideoElement | null;
             if (tileContainer && videoEl && videoEl.parentElement !== tileContainer) {
                 tileContainer.appendChild(videoEl);
+                console.info('[SessionRoom] video:element_attached_to_tile', {
+                    participantKey: p.id,
+                    trackId: videoEl.dataset.trackId,
+                    hadVisibleParent: !!videoEl.parentElement,
+                });
             }
         });
-    });
+    }, [remoteParticipants, isInRoom, isLoading, isSpeakerSpotlightMode, shouldHardPinTherapist, spotlightParticipantId]);
 
     // Active speaker detection via audio level analysis
     useEffect(() => {
