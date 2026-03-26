@@ -624,6 +624,7 @@ function useMeteredJoinEffect(params: {
     navigate: (to: string) => void | Promise<void>;
     setAiMonitoringConsent: (value: boolean) => void;
     setIsLoading: (value: boolean) => void;
+    setIsMuted: (value: boolean) => void;
     setIsVideoOff: (value: boolean) => void;
     setAttentionAdapter: (adapter: AttentionRoomAdapter | null) => void;
     setIsInRoom: (value: boolean) => void;
@@ -637,6 +638,8 @@ function useMeteredJoinEffect(params: {
     roomRef: React.RefObject<MeteredMeeting | null>;
     sessionDetailsRef: React.RefObject<SessionDetails | null>;
     disconnectIntentRef: React.RefObject<'LEAVE' | 'COMPLETE' | null>;
+    desiredAudioEnabledRef: React.RefObject<boolean>;
+    desiredVideoEnabledRef: React.RefObject<boolean>;
     clearVideoContainers: () => void;
     setLocalPreviewStream: (stream: MediaStream | null) => void;
 }) {
@@ -650,6 +653,7 @@ function useMeteredJoinEffect(params: {
         navigate,
         setAiMonitoringConsent,
         setIsLoading,
+        setIsMuted,
         setIsVideoOff,
         setAttentionAdapter,
         setIsInRoom,
@@ -663,6 +667,8 @@ function useMeteredJoinEffect(params: {
         roomRef,
         sessionDetailsRef,
         disconnectIntentRef,
+        desiredAudioEnabledRef,
+        desiredVideoEnabledRef,
         clearVideoContainers,
         setLocalPreviewStream,
     } = params;
@@ -678,6 +684,7 @@ function useMeteredJoinEffect(params: {
         const listeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = [];
         let joinTimeout: ReturnType<typeof setTimeout> | null = null;
         let firstRemoteTrackTimeout: ReturnType<typeof setTimeout> | null = null;
+        let localVideoRecoveryTimeout: ReturnType<typeof setTimeout> | null = null;
         let hasReceivedRemoteTrack = false;
 
         joinInFlightRef.current = true;
@@ -829,6 +836,51 @@ function useMeteredJoinEffect(params: {
                 const participantRegistry = new Map<string, { participantId: string; participantKey: string; active: boolean; lastUpdatedAt: number }>();
                 const participantTrackMap = new Map<string, { videoTrackId?: string; audioTrackId?: string }>();
                 const bufferedTracks = new Map<string, { participantId: string; participantName: string; videoTrack?: MediaStreamTrack; audioTrack?: MediaStreamTrack; bufferedAt: number }>();
+
+                const scheduleLocalVideoRecovery = (reason: string) => {
+                    if (localVideoRecoveryTimeout || isUnmounting || joinAttemptRef.current !== joinAttemptId) {
+                        return;
+                    }
+                    if (!desiredVideoEnabledRef.current || !roomRef.current) {
+                        return;
+                    }
+
+                    localVideoRecoveryTimeout = setTimeout(async () => {
+                        localVideoRecoveryTimeout = null;
+
+                        if (isUnmounting || joinAttemptRef.current !== joinAttemptId) {
+                            return;
+                        }
+                        if (!desiredVideoEnabledRef.current || !roomRef.current) {
+                            return;
+                        }
+
+                        const activeLocalVideoTracks = localStreamRef.current?.getVideoTracks().filter((track) => track.readyState === 'live') ?? [];
+                        if (activeLocalVideoTracks.length > 0) {
+                            console.info('[SessionRoom] video:local_recovery_skipped', {
+                                joinAttemptId,
+                                reason,
+                                activeTrackIds: activeLocalVideoTracks.map((track) => track.id),
+                            });
+                            setIsVideoOff(false);
+                            return;
+                        }
+
+                        try {
+                            console.warn('[SessionRoom] video:local_recovery_attempt', {
+                                joinAttemptId,
+                                reason,
+                            });
+                            await roomRef.current.startVideo?.();
+                        } catch (error) {
+                            console.error('[SessionRoom] video:local_recovery_failed', {
+                                joinAttemptId,
+                                reason,
+                                error: error instanceof Error ? error.message : error,
+                            });
+                        }
+                    }, 900);
+                };
 
                 const parseParticipantIdentity = (participantName: string) => {
                     const raw = participantName.trim();
@@ -1588,6 +1640,20 @@ function useMeteredJoinEffect(params: {
 
                     if (!sdkTrack) return;
 
+                    if (sdkTrack.kind === 'video') {
+                        if (localVideoRecoveryTimeout) {
+                            clearTimeout(localVideoRecoveryTimeout);
+                            localVideoRecoveryTimeout = null;
+                        }
+                        if (desiredVideoEnabledRef.current) {
+                            setIsVideoOff(false);
+                        }
+                    }
+
+                    if (sdkTrack.kind === 'audio' && desiredAudioEnabledRef.current) {
+                        setIsMuted(false);
+                    }
+
                     // Build localStreamRef from SDK-managed tracks with deduplication
                     if (!localStreamRef.current) {
                         localStreamRef.current = new MediaStream();
@@ -1621,14 +1687,28 @@ function useMeteredJoinEffect(params: {
                 on('localTrackStopped', (trackPayload: unknown) => {
                     const trackItem = trackPayload as any;
                     const sdkTrack = trackItem?.track as MediaStreamTrack | undefined;
+                    const stoppedTrackKind = sdkTrack?.kind ?? trackItem?.type;
                     console.info('[SessionRoom] track:local_stopped', {
                         joinAttemptId,
-                        type: sdkTrack?.kind ?? trackItem?.type,
+                        type: stoppedTrackKind,
                         sdkTrackId: sdkTrack?.id,
+                        desiredAudioEnabled: desiredAudioEnabledRef.current,
+                        desiredVideoEnabled: desiredVideoEnabledRef.current,
                     });
                     if (sdkTrack && localStreamRef.current) {
                         localStreamRef.current.removeTrack(sdkTrack);
                         setLocalPreviewStream(new MediaStream(localStreamRef.current.getTracks()));
+                    }
+
+                    if (stoppedTrackKind === 'video') {
+                        setIsVideoOff(true);
+                        if (desiredVideoEnabledRef.current) {
+                            scheduleLocalVideoRecovery('local_track_stopped');
+                        }
+                    }
+
+                    if (stoppedTrackKind === 'audio') {
+                        setIsMuted(true);
                     }
                 });
 
@@ -1912,6 +1992,9 @@ function useMeteredJoinEffect(params: {
                 try {
                     await meeting.startVideo?.();
                     console.info('[SessionRoom] join:video_started', { joinAttemptId });
+                    if (desiredVideoEnabledRef.current) {
+                        setIsVideoOff(false);
+                    }
                 } catch (videoErr) {
                     videoFailed = true;
                     console.warn('[SessionRoom] join:video_failed_audio_only', {
@@ -1924,6 +2007,9 @@ function useMeteredJoinEffect(params: {
                 try {
                     await meeting.startAudio?.();
                     console.info('[SessionRoom] join:audio_started', { joinAttemptId });
+                    if (desiredAudioEnabledRef.current) {
+                        setIsMuted(false);
+                    }
                 } catch (audioErr) {
                     audioFailed = true;
                     console.error('[SessionRoom] join:audio_failed', {
@@ -2024,6 +2110,7 @@ function useMeteredJoinEffect(params: {
             joinInFlightRef.current = false;
             if (joinTimeout) clearTimeout(joinTimeout);
             if (firstRemoteTrackTimeout) clearTimeout(firstRemoteTrackTimeout);
+            if (localVideoRecoveryTimeout) clearTimeout(localVideoRecoveryTimeout);
             if (joinedMeeting) {
                 const meetingAny = joinedMeeting as unknown as { off?: (event: string, handler: (...args: unknown[]) => void) => void };
                 listeners.forEach(({ event, handler }) => {
@@ -2052,6 +2139,7 @@ function useMeteredJoinEffect(params: {
         navigate,
         setAiMonitoringConsent,
         setIsLoading,
+        setIsMuted,
         setIsVideoOff,
         setAttentionAdapter,
         setIsInRoom,
@@ -2065,6 +2153,8 @@ function useMeteredJoinEffect(params: {
         roomRef,
         sessionDetailsRef,
         disconnectIntentRef,
+        desiredAudioEnabledRef,
+        desiredVideoEnabledRef,
         clearVideoContainers,
         setLocalPreviewStream,
     ]);
@@ -2413,6 +2503,8 @@ export default function SessionRoom() {
     const localStreamRef = useRef<MediaStream | null>(null);
     const remoteStreamsRef = useRef<Map<string, HTMLElement>>(new Map());
     const disconnectIntentRef = useRef<'LEAVE' | 'COMPLETE' | null>(null);
+    const desiredAudioEnabledRef = useRef(true);
+    const desiredVideoEnabledRef = useRef(true);
     const presenceRefreshAbortRef = useRef(false);
     const sessionDetailsRef = useRef<SessionDetails | null>(null);
     const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
@@ -2495,20 +2587,28 @@ export default function SessionRoom() {
     );
     const orderedVisibleParticipants = [localDisplayParticipant, ...visibleRemoteParticipants].sort(compareDisplayParticipants);
     const totalLiveParticipantCount = orderedRemoteParticipants.length + (isInRoom ? 1 : 0);
-    const canUseSpotlightMode = isGroupSession && totalLiveParticipantCount > 2;
     const isPagedLargeRoom = orderedRemoteParticipants.length > MAX_REMOTE_TILES_PER_PAGE;
-    const spotlightParticipantId = activeSpeakerIds[0]
-        ?? orderedRemoteParticipants.find((participant) => participant.isTherapist)?.id
-        ?? (localDisplayParticipant.isTherapist ? localDisplayParticipant.id : null)
-        ?? orderedVisibleParticipants[0]?.id
-        ?? null;
+    const pinnedTherapistParticipant = isGroupSession
+        ? orderedRemoteParticipants.find((participant) => participant.isTherapist)
+            ?? (localDisplayParticipant.isTherapist && isInRoom ? localDisplayParticipant : null)
+        : null;
+    const shouldHardPinTherapist = isGroupSession && totalLiveParticipantCount > 1 && !!pinnedTherapistParticipant;
+    const canUseSpeakerSpotlightMode = isGroupSession && totalLiveParticipantCount > 2 && !shouldHardPinTherapist;
+    const shouldRenderSpotlightLayout = shouldHardPinTherapist || (isSpeakerSpotlightMode && canUseSpeakerSpotlightMode);
+    const spotlightParticipantId = shouldHardPinTherapist
+        ? pinnedTherapistParticipant?.id ?? null
+        : activeSpeakerIds[0]
+            ?? orderedRemoteParticipants.find((participant) => participant.isTherapist)?.id
+            ?? (localDisplayParticipant.isTherapist ? localDisplayParticipant.id : null)
+            ?? orderedVisibleParticipants[0]?.id
+            ?? null;
     const spotlightParticipant = spotlightParticipantId === 'local'
         ? localDisplayParticipant
         : orderedRemoteParticipants.find((participant) => participant.id === spotlightParticipantId) ?? null;
     const spotlightFilmstripParticipants = [localDisplayParticipant, ...visibleRemoteParticipants]
         .filter((participant) => participant.id !== spotlightParticipantId)
         .sort(compareDisplayParticipants);
-    const visibleTileCount = isSpeakerSpotlightMode && canUseSpotlightMode
+    const visibleTileCount = shouldRenderSpotlightLayout && spotlightParticipant
         ? spotlightFilmstripParticipants.length + (spotlightParticipant ? 1 : 0)
         : orderedVisibleParticipants.length;
     const sessionTabLockKey = id && user?.id ? `treat-health:session-tab-lock:${id}:${user.id}` : null;
@@ -2912,6 +3012,7 @@ export default function SessionRoom() {
         navigate,
         setAiMonitoringConsent,
         setIsLoading,
+        setIsMuted,
         setIsVideoOff,
         setAttentionAdapter,
         setIsInRoom,
@@ -2925,6 +3026,8 @@ export default function SessionRoom() {
         roomRef,
         sessionDetailsRef,
         disconnectIntentRef,
+        desiredAudioEnabledRef,
+        desiredVideoEnabledRef,
         clearVideoContainers,
         setLocalPreviewStream,
     });
@@ -3114,7 +3217,7 @@ export default function SessionRoom() {
     }, [totalRemoteParticipantPages]);
 
     useEffect(() => {
-        if (!isSpeakerSpotlightMode || !canUseSpotlightMode || !spotlightParticipantId || spotlightParticipantId === 'local') {
+        if (shouldHardPinTherapist || !isSpeakerSpotlightMode || !canUseSpeakerSpotlightMode || !spotlightParticipantId || spotlightParticipantId === 'local') {
             return;
         }
 
@@ -3125,7 +3228,7 @@ export default function SessionRoom() {
 
         const spotlightPage = Math.floor(spotlightIndex / MAX_REMOTE_TILES_PER_PAGE) + 1;
         setRemoteParticipantPage((currentPage) => (currentPage === spotlightPage ? currentPage : spotlightPage));
-    }, [canUseSpotlightMode, isSpeakerSpotlightMode, orderedRemoteParticipants, spotlightParticipantId]);
+    }, [canUseSpeakerSpotlightMode, isSpeakerSpotlightMode, orderedRemoteParticipants, shouldHardPinTherapist, spotlightParticipantId]);
 
     const sessionStatusLabel = connectionState === 'CONNECTED'
         ? 'Connected securely'
@@ -3168,6 +3271,7 @@ export default function SessionRoom() {
 
         setIsMuted((prev) => {
             const nextMuted = !prev;
+            desiredAudioEnabledRef.current = !nextMuted;
 
             console.info('[SessionRoom] toggle:mute:pre', {
                 currentUiMuted: prev,
@@ -3212,6 +3316,7 @@ export default function SessionRoom() {
 
         setIsVideoOff((prev) => {
             const nextVideoOff = !prev;
+            desiredVideoEnabledRef.current = !nextVideoOff;
 
             console.info('[SessionRoom] toggle:video:before', {
                 wasVideoOff: prev,
@@ -3364,7 +3469,7 @@ export default function SessionRoom() {
                 <div ref={remoteVideoRef} className="video-staging-container" />
 
                 {/* ─── Video Stage ─── */}
-                {isSpeakerSpotlightMode && canUseSpotlightMode && spotlightParticipant ? (
+                {shouldRenderSpotlightLayout && spotlightParticipant ? (
                     <div className="video-stage-layout spotlight-mode">
                         <div className="video-stage-spotlight-shell">
                             {renderParticipantTile(spotlightParticipant, 'spotlight')}
@@ -3373,11 +3478,13 @@ export default function SessionRoom() {
                         <div className="video-filmstrip-shell">
                             <div className="video-filmstrip-header">
                                 <div>
-                                    <span className="video-filmstrip-label">Speaker spotlight</span>
+                                    <span className="video-filmstrip-label">{shouldHardPinTherapist ? 'Therapist pinned' : 'Speaker spotlight'}</span>
                                     <strong>{spotlightParticipant.displayName}</strong>
                                 </div>
                                 <span className="video-filmstrip-status">
-                                    {spotlightParticipant.isSpeaking
+                                    {shouldHardPinTherapist
+                                        ? 'Therapist stays on stage while clients remain in the grid'
+                                        : spotlightParticipant.isSpeaking
                                         ? 'Live speaker in focus'
                                         : spotlightParticipant.isTherapist
                                             ? 'Therapist prioritized'
@@ -3395,17 +3502,17 @@ export default function SessionRoom() {
                     </div>
                 )}
 
-                {(isPagedLargeRoom || canUseSpotlightMode) && (
+                {(isPagedLargeRoom || canUseSpeakerSpotlightMode || shouldHardPinTherapist) && (
                     <div className="video-grid-pagination">
                         <div className="video-grid-pagination-meta">
-                            <span>{`Showing ${visibleRemoteParticipants.length + 1} of ${totalLiveParticipantCount} live participants`}</span>
+                            <span>{`Showing ${visibleTileCount} of ${totalLiveParticipantCount} live participants`}</span>
                             <span>{`Page ${remoteParticipantPage} of ${totalRemoteParticipantPages}`}</span>
-                            {spotlightParticipant && canUseSpotlightMode && (
+                            {spotlightParticipant && (canUseSpeakerSpotlightMode || shouldHardPinTherapist) && (
                                 <span>{`Spotlight: ${spotlightParticipant.displayName}`}</span>
                             )}
                         </div>
                         <div className="video-grid-pagination-actions">
-                            {canUseSpotlightMode && (
+                            {canUseSpeakerSpotlightMode && (
                                 <button
                                     type="button"
                                     className={`video-grid-page-btn ${isSpeakerSpotlightMode ? 'active' : ''}`}
