@@ -199,7 +199,7 @@ export default function DashboardPage() {
                         </Link>
                         <Link to="/messages" className="btn btn-secondary w-full">
                             <MessageSquare size={18} />
-                            Message Therapist
+                            Message
                         </Link>
                         <Link to="/settings" className="btn btn-secondary w-full">
                             <Settings size={18} />

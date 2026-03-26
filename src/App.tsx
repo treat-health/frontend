@@ -6,6 +6,7 @@ import QuestionnairePage from './pages/questionnaire/QuestionnairePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import InvitePage from './pages/auth/InvitePage';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import RoleBasedDashboard from './pages/RoleBasedDashboard';
 import MessagesPage from './pages/messages/MessagesPage';
 import UsersPage from './pages/admin/UsersPage';
@@ -128,6 +129,14 @@ export default function App() {
                     element={
                         <PublicRoute>
                             <RegisterPage />
+                        </PublicRoute>
+                    }
+                />
+                <Route
+                    path="/forgot-password"
+                    element={
+                        <PublicRoute>
+                            <ForgotPasswordPage />
                         </PublicRoute>
                     }
                 />

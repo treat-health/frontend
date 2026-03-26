@@ -9,6 +9,9 @@ import { toast } from 'react-hot-toast';
 import { MAX_SESSION_DURATION_MINS, MIN_SESSION_DURATION_MINS, calculateDurationBetweenUtcTimes } from './sessionWizardUtils';
 import './UnifiedSessionWizard.css';
 
+const MAX_LIVE_SESSION_PARTICIPANTS = 50;
+const MAX_GROUP_SESSION_CLIENTS = MAX_LIVE_SESSION_PARTICIPANTS - 1;
+
 interface Props {
   onClose: () => void;
   onSuccess: () => void;
@@ -19,6 +22,9 @@ const validateStepOne = (state: ReturnType<typeof useUnifiedSessionStore.getStat
   if (!state.therapistId) return 'Please select a Therapist.';
   if (state.clientIds.length === 0) return 'Please select at least one Client.';
   if (state.type === 'GROUP_THERAPY' && state.clientIds.length < 2) return 'Group therapy requires at least 2 clients.';
+  if (state.type === 'GROUP_THERAPY' && state.clientIds.length > MAX_GROUP_SESSION_CLIENTS) {
+    return `Group therapy supports a maximum of ${MAX_GROUP_SESSION_CLIENTS} clients (${MAX_LIVE_SESSION_PARTICIPANTS} live participants including the therapist).`;
+  }
   if (state.type !== 'GROUP_THERAPY' && state.clientIds.length !== 1) return 'Non-group sessions must have exactly 1 client.';
   return null;
 };

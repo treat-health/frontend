@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
-import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock, Search, LayoutGrid, Focus } from 'lucide-react';
 import api from '../../lib/api';
 import { connectSocket, getSocket } from '../../lib/socket';
 import toast from 'react-hot-toast';
@@ -17,6 +17,11 @@ const ROOM_REJOIN_GRACE_MINUTES = 5; // Enterprise: 5-min grace period for recon
 const SESSION_TAB_LOCK_TTL_MS = 15000;
 const AUTO_RETRY_BASE_DELAY_MS = 2000;
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
+const MAX_GROUP_SESSION_PARTICIPANTS = 50;
+const MAX_REMOTE_TILES_PER_PAGE = 9;
+const MAX_SIMULTANEOUS_ACTIVE_SPEAKERS = 4;
+const ACTIVE_SPEAKER_THRESHOLD = 15;
+const ACTIVE_SPEAKER_HOLD_MS = 900;
 
 type JoinState = 'LOADING' | 'WAITING' | 'ACKNOWLEDGMENT' | 'JOINING' | 'LEFT' | 'COMPLETED';
 type ExitContext = 'LEFT' | 'NETWORK' | null;
@@ -86,11 +91,75 @@ interface SdkRemoteParticipant {
     id: string;
     name: string;
     sourceParticipantId: string;
+    providerParticipantId: string;
     identityKey: string;
     hasVideo: boolean;
     hasAudio: boolean;
     joinedAt: number;
     lastTrackAt: number;
+}
+
+interface SessionDisplayParticipant {
+    id: string;
+    kind: 'local' | 'remote';
+    displayName: string;
+    initials: string;
+    roleLabel: string;
+    isTherapist: boolean;
+    isSpeaking: boolean;
+    hasVideo: boolean;
+    hasAudio: boolean;
+    joinedAt: number;
+    presenceState: string;
+    remoteParticipant?: SdkRemoteParticipant;
+}
+
+function resolveParticipantDisplayName(
+    participant: Pick<SdkRemoteParticipant, 'name' | 'sourceParticipantId'>,
+    presenceParticipants: PresenceParticipantSummary[],
+) {
+    const presenceMatch = presenceParticipants.find((presenceParticipant) => presenceParticipant.userId === participant.sourceParticipantId);
+    return presenceMatch
+        ? `${presenceMatch.firstName ?? ''} ${presenceMatch.lastName ?? ''}`.trim() || participant.name
+        : participant.name;
+}
+
+function getParticipantInitials(displayName: string) {
+    return displayName
+        .split(' ')
+        .map((part) => part[0] ?? '')
+        .join('')
+        .slice(0, 2)
+        .toUpperCase() || 'P';
+}
+
+function isTherapistParticipant(
+    participant: Pick<SdkRemoteParticipant, 'sourceParticipantId'>,
+    presenceParticipants: PresenceParticipantSummary[],
+    sessionDetails: SessionDetails | null,
+) {
+    if (sessionDetails?.therapistId && participant.sourceParticipantId === sessionDetails.therapistId) {
+        return true;
+    }
+
+    const presenceMatch = presenceParticipants.find((presenceParticipant) => presenceParticipant.userId === participant.sourceParticipantId);
+    return (presenceMatch?.role ?? '').toUpperCase() === 'THERAPIST';
+}
+
+function compareDisplayParticipants(left: SessionDisplayParticipant, right: SessionDisplayParticipant) {
+    if (left.isTherapist !== right.isTherapist) {
+        return left.isTherapist ? -1 : 1;
+    }
+
+    if (left.isSpeaking !== right.isSpeaking) {
+        return left.isSpeaking ? -1 : 1;
+    }
+
+    if (left.hasVideo !== right.hasVideo) {
+        return left.hasVideo ? -1 : 1;
+    }
+
+    return left.joinedAt - right.joinedAt;
 }
 
 function parseSessionDate(value: string) {
@@ -783,13 +852,42 @@ function useMeteredJoinEffect(params: {
                     return normalized;
                 };
 
+                const resolveParticipantDescriptor = (payload: any) => {
+                    const nestedParticipant = payload?.participant;
+                    const participantId = String(
+                        payload?.participantSessionId
+                        ?? payload?.participantId
+                        ?? payload?._id
+                        ?? payload?.id
+                        ?? nestedParticipant?._id
+                        ?? nestedParticipant?.participantSessionId
+                        ?? nestedParticipant?.participantId
+                        ?? nestedParticipant?.id
+                        ?? '',
+                    ).trim();
+                    const participantName = String(
+                        payload?.participantName
+                        ?? payload?.name
+                        ?? payload?.identity
+                        ?? nestedParticipant?.participantName
+                        ?? nestedParticipant?.name
+                        ?? nestedParticipant?.identity
+                        ?? 'Participant',
+                    ).trim();
+
+                    return {
+                        participantId,
+                        participantName,
+                    };
+                };
+
                 const toDomSafeKey = (value: string) => value.replace(/[^a-z0-9_-]/gi, '-');
                 const resolveParticipantMeta = (participantId: string, participantName: string) => {
                     const normalizedParticipantId = participantId.trim();
                     const parsedIdentity = parseParticipantIdentity(participantName);
                     const normalizedParticipantName = (parsedIdentity.displayName || participantName).trim();
                     const normalizedName = normalizedParticipantName.toLowerCase().replace(/\s+/g, ' ');
-                    const stableIdentity = normalizedParticipantId || parsedIdentity.appUserId;
+                    const stableIdentity = parsedIdentity.appUserId || normalizedParticipantId;
                     const identityKey = stableIdentity
                         ? `sid:${stableIdentity}`
                         : normalizedName
@@ -801,9 +899,10 @@ function useMeteredJoinEffect(params: {
                 };
 
                 const resolveTrackParticipantId = (trackItem: any) => {
-                    const directId = String(trackItem?.participantSessionId ?? trackItem?.participantId ?? '').trim();
+                    const { participantId, participantName } = resolveParticipantDescriptor(trackItem);
+                    const directId = participantId;
                     if (directId) return directId;
-                    const parsedIdentity = parseParticipantIdentity(String(trackItem?.participantName ?? trackItem?.name ?? ''));
+                    const parsedIdentity = parseParticipantIdentity(participantName);
                     return parsedIdentity.appUserId || '';
                 };
 
@@ -871,6 +970,7 @@ function useMeteredJoinEffect(params: {
                 const upsertRemoteParticipant = (
                     participantId: string,
                     participantName: string,
+                    rawParticipantId = '',
                     patch?: Partial<Omit<SdkRemoteParticipant, 'id' | 'name' | 'joinedAt' | 'identityKey'>>,
                 ) => {
                     if (!participantId && !participantName) return;
@@ -878,7 +978,11 @@ function useMeteredJoinEffect(params: {
                     if (identityKey === 'unknown') return;
                     const effectiveSourceId = stableIdentity || participantId;
                     setRemoteParticipants((current) => {
-                        const existing = current.find((participant) => participant.identityKey === identityKey || participant.sourceParticipantId === effectiveSourceId);
+                        const existing = current.find((participant) => (
+                            participant.identityKey === identityKey
+                            || participant.sourceParticipantId === effectiveSourceId
+                            || (!!rawParticipantId && participant.providerParticipantId === rawParticipantId)
+                        ));
                         if (!existing) {
                             return [
                                 ...current,
@@ -886,6 +990,7 @@ function useMeteredJoinEffect(params: {
                                     id: participantKey,
                                     name: displayName,
                                     sourceParticipantId: effectiveSourceId,
+                                    providerParticipantId: rawParticipantId || participantId,
                                     identityKey,
                                     hasVideo: patch?.hasVideo ?? false,
                                     hasAudio: patch?.hasAudio ?? false,
@@ -900,6 +1005,7 @@ function useMeteredJoinEffect(params: {
                                 id: participantKey,
                                 name: displayName || participant.name,
                                 sourceParticipantId: effectiveSourceId || participant.sourceParticipantId,
+                                providerParticipantId: rawParticipantId || participant.providerParticipantId,
                                 hasVideo: patch?.hasVideo ?? participant.hasVideo,
                                 hasAudio: patch?.hasAudio ?? participant.hasAudio,
                                 lastTrackAt: patch?.lastTrackAt ?? participant.lastTrackAt,
@@ -908,11 +1014,16 @@ function useMeteredJoinEffect(params: {
                     });
                 };
 
-                const removeRemoteParticipant = (participantId: string, participantName = '') => {
+                const removeRemoteParticipant = (participantId: string, participantName = '', rawParticipantId = '') => {
                     if (!participantId && !participantName) return;
                     const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     const effectiveSourceId = stableIdentity || participantId;
-                    setRemoteParticipants((current) => current.filter((participant) => participant.identityKey !== identityKey && participant.sourceParticipantId !== effectiveSourceId && participant.id !== participantKey));
+                    setRemoteParticipants((current) => current.filter((participant) => (
+                        participant.identityKey !== identityKey
+                        && participant.sourceParticipantId !== effectiveSourceId
+                        && participant.id !== participantKey
+                        && (!rawParticipantId || participant.providerParticipantId !== rawParticipantId)
+                    )));
                 };
 
                 const ensureVideoElement = (participantKey: string, track: MediaStreamTrack) => {
@@ -933,7 +1044,29 @@ function useMeteredJoinEffect(params: {
                     remoteVideo.dataset.trackId = track.id;
 
                     // WebRTC tracks may arrive muted initially; ensure playback resumes on unmute
-                    const playVideo = () => { remoteVideo.play().catch(() => {}); };
+                    const playVideo = () => {
+                        remoteVideo.play()
+                            .then(() => {
+                                console.info('[SessionRoom] video:remote_play_success', {
+                                    joinAttemptId,
+                                    participantKey,
+                                    trackId: track.id,
+                                    paused: remoteVideo.paused,
+                                    readyState: remoteVideo.readyState,
+                                });
+                            })
+                            .catch((playError) => {
+                                console.warn('[SessionRoom] video:remote_play_failed', {
+                                    joinAttemptId,
+                                    participantKey,
+                                    trackId: track.id,
+                                    errorName: playError?.name,
+                                    errorMessage: playError?.message,
+                                    paused: remoteVideo.paused,
+                                    readyState: remoteVideo.readyState,
+                                });
+                            });
+                    };
                     track.addEventListener('unmute', playVideo);
                     remoteVideo.addEventListener('loadedmetadata', playVideo);
                     // Explicit play attempt — autoplay attribute alone may not suffice
@@ -1043,8 +1176,8 @@ function useMeteredJoinEffect(params: {
                 };
 
                 const attachRemoteTrack = (trackItem: any) => {
+                    const { participantId: rawParticipantId, participantName } = resolveParticipantDescriptor(trackItem);
                     const participantId = resolveTrackParticipantId(trackItem);
-                    const participantName = String(trackItem?.participantName ?? trackItem?.name ?? 'Participant');
                     let trackType = resolveTrackType(trackItem);
                     let mediaTrack = resolveMediaTrack(trackItem, trackType);
 
@@ -1105,6 +1238,9 @@ function useMeteredJoinEffect(params: {
                         return;
                     }
                     const effectiveSourceId = stableIdentity || participantId;
+                    if (effectiveSourceId && userId && effectiveSourceId === userId) {
+                        return;
+                    }
                     const participantState = participantRegistry.get(identityKey);
 
                     // Cross-reference: if no direct match, check for an existing participant by display name
@@ -1136,7 +1272,7 @@ function useMeteredJoinEffect(params: {
                                 active: true,
                                 lastUpdatedAt: Date.now(),
                             });
-                            upsertRemoteParticipant(effectiveSourceId, displayName, { lastTrackAt: Date.now() });
+                            upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { lastTrackAt: Date.now() });
                             console.warn('[SessionRoom] participant:synthesized_from_track', {
                                 joinAttemptId,
                                 participantId: effectiveSourceId,
@@ -1174,13 +1310,13 @@ function useMeteredJoinEffect(params: {
                             ensureVideoElement(participantKey, mediaTrack);
                             participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: mediaTrack.id });
                         }
-                        upsertRemoteParticipant(effectiveSourceId, displayName, { hasVideo: true, lastTrackAt: Date.now() });
+                        upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasVideo: true, lastTrackAt: Date.now() });
                     } else if (trackType === 'audio' && mediaTrack) {
                         if (existingTracks.audioTrackId !== mediaTrack.id) {
                             ensureAudioElement(participantKey, mediaTrack);
                             participantTrackMap.set(identityKey, { ...existingTracks, audioTrackId: mediaTrack.id });
                         }
-                        upsertRemoteParticipant(effectiveSourceId, displayName, { hasAudio: true, lastTrackAt: Date.now() });
+                        upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasAudio: true, lastTrackAt: Date.now() });
                         console.info('[SessionRoom] audio:track_attached_success', {
                             joinAttemptId,
                             participantKey,
@@ -1259,7 +1395,7 @@ function useMeteredJoinEffect(params: {
                                 active: true,
                                 lastUpdatedAt: Date.now(),
                             });
-                            upsertRemoteParticipant(effectiveSourceId, participantName, { lastTrackAt: Date.now() });
+                            upsertRemoteParticipant(effectiveSourceId, participantName, participantId, { lastTrackAt: Date.now() });
                             drainBufferedTracks(effectiveSourceId, participantName);
                         });
                         if (discoveredRemote > 0) {
@@ -1309,7 +1445,8 @@ function useMeteredJoinEffect(params: {
                         rawPayload: trackItem,
                     });
 
-                    const participantId = String(trackItem?.participantSessionId ?? trackItem?.participantId ?? '');
+                    const participantId = resolveTrackParticipantId(trackItem);
+                    const { participantName } = resolveParticipantDescriptor(trackItem);
                     const trackType = resolveTrackType(trackItem);
                     const mediaTrack = resolveMediaTrack(trackItem, trackType);
                     console.info('[SessionRoom] track:remote_started', {
@@ -1333,7 +1470,6 @@ function useMeteredJoinEffect(params: {
 
                     // Audio-specific: verify DOM element was created and is playing
                     if (trackType === 'audio' && mediaTrack) {
-                        const participantName = String(trackItem?.participantName ?? trackItem?.name ?? '');
                         const { participantKey } = resolveParticipantMeta(participantId, participantName);
                         const audioEl = document.getElementById(`metered-remote-audio-${participantKey}`) as HTMLAudioElement | null;
                         console.info('[SessionRoom] audio:remote_element_verify', {
@@ -1385,8 +1521,8 @@ function useMeteredJoinEffect(params: {
                         rawPayload: trackItem,
                     });
 
+                    const { participantId: rawParticipantId, participantName } = resolveParticipantDescriptor(trackItem);
                     const participantId = resolveTrackParticipantId(trackItem);
-                    const participantName = String(trackItem?.participantName ?? trackItem?.name ?? '');
                     const trackType = resolveTrackType(trackItem);
                     const mediaTrack = resolveMediaTrack(trackItem, trackType);
                     const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
@@ -1411,7 +1547,7 @@ function useMeteredJoinEffect(params: {
                         videoElement?.remove();
                         remoteStreamsRef.current.delete(`video-${participantKey}`);
                         participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: undefined });
-                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId
+                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId || participant.providerParticipantId === rawParticipantId
                             ? { ...participant, hasVideo: false }
                             : participant));
                     }
@@ -1431,7 +1567,7 @@ function useMeteredJoinEffect(params: {
                         audioElement?.remove();
                         remoteStreamsRef.current.delete(`audio-${participantKey}`);
                         participantTrackMap.set(identityKey, { ...existingTracks, audioTrackId: undefined });
-                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId
+                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId || participant.providerParticipantId === rawParticipantId
                             ? { ...participant, hasAudio: false }
                             : participant));
                     }
@@ -1527,10 +1663,12 @@ function useMeteredJoinEffect(params: {
 
                 on('participantJoined', (participantPayload: unknown) => {
                     const participant = participantPayload as any;
-                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?._id ?? participant?.id ?? '');
-                    const participantName = String(participant?.participantName ?? participant?.name ?? 'Participant');
+                    const { participantId, participantName } = resolveParticipantDescriptor(participant);
                     const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     const effectiveSourceId = stableIdentity || participantId;
+                    if (effectiveSourceId && userId && effectiveSourceId === userId) {
+                        return;
+                    }
                     participantRegistry.set(identityKey, {
                         participantId: effectiveSourceId,
                         participantKey,
@@ -1542,16 +1680,18 @@ function useMeteredJoinEffect(params: {
                         participant,
                     });
                     toast(`${displayName} joined the room`);
-                    upsertRemoteParticipant(effectiveSourceId, participantName, { lastTrackAt: Date.now() });
+                    upsertRemoteParticipant(effectiveSourceId, participantName, participantId, { lastTrackAt: Date.now() });
                     drainBufferedTracks(effectiveSourceId, participantName);
                 });
 
                 on('participantLeft', (participantPayload: unknown) => {
                     const participant = participantPayload as any;
-                    const participantId = String(participant?.participantSessionId ?? participant?.participantId ?? participant?._id ?? participant?.id ?? '');
-                    const participantName = String(participant?.participantName ?? participant?.name ?? '');
+                    const { participantId, participantName } = resolveParticipantDescriptor(participant);
                     const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     const effectiveSourceId = stableIdentity || participantId;
+                    if (effectiveSourceId && userId && effectiveSourceId === userId) {
+                        return;
+                    }
                     participantRegistry.set(identityKey, {
                         participantId: effectiveSourceId,
                         participantKey,
@@ -1567,7 +1707,7 @@ function useMeteredJoinEffect(params: {
                     removeTrackElements(toDomSafeKey(`sid:${participantId}`));
                     participantTrackMap.delete(identityKey);
                     bufferedTracks.delete(identityKey);
-                    removeRemoteParticipant(effectiveSourceId, participantName);
+                    removeRemoteParticipant(effectiveSourceId, participantName, participantId);
                 });
 
                 on('reconnecting', () => {
@@ -1664,7 +1804,8 @@ function useMeteredJoinEffect(params: {
                 // does full teardown → fresh Meeting() → re-register all listeners.
                 const MAX_JOIN_RETRIES = 2;
                 const joinWithRetries = async () => {
-                    const name = String(participantName || `${userId}|${userDisplayName}`).trim();
+                    const compositeParticipantName = `${userId}|${userDisplayName || 'Participant'}`;
+                    const name = String(compositeParticipantName).trim();
                     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
                         for (let candidateIndex = 0; candidateIndex < sdkRoomCandidates.length; candidateIndex++) {
                             const activeRoomUrl = sdkRoomCandidates[candidateIndex] || sdkRoomUrl;
@@ -1675,6 +1816,7 @@ function useMeteredJoinEffect(params: {
                                     roomCandidateIndex: candidateIndex,
                                     roomCandidateCount: sdkRoomCandidates.length,
                                     name,
+                                    backendParticipantName: participantName,
                                     nameSentToSdk: true,
                                     tokenLength: typeof token === 'string' ? token.length : 0,
                                     currentTime: new Date().toISOString(),
@@ -1683,9 +1825,13 @@ function useMeteredJoinEffect(params: {
                                     roomURL: string;
                                     name: string;
                                     accessToken?: string;
+                                    receiveVideoStreamType?: 'all';
+                                    receiveAudioStreamType?: 'all';
                                 } = {
                                     roomURL: activeRoomUrl,
                                     name: name || 'Participant',
+                                    receiveVideoStreamType: 'all',
+                                    receiveAudioStreamType: 'all',
                                 };
 
                                 // The Metered SDK requires `name` even when using an accessToken.
@@ -2255,6 +2401,10 @@ export default function SessionRoom() {
     const [isPresenceLoading, setIsPresenceLoading] = useState(false);
     const [presenceError, setPresenceError] = useState<string | null>(null);
     const [localPreviewStream, setLocalPreviewStream] = useState<MediaStream | null>(null);
+    const [activeSpeakerIds, setActiveSpeakerIds] = useState<string[]>([]);
+    const [remoteParticipantPage, setRemoteParticipantPage] = useState(1);
+    const [sidebarParticipantSearch, setSidebarParticipantSearch] = useState('');
+    const [isSpeakerSpotlightMode, setIsSpeakerSpotlightMode] = useState(true);
 
     // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
@@ -2296,9 +2446,71 @@ export default function SessionRoom() {
     const scheduledRangeLabel = sessionDetails && sessionTiming
         ? `${formatSessionDateTime(sessionDetails.scheduledAt)} – ${formatTimestamp(sessionTiming.scheduledEndMs)}`
         : null;
+    const isGroupSession = !!sessionDetails?.isGroupSession || (sessionDetails?.participants?.length ?? 0) > 1;
+    const userInitial = user ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase() : 'ME';
+    const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'You';
     const presenceParticipants = presenceSummary?.participants ?? [];
     const localPresenceState = isInRoom ? 'CONNECTED' : 'NOT_JOINED';
-    const hasRemoteParticipants = remoteParticipants.length > 0;
+    const activeSpeakerSet = new Set(activeSpeakerIds);
+    const localSessionRoleLabel = formatRoleLabel(roleInSession !== 'UNKNOWN' ? roleInSession : user?.role);
+    const localDisplayParticipant: SessionDisplayParticipant = {
+        id: 'local',
+        kind: 'local',
+        displayName: `${userName} (You)`,
+        initials: userInitial,
+        roleLabel: localSessionRoleLabel,
+        isTherapist: roleInSession === 'THERAPIST' || user?.id === sessionDetails?.therapistId,
+        isSpeaking: activeSpeakerSet.has('local'),
+        hasVideo: !isVideoOff,
+        hasAudio: !isMuted,
+        joinedAt: 0,
+        presenceState: localPresenceState,
+    };
+    const orderedRemoteParticipants = [...remoteParticipants]
+        .slice(0, Math.max(0, MAX_GROUP_SESSION_PARTICIPANTS - 1))
+        .map<SessionDisplayParticipant>((participant) => {
+            const presenceMatch = presenceParticipants.find((presenceParticipant) => presenceParticipant.userId === participant.sourceParticipantId);
+            const displayName = resolveParticipantDisplayName(participant, presenceParticipants);
+            return {
+                id: participant.id,
+                kind: 'remote',
+                displayName,
+                initials: getParticipantInitials(displayName),
+                roleLabel: formatRoleLabel(presenceMatch?.role ?? 'participant'),
+                isTherapist: isTherapistParticipant(participant, presenceParticipants, sessionDetails),
+                isSpeaking: activeSpeakerSet.has(participant.id),
+                hasVideo: participant.hasVideo,
+                hasAudio: participant.hasAudio,
+                joinedAt: participant.joinedAt,
+                presenceState: presenceMatch?.state ?? 'CONNECTED',
+                remoteParticipant: participant,
+            };
+        })
+        .sort(compareDisplayParticipants);
+    const hasRemoteParticipants = orderedRemoteParticipants.length > 0;
+    const totalRemoteParticipantPages = Math.max(1, Math.ceil(orderedRemoteParticipants.length / MAX_REMOTE_TILES_PER_PAGE));
+    const visibleRemoteParticipants = orderedRemoteParticipants.slice(
+        (remoteParticipantPage - 1) * MAX_REMOTE_TILES_PER_PAGE,
+        remoteParticipantPage * MAX_REMOTE_TILES_PER_PAGE,
+    );
+    const orderedVisibleParticipants = [localDisplayParticipant, ...visibleRemoteParticipants].sort(compareDisplayParticipants);
+    const totalLiveParticipantCount = orderedRemoteParticipants.length + (isInRoom ? 1 : 0);
+    const canUseSpotlightMode = isGroupSession && totalLiveParticipantCount > 2;
+    const isPagedLargeRoom = orderedRemoteParticipants.length > MAX_REMOTE_TILES_PER_PAGE;
+    const spotlightParticipantId = activeSpeakerIds[0]
+        ?? orderedRemoteParticipants.find((participant) => participant.isTherapist)?.id
+        ?? (localDisplayParticipant.isTherapist ? localDisplayParticipant.id : null)
+        ?? orderedVisibleParticipants[0]?.id
+        ?? null;
+    const spotlightParticipant = spotlightParticipantId === 'local'
+        ? localDisplayParticipant
+        : orderedRemoteParticipants.find((participant) => participant.id === spotlightParticipantId) ?? null;
+    const spotlightFilmstripParticipants = [localDisplayParticipant, ...visibleRemoteParticipants]
+        .filter((participant) => participant.id !== spotlightParticipantId)
+        .sort(compareDisplayParticipants);
+    const visibleTileCount = isSpeakerSpotlightMode && canUseSpotlightMode
+        ? spotlightFilmstripParticipants.length + (spotlightParticipant ? 1 : 0)
+        : orderedVisibleParticipants.length;
     const sessionTabLockKey = id && user?.id ? `treat-health:session-tab-lock:${id}:${user.id}` : null;
 
     const readSessionTabLock = useCallback((): { tabId: string; updatedAt: number } | null => {
@@ -2378,6 +2590,42 @@ export default function SessionRoom() {
             element.remove();
         });
         remoteStreamsRef.current.clear();
+    }, []);
+
+    const syncLocalAudioTrackState = useCallback((shouldEnable: boolean) => {
+        const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
+        audioTracks.forEach((track) => {
+            track.enabled = shouldEnable;
+        });
+
+        console.info('[SessionRoom] audio:local_track_sync', {
+            shouldEnable,
+            trackCount: audioTracks.length,
+            tracks: audioTracks.map((track) => ({
+                id: track.id,
+                enabled: track.enabled,
+                muted: track.muted,
+                readyState: track.readyState,
+            })),
+        });
+    }, []);
+
+    const syncLocalVideoTrackState = useCallback((shouldEnable: boolean) => {
+        const videoTracks = localStreamRef.current?.getVideoTracks() ?? [];
+        videoTracks.forEach((track) => {
+            track.enabled = shouldEnable;
+        });
+
+        console.info('[SessionRoom] video:local_track_sync', {
+            shouldEnable,
+            trackCount: videoTracks.length,
+            tracks: videoTracks.map((track) => ({
+                id: track.id,
+                enabled: track.enabled,
+                muted: track.muted,
+                readyState: track.readyState,
+            })),
+        });
     }, []);
 
     const disconnectRoom = useCallback((intent: 'LEAVE' | 'COMPLETE') => {
@@ -2700,6 +2948,118 @@ export default function SessionRoom() {
     }, [localPreviewStream, joinState, isLoading]);
 
     useEffect(() => {
+        syncLocalAudioTrackState(!isMuted);
+    }, [isMuted, localPreviewStream, syncLocalAudioTrackState]);
+
+    useEffect(() => {
+        syncLocalVideoTrackState(!isVideoOff);
+    }, [isVideoOff, localPreviewStream, syncLocalVideoTrackState]);
+
+    // Redistribute video elements from hidden staging container to per-participant tile containers
+    useEffect(() => {
+        remoteParticipants.forEach((p) => {
+            const tileContainer = document.getElementById(`video-tile-${p.id}`);
+            const videoEl = document.getElementById(`metered-remote-video-${p.id}`);
+            if (tileContainer && videoEl && videoEl.parentElement !== tileContainer) {
+                tileContainer.appendChild(videoEl);
+            }
+        });
+    });
+
+    // Active speaker detection via audio level analysis
+    useEffect(() => {
+        if (!isInRoom) {
+            setActiveSpeakerIds([]);
+            return;
+        }
+
+        let audioContext: AudioContext | null = null;
+        const analysers = new Map<string, AnalyserNode>();
+        const sources = new Map<string, MediaStreamAudioSourceNode>();
+        const lastActiveAt = new Map<string, number>();
+        let previousActiveIds: string[] = [];
+
+        try {
+            audioContext = new AudioContext();
+        } catch {
+            return;
+        }
+
+        const setupAnalyser = (participantId: string, stream: MediaStream) => {
+            if (!audioContext || analysers.has(participantId)) return;
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length === 0) return;
+            try {
+                const source = audioContext.createMediaStreamSource(new MediaStream(audioTracks));
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                analyser.smoothingTimeConstant = 0.5;
+                source.connect(analyser);
+                analysers.set(participantId, analyser);
+                sources.set(participantId, source);
+            } catch {
+                // audio analysis setup failed — non-critical UI enhancement only
+            }
+        };
+
+        remoteParticipants.forEach((participant) => {
+            const audioEl = document.getElementById(`metered-remote-audio-${participant.id}`) as HTMLAudioElement | null;
+            if (audioEl?.srcObject instanceof MediaStream) {
+                setupAnalyser(participant.id, audioEl.srcObject);
+            }
+        });
+
+        if (localStreamRef.current) {
+            setupAnalyser('local', localStreamRef.current);
+        }
+
+        const dataArray = new Uint8Array(128);
+        const interval = setInterval(() => {
+            const now = Date.now();
+            const sampledLevels: Array<{ id: string; avg: number }> = [];
+
+            analysers.forEach((analyser, participantId) => {
+                analyser.getByteFrequencyData(dataArray);
+                const avg = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+                if (avg >= ACTIVE_SPEAKER_THRESHOLD) {
+                    lastActiveAt.set(participantId, now);
+                    sampledLevels.push({ id: participantId, avg });
+                }
+            });
+
+            const activeIds = Array.from(lastActiveAt.entries())
+                .filter(([, timestamp]) => now - timestamp <= ACTIVE_SPEAKER_HOLD_MS)
+                .sort((left, right) => {
+                    const rightLevel = sampledLevels.find((sample) => sample.id === right[0])?.avg ?? 0;
+                    const leftLevel = sampledLevels.find((sample) => sample.id === left[0])?.avg ?? 0;
+                    if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+                    return right[1] - left[1];
+                })
+                .slice(0, MAX_SIMULTANEOUS_ACTIVE_SPEAKERS)
+                .map(([participantId]) => participantId);
+
+            const isUnchanged = activeIds.length === previousActiveIds.length
+                && activeIds.every((participantId, index) => participantId === previousActiveIds[index]);
+
+            if (!isUnchanged) {
+                previousActiveIds = activeIds;
+                setActiveSpeakerIds(activeIds);
+            }
+        }, 200);
+
+        return () => {
+            clearInterval(interval);
+            setActiveSpeakerIds([]);
+            sources.forEach((source) => { try { source.disconnect(); } catch { /* ignore */ } });
+            sources.clear();
+            analysers.clear();
+            if (audioContext) {
+                audioContext.close().catch(() => {});
+            }
+        };
+    }, [isInRoom, remoteParticipants]);
+
+    useEffect(() => {
         const handleBeforeUnload = () => {
             roomRef.current?.leaveMeeting?.();
             if (localStreamRef.current) {
@@ -2749,6 +3109,24 @@ export default function SessionRoom() {
         setConnectionState(hasRemoteParticipants ? 'CONNECTED' : 'WAITING');
     }, [isInRoom, hasRemoteParticipants, connectionState]);
 
+    useEffect(() => {
+        setRemoteParticipantPage((currentPage) => Math.min(currentPage, totalRemoteParticipantPages));
+    }, [totalRemoteParticipantPages]);
+
+    useEffect(() => {
+        if (!isSpeakerSpotlightMode || !canUseSpotlightMode || !spotlightParticipantId || spotlightParticipantId === 'local') {
+            return;
+        }
+
+        const spotlightIndex = orderedRemoteParticipants.findIndex((participant) => participant.id === spotlightParticipantId);
+        if (spotlightIndex < 0) {
+            return;
+        }
+
+        const spotlightPage = Math.floor(spotlightIndex / MAX_REMOTE_TILES_PER_PAGE) + 1;
+        setRemoteParticipantPage((currentPage) => (currentPage === spotlightPage ? currentPage : spotlightPage));
+    }, [canUseSpotlightMode, isSpeakerSpotlightMode, orderedRemoteParticipants, spotlightParticipantId]);
+
     const sessionStatusLabel = connectionState === 'CONNECTED'
         ? 'Connected securely'
         : isMultiTabBlocked
@@ -2772,7 +3150,6 @@ export default function SessionRoom() {
                     ? 'Waiting for participants to join...'
                     : 'Waiting for participant to join...';
 
-    const isGroupSession = !!sessionDetails?.isGroupSession || (sessionDetails?.participants?.length ?? 0) > 1;
     const sessionParticipants = (sessionDetails?.participants?.map((participant) => participant.client).filter(Boolean) ?? []) as Array<{ id: string; firstName: string; lastName: string; email: string }>;
     const participantChips = sessionParticipants.length > 0
         ? sessionParticipants
@@ -2815,7 +3192,17 @@ export default function SessionRoom() {
                 }
             }
 
-            console.info('[SessionRoom] toggle:mute:post', { nowMuted: nextMuted });
+            syncLocalAudioTrackState(!nextMuted);
+
+            console.info('[SessionRoom] toggle:mute:post', {
+                nowMuted: nextMuted,
+                localAudioTracks: (localStreamRef.current?.getAudioTracks() ?? []).map((track) => ({
+                    id: track.id,
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState,
+                })),
+            });
             return nextMuted;
         });
     };
@@ -2848,7 +3235,17 @@ export default function SessionRoom() {
                 }
             }
 
-            console.info('[SessionRoom] toggle:video:after', { nowVideoOff: nextVideoOff });
+            syncLocalVideoTrackState(!nextVideoOff);
+
+            console.info('[SessionRoom] toggle:video:after', {
+                nowVideoOff: nextVideoOff,
+                localVideoTracks: (localStreamRef.current?.getVideoTracks() ?? []).map((track) => ({
+                    id: track.id,
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState,
+                })),
+            });
             return nextVideoOff;
         });
     };
@@ -2914,8 +3311,48 @@ export default function SessionRoom() {
 
     const isWarningState = timeRemainingMs !== null && timeRemainingMs <= 300000; // 5 mins
 
-    const userInitial = user ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase() : 'ME';
-    const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'You';
+    const speakingParticipantCount = activeSpeakerIds.length;
+    const normalizedSidebarParticipantSearch = sidebarParticipantSearch.trim().toLowerCase();
+    const filteredSidebarParticipants = orderedRemoteParticipants.filter((participant) => {
+        if (!normalizedSidebarParticipantSearch) return true;
+        return participant.displayName.toLowerCase().includes(normalizedSidebarParticipantSearch);
+    });
+    const orderedSidebarParticipants = [localDisplayParticipant, ...filteredSidebarParticipants].sort(compareDisplayParticipants);
+
+    const renderParticipantTile = (participant: SessionDisplayParticipant, variant: 'grid' | 'spotlight' | 'filmstrip' = 'grid') => {
+        const isSpotlightTile = variant === 'spotlight';
+        const isFilmstripTile = variant === 'filmstrip';
+        const tileClassName = [
+            'video-tile',
+            participant.isSpeaking ? 'speaking' : '',
+            participant.isTherapist ? 'priority-therapist' : '',
+            isSpotlightTile ? 'spotlight-tile' : '',
+            isFilmstripTile ? 'filmstrip-tile' : '',
+        ].filter(Boolean).join(' ');
+
+        return (
+            <div key={`${variant}-${participant.id}`} className={tileClassName}>
+                {participant.kind === 'local'
+                    ? <div ref={localVideoRef} className="tile-video-container" />
+                    : <div id={`video-tile-${participant.id}`} className="tile-video-container" />}
+                {!participant.hasVideo && (
+                    <div className="tile-avatar-placeholder">
+                        <div className="tile-avatar">{participant.initials}</div>
+                    </div>
+                )}
+                <div className={`tile-role-badge ${participant.isTherapist ? 'therapist' : participant.isSpeaking ? 'speaking' : ''}`}>
+                    {participant.isTherapist ? 'Therapist' : participant.roleLabel}
+                </div>
+                <div className="tile-name-bar">
+                    <span className={`tile-name ${participant.isSpeaking ? 'tile-name-speaking' : ''}`}>
+                        {participant.displayName}
+                    </span>
+                    {participant.isSpeaking && <span className="tile-speaking-chip">Speaking</span>}
+                    {!participant.hasAudio && <MicOff size={14} className="tile-mic-off" />}
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="session-room-container">
@@ -2923,10 +3360,94 @@ export default function SessionRoom() {
             {/* ── Left: Full-screen video area ── */}
             <div className="session-room-main">
 
-                {/* Remote video fills the entire space */}
-                <div ref={remoteVideoRef} className="remote-video" />
+                {/* Hidden staging container — Metered SDK appends video elements here */}
+                <div ref={remoteVideoRef} className="video-staging-container" />
 
-                {/* Waiting placeholder (shown when no remote participant yet) */}
+                {/* ─── Video Stage ─── */}
+                {isSpeakerSpotlightMode && canUseSpotlightMode && spotlightParticipant ? (
+                    <div className="video-stage-layout spotlight-mode">
+                        <div className="video-stage-spotlight-shell">
+                            {renderParticipantTile(spotlightParticipant, 'spotlight')}
+                        </div>
+
+                        <div className="video-filmstrip-shell">
+                            <div className="video-filmstrip-header">
+                                <div>
+                                    <span className="video-filmstrip-label">Speaker spotlight</span>
+                                    <strong>{spotlightParticipant.displayName}</strong>
+                                </div>
+                                <span className="video-filmstrip-status">
+                                    {spotlightParticipant.isSpeaking
+                                        ? 'Live speaker in focus'
+                                        : spotlightParticipant.isTherapist
+                                            ? 'Therapist prioritized'
+                                            : 'Ordered by session priority'}
+                                </span>
+                            </div>
+                            <div className="video-filmstrip-track">
+                                {spotlightFilmstripParticipants.map((participant) => renderParticipantTile(participant, 'filmstrip'))}
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className={`video-grid tiles-${Math.min(visibleTileCount, 10)}`}>
+                        {orderedVisibleParticipants.map((participant) => renderParticipantTile(participant))}
+                    </div>
+                )}
+
+                {(isPagedLargeRoom || canUseSpotlightMode) && (
+                    <div className="video-grid-pagination">
+                        <div className="video-grid-pagination-meta">
+                            <span>{`Showing ${visibleRemoteParticipants.length + 1} of ${totalLiveParticipantCount} live participants`}</span>
+                            <span>{`Page ${remoteParticipantPage} of ${totalRemoteParticipantPages}`}</span>
+                            {spotlightParticipant && canUseSpotlightMode && (
+                                <span>{`Spotlight: ${spotlightParticipant.displayName}`}</span>
+                            )}
+                        </div>
+                        <div className="video-grid-pagination-actions">
+                            {canUseSpotlightMode && (
+                                <button
+                                    type="button"
+                                    className={`video-grid-page-btn ${isSpeakerSpotlightMode ? 'active' : ''}`}
+                                    onClick={() => setIsSpeakerSpotlightMode((current) => !current)}
+                                >
+                                    {isSpeakerSpotlightMode ? <LayoutGrid size={14} /> : <Focus size={14} />}
+                                    {isSpeakerSpotlightMode ? 'Grid' : 'Spotlight'}
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                className="video-grid-page-btn"
+                                onClick={() => setRemoteParticipantPage((page) => Math.max(1, page - 1))}
+                                disabled={remoteParticipantPage === 1}
+                            >
+                                Prev
+                            </button>
+                            <button
+                                type="button"
+                                className="video-grid-page-btn"
+                                onClick={() => setRemoteParticipantPage((page) => Math.min(totalRemoteParticipantPages, page + 1))}
+                                disabled={remoteParticipantPage === totalRemoteParticipantPages}
+                            >
+                                Next
+                            </button>
+                            <div className="video-grid-page-jump-list">
+                                {Array.from({ length: totalRemoteParticipantPages }, (_, index) => index + 1).map((pageNumber) => (
+                                    <button
+                                        key={pageNumber}
+                                        type="button"
+                                        className={`video-grid-page-jump-btn ${pageNumber === remoteParticipantPage ? 'active' : ''}`}
+                                        onClick={() => setRemoteParticipantPage(pageNumber)}
+                                    >
+                                        {pageNumber}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Waiting placeholder overlay (shown when no remote participants yet) */}
                 {!hasRemoteParticipants && (
                     <div className="video-placeholder">
                         <Users size={52} />
@@ -3001,21 +3522,6 @@ export default function SessionRoom() {
                         </button>
                     </div>
                 </header>
-
-                {/* ─── Local PIP (bottom-right, above controls) ─── */}
-                <div className="local-video-wrapper">
-                    <div
-                        ref={localVideoRef}
-                        className="local-video"
-                    />
-                    {isVideoOff && (
-                        <div className="local-video-placeholder">
-                            <VideoOff size={22} />
-                            <span>Camera off</span>
-                        </div>
-                    )}
-                    <span className="local-label">You</span>
-                </div>
 
                 {/* ─── Warning Banner (5 mins remaining) ─── */}
                 {isWarningState && timeRemainingMs > 0 && (
@@ -3100,6 +3606,36 @@ export default function SessionRoom() {
                 <div className="sidebar-content">
                     {sidebarTab === 'people' && (
                         <>
+                            <div className="people-panel-summary-grid">
+                                <div className="people-panel-summary-card">
+                                    <span className="people-panel-summary-label">Live now</span>
+                                    <strong>{totalLiveParticipantCount}</strong>
+                                </div>
+                                <div className="people-panel-summary-card">
+                                    <span className="people-panel-summary-label">Speaking</span>
+                                    <strong>{speakingParticipantCount}</strong>
+                                </div>
+                                <div className="people-panel-summary-card">
+                                    <span className="people-panel-summary-label">On stage</span>
+                                    <strong>{visibleTileCount}</strong>
+                                </div>
+                                <div className="people-panel-summary-card">
+                                    <span className="people-panel-summary-label">Page</span>
+                                    <strong>{remoteParticipantPage}/{totalRemoteParticipantPages}</strong>
+                                </div>
+                            </div>
+
+                            <div className="people-panel-search">
+                                <Search size={15} className="people-panel-search-icon" />
+                                <input
+                                    type="text"
+                                    value={sidebarParticipantSearch}
+                                    onChange={(event) => setSidebarParticipantSearch(event.target.value)}
+                                    className="people-panel-search-input"
+                                    placeholder="Search participants"
+                                />
+                            </div>
+
                             {isGroupSession && participantChips.length > 0 && (
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
                                     {participantChips.map((participant) => (
@@ -3119,47 +3655,32 @@ export default function SessionRoom() {
                                     ))}
                                 </div>
                             )}
-                            <div className="participant-item">
-                                <div className="participant-avatar">{userInitial}</div>
-                                <div className="participant-info">
-                                    <span className="participant-name">{userName} (You)</span>
-                                    <span className="participant-role">{formatRoleLabel(user?.role)}</span>
-                                    <span className={`participant-presence-badge ${getPresenceStateTone(localPresenceState)}`}>
-                                        {formatPresenceStateLabel(localPresenceState)}
-                                    </span>
-                                </div>
-                            </div>
-                            {isPresenceLoading && (
-                                <div className="presence-panel-state">
-                                    <Loader2 size={16} className="client-spin" />
-                                    <span>Refreshing live presence…</span>
-                                </div>
-                            )}
-                            {presenceError && (
-                                <div className="presence-panel-error">{presenceError}</div>
-                            )}
-                            {remoteParticipants.map((participant) => {
-                                const presenceMatch = presenceParticipants.find((presenceParticipant) => presenceParticipant.userId === participant.sourceParticipantId);
-                                const resolvedName = presenceMatch
-                                    ? `${presenceMatch.firstName ?? ''} ${presenceMatch.lastName ?? ''}`.trim() || participant.name
-                                    : participant.name;
-                                const initials = resolvedName
-                                    .split(' ')
-                                    .map((part) => part[0] ?? '')
-                                    .join('')
-                                    .slice(0, 2)
-                                    .toUpperCase() || 'P';
+                            {orderedSidebarParticipants.map((participant) => {
+                                if (participant.kind === 'local') {
+                                    return (
+                                        <div key={participant.id} className="participant-item">
+                                            <div className="participant-avatar">{participant.initials}</div>
+                                            <div className="participant-info">
+                                                <span className="participant-name">{participant.displayName}</span>
+                                                <span className="participant-role">{participant.roleLabel}</span>
+                                                <span className={`participant-presence-badge ${participant.isSpeaking ? 'live' : getPresenceStateTone(participant.presenceState)}`}>
+                                                    {participant.isSpeaking ? 'Speaking' : formatPresenceStateLabel(participant.presenceState)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                }
 
                                 return (
                                     <div key={participant.id} className="participant-card presence-card">
                                         <div className="participant-item participant-item-compact">
-                                            <div className="participant-avatar" style={{ background: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' }}>{initials}</div>
+                                            <div className="participant-avatar" style={{ background: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' }}>{participant.initials}</div>
                                             <div className="participant-info">
-                                                <span className="participant-name">{resolvedName}</span>
-                                                <span className="participant-role">{formatRoleLabel(presenceMatch?.role ?? 'participant')}</span>
+                                                <span className="participant-name">{participant.displayName}</span>
+                                                <span className="participant-role">{participant.roleLabel}</span>
                                             </div>
-                                            <span className={`participant-presence-badge ${getPresenceStateTone('CONNECTED')}`}>
-                                                Live in room
+                                            <span className={`participant-presence-badge ${participant.isSpeaking ? 'live' : getPresenceStateTone(participant.presenceState)}`}>
+                                                {participant.isSpeaking ? 'Speaking' : formatPresenceStateLabel(participant.presenceState)}
                                             </span>
                                         </div>
 
@@ -3180,10 +3701,25 @@ export default function SessionRoom() {
                                     </div>
                                 );
                             })}
+                            {isPresenceLoading && (
+                                <div className="presence-panel-state">
+                                    <Loader2 size={16} className="client-spin" />
+                                    <span>Refreshing live presence…</span>
+                                </div>
+                            )}
+                            {presenceError && (
+                                <div className="presence-panel-error">{presenceError}</div>
+                            )}
 
-                            {remoteParticipants.length === 0 && (
+                            {orderedRemoteParticipants.length === 0 && (
                                 <div className="presence-panel-state compact">
                                     {isGroupSession ? 'Other participants have not joined yet.' : 'The other participant has not joined yet.'}
+                                </div>
+                            )}
+
+                            {orderedRemoteParticipants.length > 0 && filteredSidebarParticipants.length === 0 && (
+                                <div className="presence-panel-state compact">
+                                    No participants match “{sidebarParticipantSearch}”.
                                 </div>
                             )}
 

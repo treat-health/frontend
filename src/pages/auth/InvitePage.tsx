@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../../lib/api';
+import logoImage from '../../assets/logo.png';
 import type { ApiResponse } from '../../lib/api';
 import type { User } from '../../stores/authStore';
 import './InvitePage.css';
@@ -184,24 +185,23 @@ export default function InvitePage() {
                 <div className="invite-header">
                     <div className="brand">
                         <div className="brand-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                            </svg>
+                            <img src={logoImage} alt="Treat Health logo" className="brand-icon-image" />
                         </div>
                         <span>Treat Health</span>
                     </div>
                 </div>
 
                 <div className="invite-body">
-                    <h1>Welcome, {validation.user?.firstName}!</h1>
+                    <h1>Reset your password</h1>
                     <p className="invite-subtitle">
-                        Set a password to activate your account
+                        Hi {validation.user?.firstName}, choose a new password to reset access to your account.
                     </p>
 
                     <form onSubmit={handleSubmit} className="invite-form">
                         <div className="form-group">
-                            <label>Email</label>
+                            <label htmlFor="invite-email">Email</label>
                             <input
+                                id="invite-email"
                                 type="email"
                                 value={validation.user?.email || ''}
                                 disabled
@@ -210,9 +210,10 @@ export default function InvitePage() {
                         </div>
 
                         <div className="form-group">
-                            <label>Password</label>
+                            <label htmlFor="invite-password">Password</label>
                             <div className="password-input">
                                 <input
+                                    id="invite-password"
                                     type={showPassword ? 'text' : 'password'}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -242,8 +243,9 @@ export default function InvitePage() {
                         </div>
 
                         <div className="form-group">
-                            <label>Confirm Password</label>
+                            <label htmlFor="invite-confirm-password">Confirm Password</label>
                             <input
+                                id="invite-confirm-password"
                                 type={showPassword ? 'text' : 'password'}
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -260,17 +262,17 @@ export default function InvitePage() {
                             {isSubmitting ? (
                                 <>
                                     <div className="spinner spinner-small" />
-                                    Activating...
+                                    Resetting password...
                                 </>
                             ) : (
-                                'Activate Account'
+                                'Reset password'
                             )}
                         </button>
                     </form>
                 </div>
 
                 <div className="invite-footer">
-                    <p>Already have an account? <Link to="/login">Log in</Link></p>
+                    <p>Remembered your password? <Link to="/login">Log in</Link></p>
                 </div>
             </div>
         </div>

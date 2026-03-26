@@ -39,6 +39,18 @@ interface ClientListContentProps {
   onToggleClient: (client: UserSummary) => void;
 }
 
+function getGroupParticipantBanner(clientCount: number) {
+  const limitReached = clientCount >= MAX_GROUP_SESSION_CLIENTS;
+
+  return {
+    background: limitReached ? '#fff7ed' : '#eff6ff',
+    color: limitReached ? '#9a3412' : '#1d4ed8',
+    message: limitReached
+      ? 'Participant limit reached. Remove a client to add another.'
+      : `You can add up to ${MAX_GROUP_SESSION_CLIENTS} clients for a maximum of ${MAX_LIVE_SESSION_PARTICIPANTS} live participants including the therapist.`
+  };
+}
+
 const SINGLE_CLIENT_TYPES = new Set([
   'INDIVIDUAL_THERAPY',
   'PSYCHIATRIC_EVAL',
@@ -46,6 +58,9 @@ const SINGLE_CLIENT_TYPES = new Set([
   'BPS_ASSESSMENT',
   'INTAKE_CALL',
 ]);
+
+const MAX_LIVE_SESSION_PARTICIPANTS = 50;
+const MAX_GROUP_SESSION_CLIENTS = MAX_LIVE_SESSION_PARTICIPANTS - 1;
 
 function renderClientListContent({
   selectedState,
@@ -102,7 +117,8 @@ function renderClientListContent({
         {clients.map(client => {
           const isSelected = clientIds.includes(client.id);
           const stateMismatch = !!client.state && client.state !== selectedState;
-          const isDisabled = stateMismatch || (!isGroup && clientIds.length > 0 && !isSelected);
+          const reachedGroupLimit = isGroup && clientIds.length >= MAX_GROUP_SESSION_CLIENTS && !isSelected;
+          const isDisabled = stateMismatch || (!isGroup && clientIds.length > 0 && !isSelected) || reachedGroupLimit;
 
           return (
             <tr
@@ -303,6 +319,11 @@ export default function Step1Details() {
       return;
     }
 
+    if (clientIds.length >= MAX_GROUP_SESSION_CLIENTS) {
+      toast.error(`Group therapy supports a maximum of ${MAX_GROUP_SESSION_CLIENTS} clients (${MAX_LIVE_SESSION_PARTICIPANTS} live participants including the therapist).`);
+      return;
+    }
+
     nextSelectedRecords[client.id] = client;
     syncSelectedClients([...clientIds, client.id], nextSelectedRecords, client.timezone || null);
   };
@@ -316,6 +337,7 @@ export default function Step1Details() {
   };
 
   const isGroup = type === 'GROUP_THERAPY';
+  const groupParticipantBanner = getGroupParticipantBanner(clientIds.length);
 
   const showingFrom = totalClients === 0 ? 0 : (page - 1) * pageSize + 1;
   const showingTo = totalClients === 0 ? 0 : Math.min(page * pageSize, totalClients);
@@ -378,7 +400,9 @@ export default function Step1Details() {
                 </div>
 
               <div className="wizard-form-group">
-                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Selected Clients ({clientIds.length})</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>
+                    Selected Clients ({clientIds.length}{isGroup ? ` / ${MAX_GROUP_SESSION_CLIENTS}` : ''})
+                  </div>
                   <div className="client-tags" style={{ minHeight: 48, padding: '8px', border: '1px dashed var(--gray-300)', borderRadius: 8, background: 'var(--gray-50)', maxHeight: '120px', overflowY: 'auto' }}>
                     {clientIds.length === 0 && <span style={{color: 'var(--gray-500)', fontSize: 13, alignSelf: 'center'}}>{selectedState ? 'No clients mapped yet...' : 'Pick a state to unlock participant selection.'}</span>}
                     {selectedClients.map(c => {
@@ -401,9 +425,15 @@ export default function Step1Details() {
               <span>Select Client(s)</span>
               <span style={{display: 'flex', alignItems: 'center', gap: 8, color: 'var(--gray-500)', fontWeight: 400}}>
                 {selectedState ? <span style={{ padding: '2px 8px', borderRadius: 999, background: 'var(--primary-50)', color: 'var(--primary-color)', fontWeight: 600 }}>{selectedState}</span> : null}
-                <span>{isGroup ? 'Multi-select enabled' : 'Single-select bounded'}</span>
+                <span>{isGroup ? `Multi-select enabled • max ${MAX_GROUP_SESSION_CLIENTS} clients` : 'Single-select bounded'}</span>
               </span>
              </div>
+
+             {isGroup && (
+               <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: groupParticipantBanner.background, color: groupParticipantBanner.color, fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
+                 {groupParticipantBanner.message}
+               </div>
+             )}
              
              <div style={{position: 'relative', marginBottom: 12, flexShrink: 0}}>
                  <Search size={16} color="var(--gray-500)" style={{position: 'absolute', left: 12, top: 10}}/>
