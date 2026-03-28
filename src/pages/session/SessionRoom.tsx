@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { Video, VideoOff, Mic, MicOff, PhoneOff, Users, Loader2, PanelRight, X, Info, CheckCircle, Clock, Search, LayoutGrid, Focus } from 'lucide-react';
@@ -2494,6 +2494,7 @@ export default function SessionRoom() {
     const [isPresenceLoading, setIsPresenceLoading] = useState(false);
     const [presenceError, setPresenceError] = useState<string | null>(null);
     const [localPreviewStream, setLocalPreviewStream] = useState<MediaStream | null>(null);
+    const [localVideoContainer, setLocalVideoContainer] = useState<HTMLDivElement | null>(null);
     const [activeSpeakerIds, setActiveSpeakerIds] = useState<string[]>([]);
     const [remoteParticipantPage, setRemoteParticipantPage] = useState(1);
     const [sidebarParticipantSearch, setSidebarParticipantSearch] = useState('');
@@ -2501,6 +2502,7 @@ export default function SessionRoom() {
 
     // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
+    const localPreviewElementRef = useRef<HTMLVideoElement | null>(null);
     const remoteVideoRef = useRef<HTMLDivElement>(null);
     const roomRef = useRef<MeteredMeeting | null>(null); // Metered meeting instance
     const localStreamRef = useRef<MediaStream | null>(null);
@@ -2548,6 +2550,7 @@ export default function SessionRoom() {
     const localPresenceState = isInRoom ? 'CONNECTED' : 'NOT_JOINED';
     const activeSpeakerSet = new Set(activeSpeakerIds);
     const localSessionRoleLabel = formatRoleLabel(roleInSession !== 'UNKNOWN' ? roleInSession : user?.role);
+    const hasLiveLocalVideoTrack = !!localPreviewStream?.getVideoTracks().some((track) => track.readyState === 'live');
     const localDisplayParticipant: SessionDisplayParticipant = {
         id: 'local',
         kind: 'local',
@@ -2556,7 +2559,7 @@ export default function SessionRoom() {
         roleLabel: localSessionRoleLabel,
         isTherapist: roleInSession === 'THERAPIST' || user?.id === sessionDetails?.therapistId,
         isSpeaking: activeSpeakerSet.has('local'),
-        hasVideo: !isVideoOff,
+        hasVideo: !isVideoOff && hasLiveLocalVideoTrack,
         hasAudio: !isMuted,
         joinedAt: 0,
         presenceState: localPresenceState,
@@ -2611,10 +2614,67 @@ export default function SessionRoom() {
     const spotlightFilmstripParticipants = [localDisplayParticipant, ...visibleRemoteParticipants]
         .filter((participant) => participant.id !== spotlightParticipantId)
         .sort(compareDisplayParticipants);
-    const visibleTileCount = shouldRenderSpotlightLayout && spotlightParticipant
+    const isTwoParticipantGroupLayout = shouldHardPinTherapist
+        && totalLiveParticipantCount === 2
+        && !!spotlightParticipant
+        && spotlightFilmstripParticipants.length === 1;
+    const dualLayoutSecondaryParticipant = isTwoParticipantGroupLayout
+        ? spotlightFilmstripParticipants[0] ?? null
+        : null;
+    const visibleTileCount = (shouldRenderSpotlightLayout || isTwoParticipantGroupLayout) && spotlightParticipant
         ? spotlightFilmstripParticipants.length + (spotlightParticipant ? 1 : 0)
         : orderedVisibleParticipants.length;
     const sessionTabLockKey = id && user?.id ? `treat-health:session-tab-lock:${id}:${user.id}` : null;
+
+    const bindLocalVideoContainer = useCallback((node: HTMLDivElement | null) => {
+        localVideoRef.current = node;
+        setLocalVideoContainer((current) => (current === node ? current : node));
+    }, []);
+
+    const ensureLocalPreviewElement = useCallback(() => {
+        if (localPreviewElementRef.current) {
+            return localPreviewElementRef.current;
+        }
+
+        const localVideo = document.createElement('video');
+        localVideo.autoplay = true;
+        localVideo.muted = true;
+        localVideo.defaultMuted = true;
+        localVideo.playsInline = true;
+        localVideo.style.width = '100%';
+        localVideo.style.height = '100%';
+        localVideo.style.objectFit = 'cover';
+        localVideo.style.transform = 'scaleX(-1)';
+        localVideo.style.display = 'block';
+
+        const playLocalPreview = () => {
+            const activeTrack = (localVideo.srcObject as MediaStream | null)?.getVideoTracks?.()[0] ?? null;
+            localVideo.play()
+                .then(() => {
+                    console.info('[SessionRoom] local_preview:play_success', {
+                        trackId: activeTrack?.id ?? null,
+                        paused: localVideo.paused,
+                        readyState: localVideo.readyState,
+                    });
+                })
+                .catch((error) => {
+                    console.warn('[SessionRoom] local_preview:play_failed', {
+                        trackId: activeTrack?.id ?? null,
+                        errorName: error?.name,
+                        errorMessage: error?.message,
+                        paused: localVideo.paused,
+                        readyState: localVideo.readyState,
+                    });
+                });
+        };
+
+        localVideo.addEventListener('loadedmetadata', playLocalPreview);
+        localVideo.addEventListener('canplay', playLocalPreview);
+        localVideo.addEventListener('resize', playLocalPreview);
+        localVideoRef.current = localVideoRef.current;
+        localPreviewElementRef.current = localVideo;
+        return localVideo;
+    }, []);
 
     const readSessionTabLock = useCallback((): { tabId: string; updatedAt: number } | null => {
         if (!sessionTabLockKey) return null;
@@ -2680,8 +2740,13 @@ export default function SessionRoom() {
                 mediaElement.srcObject = null;
             }
         };
+        if (localPreviewElementRef.current) {
+            detachMediaElement(localPreviewElementRef.current);
+            localPreviewElementRef.current.remove();
+            localPreviewElementRef.current = null;
+        }
         if (localVideoRef.current) {
-            localVideoRef.current.querySelectorAll('video,audio').forEach(detachMediaElement);
+            localVideoRef.current.querySelectorAll('audio').forEach(detachMediaElement);
             localVideoRef.current.innerHTML = '';
         }
         if (remoteVideoRef.current) {
@@ -3035,23 +3100,80 @@ export default function SessionRoom() {
         setLocalPreviewStream,
     });
 
-    useEffect(() => {
-        if (!localPreviewStream || !localVideoRef.current) return;
-        localVideoRef.current.innerHTML = '';
+    useLayoutEffect(() => {
+        const localContainer = localVideoContainer;
+        if (!localContainer) return;
+
+        if (!localPreviewStream) {
+            console.info('[SessionRoom] local_preview:missing_stream');
+            if (localPreviewElementRef.current?.parentElement === localContainer) {
+                localPreviewElementRef.current.remove();
+            }
+            return;
+        }
+
         const videoTracks = localPreviewStream.getVideoTracks();
-        if (videoTracks.length === 0) return;
-        const localVideo = document.createElement('video');
-        localVideo.autoplay = true;
-        localVideo.muted = true;
-        localVideo.playsInline = true;
-        localVideo.srcObject = new MediaStream([videoTracks[0]]);
-        localVideo.style.width = '100%';
-        localVideo.style.height = '100%';
-        localVideo.style.objectFit = 'cover';
-        localVideo.style.transform = 'scaleX(-1)';
-        localVideo.style.display = 'block';
-        localVideoRef.current.appendChild(localVideo);
-    }, [localPreviewStream, joinState, isLoading]);
+        const localVideoTrack = videoTracks.find((track) => track.readyState === 'live') ?? videoTracks[0] ?? null;
+
+        console.info('[SessionRoom] local_preview:sync', {
+            joinState,
+            isLoading,
+            hasContainer: !!localContainer,
+            streamTrackCount: localPreviewStream.getTracks().length,
+            videoTrackCount: videoTracks.length,
+            selectedTrackId: localVideoTrack?.id ?? null,
+            selectedTrackEnabled: localVideoTrack?.enabled ?? null,
+            selectedTrackMuted: localVideoTrack?.muted ?? null,
+            selectedTrackReadyState: localVideoTrack?.readyState ?? null,
+        });
+
+        if (!localVideoTrack) {
+            if (localPreviewElementRef.current?.parentElement === localContainer) {
+                localPreviewElementRef.current.remove();
+            }
+            return;
+        }
+
+        const localVideo = ensureLocalPreviewElement();
+        const currentTrackId = (localVideo.srcObject as MediaStream | null)?.getVideoTracks?.()[0]?.id ?? null;
+        if (currentTrackId !== localVideoTrack.id) {
+            localVideo.srcObject = new MediaStream([localVideoTrack]);
+        }
+
+        if (localVideo.parentElement !== localContainer) {
+            localContainer.innerHTML = '';
+            localContainer.appendChild(localVideo);
+            console.info('[SessionRoom] local_preview:container_rebound', {
+                trackId: localVideoTrack.id,
+                layoutMode: isTwoParticipantGroupLayout
+                    ? 'dual'
+                    : shouldRenderSpotlightLayout
+                        ? 'spotlight'
+                        : 'grid',
+                remoteCount: orderedRemoteParticipants.length,
+            });
+        }
+
+        const playLocalPreview = () => {
+            localVideo.play().catch(() => undefined);
+        };
+
+        localVideoTrack.addEventListener('unmute', playLocalPreview);
+        playLocalPreview();
+
+        return () => {
+            localVideoTrack.removeEventListener('unmute', playLocalPreview);
+        };
+    }, [
+        ensureLocalPreviewElement,
+        localPreviewStream,
+        localVideoContainer,
+        joinState,
+        isLoading,
+        isTwoParticipantGroupLayout,
+        shouldRenderSpotlightLayout,
+        orderedRemoteParticipants.length,
+    ]);
 
     useEffect(() => {
         syncLocalAudioTrackState(!isMuted);
@@ -3424,6 +3546,8 @@ export default function SessionRoom() {
     };
 
     const isWarningState = timeRemainingMs !== null && timeRemainingMs <= 300000; // 5 mins
+    const isWaitingAloneInRoom = isInRoom && !hasRemoteParticipants;
+    const shouldShowBlockingWaitingPlaceholder = !isInRoom && !hasRemoteParticipants;
 
     const speakingParticipantCount = activeSpeakerIds.length;
     const normalizedSidebarParticipantSearch = sidebarParticipantSearch.trim().toLowerCase();
@@ -3433,21 +3557,29 @@ export default function SessionRoom() {
     });
     const orderedSidebarParticipants = [localDisplayParticipant, ...filteredSidebarParticipants].sort(compareDisplayParticipants);
 
-    const renderParticipantTile = (participant: SessionDisplayParticipant, variant: 'grid' | 'spotlight' | 'filmstrip' = 'grid') => {
+    const renderParticipantTile = (participant: SessionDisplayParticipant, variant: 'grid' | 'spotlight' | 'filmstrip' | 'dual-secondary' = 'grid') => {
         const isSpotlightTile = variant === 'spotlight';
         const isFilmstripTile = variant === 'filmstrip';
+        const isDualSecondaryTile = variant === 'dual-secondary';
+        const framingClassName = isSpotlightTile
+            ? 'framing-stage'
+            : isDualSecondaryTile
+                ? 'framing-portrait'
+                : 'framing-standard';
         const tileClassName = [
             'video-tile',
             participant.isSpeaking ? 'speaking' : '',
             participant.isTherapist ? 'priority-therapist' : '',
             isSpotlightTile ? 'spotlight-tile' : '',
             isFilmstripTile ? 'filmstrip-tile' : '',
+            isDualSecondaryTile ? 'dual-secondary-tile' : '',
+            framingClassName,
         ].filter(Boolean).join(' ');
 
         return (
             <div key={`${variant}-${participant.id}`} className={tileClassName}>
                 {participant.kind === 'local'
-                    ? <div ref={localVideoRef} className="tile-video-container" />
+                    ? <div ref={bindLocalVideoContainer} className="tile-video-container" />
                     : <div id={`video-tile-${participant.id}`} className="tile-video-container" />}
                 {!participant.hasVideo && (
                     <div className="tile-avatar-placeholder">
@@ -3478,7 +3610,37 @@ export default function SessionRoom() {
                 <div ref={remoteVideoRef} className="video-staging-container" />
 
                 {/* ─── Video Stage ─── */}
-                {shouldRenderSpotlightLayout && spotlightParticipant ? (
+                {isTwoParticipantGroupLayout && spotlightParticipant ? (
+                    <div className="video-dual-layout">
+                        <section className="video-dual-panel video-dual-primary-panel">
+                            <div className="video-dual-panel-header">
+                                <div>
+                                    <span className="video-dual-panel-label">Therapist stage</span>
+                                    <strong>{spotlightParticipant.displayName}</strong>
+                                </div>
+                                <span className="video-dual-panel-status">Leading the live session</span>
+                            </div>
+                            <div className="video-dual-primary-shell">
+                                {renderParticipantTile(spotlightParticipant, 'spotlight')}
+                            </div>
+                        </section>
+
+                        <aside className="video-dual-panel video-dual-secondary-panel">
+                            <div className="video-dual-panel-header compact">
+                                <div>
+                                    <span className="video-dual-panel-label">Participant view</span>
+                                    <strong>{dualLayoutSecondaryParticipant?.displayName ?? 'Participant'}</strong>
+                                </div>
+                                <span className="video-dual-panel-status">
+                                    {dualLayoutSecondaryParticipant?.hasVideo ? 'Camera on' : 'Camera off'}
+                                </span>
+                            </div>
+                            <div className="video-dual-secondary-shell">
+                                {spotlightFilmstripParticipants.map((participant) => renderParticipantTile(participant, 'dual-secondary'))}
+                            </div>
+                        </aside>
+                    </div>
+                ) : shouldRenderSpotlightLayout && spotlightParticipant ? (
                     <div className="video-stage-layout spotlight-mode">
                         <div className="video-stage-spotlight-shell">
                             {renderParticipantTile(spotlightParticipant, 'spotlight')}
@@ -3511,7 +3673,7 @@ export default function SessionRoom() {
                     </div>
                 )}
 
-                {(isPagedLargeRoom || canUseSpeakerSpotlightMode || shouldHardPinTherapist) && (
+                {!isTwoParticipantGroupLayout && (isPagedLargeRoom || canUseSpeakerSpotlightMode || shouldHardPinTherapist) && (
                     <div className="video-grid-pagination">
                         <div className="video-grid-pagination-meta">
                             <span>{`Showing ${visibleTileCount} of ${totalLiveParticipantCount} live participants`}</span>
@@ -3563,8 +3725,21 @@ export default function SessionRoom() {
                     </div>
                 )}
 
-                {/* Waiting placeholder overlay (shown when no remote participants yet) */}
-                {!hasRemoteParticipants && (
+                {/* Waiting state: keep the self tile visible while alone in the room */}
+                {isWaitingAloneInRoom && (
+                    <div className="video-waiting-banner" aria-live="polite">
+                        <div className="video-waiting-banner__icon">
+                            <Users size={18} />
+                        </div>
+                        <div className="video-waiting-banner__content">
+                            <strong>{isGroupSession ? 'You are live in the room' : 'You are connected'}</strong>
+                            <span>{waitingPlaceholderLabel}</span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Blocking placeholder is only for states before the in-room layout is active */}
+                {shouldShowBlockingWaitingPlaceholder && (
                     <div className="video-placeholder">
                         <Users size={52} />
                         <p>{waitingPlaceholderLabel}</p>
