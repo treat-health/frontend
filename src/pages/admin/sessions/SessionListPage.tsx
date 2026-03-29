@@ -14,6 +14,7 @@ import '../../../styles/admin.css';
 
 export default function SessionListPage() {
     const [searchParams, setSearchParams] = useSearchParams();
+    const shouldAutoOpenWizard = searchParams.get('create') === '1';
 
     // Layout State
     const [activeTab, setActiveTab] = useState<'clients' | 'therapists'>('clients');
@@ -81,6 +82,12 @@ export default function SessionListPage() {
         setUserPage(1);
     }, [activeTab, searchTerm, userLimit]);
 
+    useEffect(() => {
+        if (shouldAutoOpenWizard) {
+            setIsWizardOpen(true);
+        }
+    }, [shouldAutoOpenWizard]);
+
     // Update URL Params wrapper
     const updateParams = (updates: Record<string, string | null>) => {
         const newParams = new URLSearchParams(searchParams);
@@ -94,6 +101,13 @@ export default function SessionListPage() {
         setSearchParams(newParams);
     };
 
+    const closeWizard = () => {
+        setIsWizardOpen(false);
+        if (shouldAutoOpenWizard) {
+            updateParams({ create: null });
+        }
+    };
+
     const handleUserSelect = (user: UserSummary) => {
         if (activeTab === 'clients') {
             updateParams({ clientId: user.id, therapistId: null });
@@ -103,7 +117,7 @@ export default function SessionListPage() {
     };
 
     const handleWizardSuccess = () => {
-        setIsWizardOpen(false);
+        closeWizard();
         setCalendarRefreshSignal((value) => value + 1);
     };
 
@@ -127,32 +141,30 @@ export default function SessionListPage() {
             </div>
 
             <div className="session-page-layout">
-                <>
-                        <UserFilterSidebar
-                            activeTab={activeTab}
-                            searchTerm={searchTerm}
-                            userLimit={userLimit}
-                            users={users}
-                            selectedUserId={selectedUserId}
-                            isLoadingUsers={isLoadingUsers}
-                            userPage={userPage}
-                            userTotalPages={userTotalPages}
-                            onActiveTabChange={(next) => {
-                                setActiveTab(next);
-                                setSearchTerm('');
-                            }}
-                            onSearchTermChange={setSearchTerm}
-                            onUserLimitChange={setUserLimit}
-                            onUserSelect={handleUserSelect}
-                            onUserPageChange={setUserPage}
-                        />
+                <UserFilterSidebar
+                    activeTab={activeTab}
+                    searchTerm={searchTerm}
+                    userLimit={userLimit}
+                    users={users}
+                    selectedUserId={selectedUserId}
+                    isLoadingUsers={isLoadingUsers}
+                    userPage={userPage}
+                    userTotalPages={userTotalPages}
+                    onActiveTabChange={(next) => {
+                        setActiveTab(next);
+                        setSearchTerm('');
+                    }}
+                    onSearchTermChange={setSearchTerm}
+                    onUserLimitChange={setUserLimit}
+                    onUserSelect={handleUserSelect}
+                    onUserPageChange={setUserPage}
+                />
 
-                        <SessionViewPanel
-                            selectedClientId={selectedClientId}
-                            selectedTherapistId={selectedTherapistId}
-                            calendarRefreshSignal={calendarRefreshSignal}
-                        />
-                    </>
+                <SessionViewPanel
+                    selectedClientId={selectedClientId}
+                    selectedTherapistId={selectedTherapistId}
+                    calendarRefreshSignal={calendarRefreshSignal}
+                />
             </div>
 
             {/* AI Report Modal */}
@@ -166,7 +178,7 @@ export default function SessionListPage() {
 
             {isWizardOpen && (
                 <UnifiedSessionWizard
-                    onClose={() => setIsWizardOpen(false)}
+                    onClose={closeWizard}
                     onSuccess={handleWizardSuccess}
                 />
             )}

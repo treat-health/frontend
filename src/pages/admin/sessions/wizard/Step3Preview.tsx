@@ -2,7 +2,9 @@ import { useUnifiedSessionStore } from './useUnifiedSessionStore';
 import { AlertCircle, CalendarRange } from 'lucide-react';
 
 export default function Step3Preview() {
-  const { previewStatus, previewSessions, previewSummary } = useUnifiedSessionStore();
+    const { previewStatus, previewSessions, previewSummary, title, notes, type } = useUnifiedSessionStore();
+
+        const formattedType = type.replaceAll('_', ' ').toLowerCase().replaceAll(/\b\w/g, (char) => char.toUpperCase());
 
     const formatUtcRange = (startIsoString: string, endIsoString: string) => {
             const start = new Date(startIsoString);
@@ -36,8 +38,29 @@ export default function Step3Preview() {
 
   return (
     <div className="wizard-step-content animate-fade-in">
-        <h3 style={{ color: 'var(--gray-900)' }}>Preview Schedule</h3>
-        <p style={{marginBottom: 24, color: 'var(--gray-600)'}}>Review the first 60 days of your scheduling strategy.</p>
+        <h3 style={{ color: 'var(--gray-900)' }}>Preview & Verify</h3>
+        <p style={{marginBottom: 24, color: 'var(--gray-600)'}}>Review the first 60 days of your scheduling strategy and confirm the session details that will be saved.</p>
+
+        <div style={{ marginBottom: 24, border: '1px solid var(--gray-200)', borderRadius: 12, background: 'var(--gray-50)', padding: 18 }}>
+            <div style={{ display: 'grid', gap: 16 }}>
+                <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Session title</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-900)' }}>{title.trim() || 'Not provided — email will fall back to the session type'}</div>
+                </div>
+
+                <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Session type</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>{formattedType}</div>
+                </div>
+
+                <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Internal notes</div>
+                    <div style={{ fontSize: 14, color: 'var(--gray-700)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                        {notes.trim() || 'No internal session notes were added.'}
+                    </div>
+                </div>
+            </div>
+        </div>
 
         {previewSummary?.conflicts && previewSummary.conflicts > 0 ? (
             <div className="conflict-alert">

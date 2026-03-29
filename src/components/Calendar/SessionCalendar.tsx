@@ -14,6 +14,7 @@ interface SessionCalendarProps {
 
 interface CalendarSession {
     id: string;
+    title?: string | null;
     status: string;
     startTime: string;
     endTime: string;
@@ -48,7 +49,8 @@ export default function SessionCalendar({ clientId, therapistId, refreshSignal =
 
     const [agendaDate, setAgendaDate] = useState<Date | null>(null);
 
-    const isInteractive = !!(clientId || therapistId) && !readonly;
+    const hasSelection = !!(clientId || therapistId);
+    const isInteractive = hasSelection;
 
     // ── Month label ──
     const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -125,7 +127,7 @@ export default function SessionCalendar({ clientId, therapistId, refreshSignal =
 
     // ── Popover positioning ──
     const handleDayClick = (day: number) => {
-        if (readonly && !clientId && !therapistId) return;
+        if (!hasSelection) return;
 
         const date = createUtcDate(year, month, day);
         setAgendaDate(date);
@@ -141,6 +143,21 @@ export default function SessionCalendar({ clientId, therapistId, refreshSignal =
         if (s === 'completed') return 'completed';
         if (s === 'cancelled' || s === 'no_show') return 'cancelled';
         return 'scheduled';
+    };
+
+    const getDayAriaLabel = (day: number, sessionCount: number) => {
+        const dateLabel = createUtcDate(year, month, day).toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: 'UTC',
+        });
+
+        if (!isInteractive) return `${dateLabel}. Calendar read only.`;
+        if (sessionCount === 0) return `${dateLabel}. No sessions scheduled. Open daily agenda.`;
+
+        return `${dateLabel}. ${sessionCount} session${sessionCount === 1 ? '' : 's'} scheduled. Open daily agenda.`;
     };
 
 
@@ -179,7 +196,7 @@ export default function SessionCalendar({ clientId, therapistId, refreshSignal =
                     ))}
 
                     {calendarDays.map((day, idx) => {
-                        if (day === null) return <div key={idx} className="calendar-day empty" />;
+                        if (day === null) return <div key={`empty-${year}-${month}-${idx}`} className="calendar-day empty" />;
 
                         const dateKey = getDateKey(day);
                         const sessions = calendarData[dateKey] || [];
@@ -188,19 +205,25 @@ export default function SessionCalendar({ clientId, therapistId, refreshSignal =
                         const utcTodayStart = getUtcTodayStart();
                         const isPast = date.getTime() < utcTodayStart.getTime();
                         const isSelected = agendaDate?.getUTCDate() === day && agendaDate?.getUTCMonth() === month;
+                        const isDayInteractive = isInteractive;
+                        const dayCellClassName = `calendar-day ${isToday ? 'today' : ''} ${isPast ? 'past' : ''} ${sessions.length > 0 ? 'has-sessions' : ''} ${isInteractive ? '' : 'readonly'} ${isSelected ? 'selected' : ''}`;
 
                         return (
-                            <div
-                                key={idx}
-                                className={`calendar-day ${isToday ? 'today' : ''} ${isPast ? 'past' : ''} ${sessions.length > 0 ? 'has-sessions' : ''} ${!isInteractive ? 'readonly' : ''} ${isSelected ? 'selected' : ''}`}
+                            <button
+                                key={dateKey}
+                                type="button"
+                                className={dayCellClassName}
                                 onClick={() => handleDayClick(day)}
+                                disabled={!isDayInteractive}
+                                aria-pressed={isSelected}
+                                aria-label={getDayAriaLabel(day, sessions.length)}
                             >
                                 <span className="day-number">{day}</span>
                                 {sessions.length > 0 && (
                                     <>
                                         <div className="day-sessions-dots">
                                             {sessions.slice(0, 4).map((s, i) => (
-                                                <span key={i} className={`session-dot ${getStatusClass(s.status)}`} />
+                                                <span key={`${s.id}-${i}`} className={`session-dot ${getStatusClass(s.status)}`} />
                                             ))}
                                             {sessions.length > 4 && <span className="more-dots">+{sessions.length - 4}</span>}
                                         </div>
@@ -209,7 +232,7 @@ export default function SessionCalendar({ clientId, therapistId, refreshSignal =
                                         )}
                                     </>
                                 )}
-                            </div>
+                            </button>
                         );
                     })}
                 </div>

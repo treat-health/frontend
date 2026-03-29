@@ -8,6 +8,7 @@ export interface Appointment {
     id: string;
     clientId: string;
     therapistId: string;
+    title?: string | null;
     type: string;
     scheduledAt: string; // ISO Date String
     durationMins: number;

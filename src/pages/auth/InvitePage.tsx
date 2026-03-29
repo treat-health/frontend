@@ -15,6 +15,7 @@ interface InviteValidation {
         email: string;
         firstName: string;
         lastName: string;
+        emailVerified?: boolean;
     };
     expiresAt?: string;
 }
@@ -34,6 +35,15 @@ export default function InvitePage() {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+
+    const isOnboardingInvite = validation?.user?.emailVerified === false;
+    const pageTitle = isOnboardingInvite ? 'Set your password' : 'Reset your password';
+    const pageSubtitle = isOnboardingInvite
+        ? `Welcome to Treat Health, ${validation?.user?.firstName}. Create your password to activate your account.`
+        : `Hi ${validation?.user?.firstName}, choose a new password to reset access to your account.`;
+    const submitLabel = isOnboardingInvite ? 'Set Password & Get Started' : 'Reset password';
+    const submittingLabel = isOnboardingInvite ? 'Setting password...' : 'Resetting password...';
+    const footerPrompt = isOnboardingInvite ? 'Already set your password?' : 'Remembered your password?';
 
     // Validate token on mount
     useEffect(() => {
@@ -192,9 +202,9 @@ export default function InvitePage() {
                 </div>
 
                 <div className="invite-body">
-                    <h1>Reset your password</h1>
+                    <h1>{pageTitle}</h1>
                     <p className="invite-subtitle">
-                        Hi {validation.user?.firstName}, choose a new password to reset access to your account.
+                        {pageSubtitle}
                     </p>
 
                     <form onSubmit={handleSubmit} className="invite-form">
@@ -262,17 +272,17 @@ export default function InvitePage() {
                             {isSubmitting ? (
                                 <>
                                     <div className="spinner spinner-small" />
-                                    Resetting password...
+                                    {submittingLabel}
                                 </>
                             ) : (
-                                'Reset password'
+                                submitLabel
                             )}
                         </button>
                     </form>
                 </div>
 
                 <div className="invite-footer">
-                    <p>Remembered your password? <Link to="/login">Log in</Link></p>
+                    <p>{footerPrompt} <Link to="/login">Log in</Link></p>
                 </div>
             </div>
         </div>

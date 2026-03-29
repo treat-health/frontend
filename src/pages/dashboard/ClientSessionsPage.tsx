@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X, Loader2, CalendarDays, Users, Video, Clock, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Loader2, CalendarDays, Users, Video, Clock } from 'lucide-react';
 import api from '../../lib/api';
 import { connectSocket, getSocket } from '../../lib/socket';
-import SessionReportPanel from '../../components/session/SessionReportPanel';
 import './ClientSessionsPage.css';
 
 interface CalendarSession {
     id: string;
+    title?: string | null;
     status: string;
     startTime: string;
     endTime: string;
@@ -34,6 +34,25 @@ interface SessionCompletedEvent {
     status: 'COMPLETED';
 }
 
+const updateCompletedSessions = (current: CalendarData, sessionId: string): CalendarData => {
+    let changed = false;
+
+    const nextEntries = Object.entries(current).map(([dateKey, sessions]) => {
+        const nextSessions = sessions.map((session) => {
+            if (session.id !== sessionId || session.status === 'COMPLETED') {
+                return session;
+            }
+
+            changed = true;
+            return { ...session, status: 'COMPLETED' };
+        });
+
+        return [dateKey, nextSessions] as const;
+    });
+
+    return changed ? Object.fromEntries(nextEntries) : current;
+};
+
 const createUtcDate = (year: number, monthIndex: number, day: number) => new Date(Date.UTC(year, monthIndex, day));
 
 const isGroupCalendarSession = (session: CalendarSession) => session.isGroupSession || session.type === 'GROUP_THERAPY';
@@ -57,6 +76,25 @@ const formatParticipantNames = (participants: Array<{ firstName: string; lastNam
     return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 };
 
+const getSessionDisplayTitle = (session: Pick<CalendarSession, 'title' | 'type'>) =>
+    session.title?.trim() || session.type.replaceAll('_', ' ');
+
+const buildDayAriaLabel = (date: Date, sessionCount: number) => {
+    const dateLabel = date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+    });
+
+    if (sessionCount === 0) {
+        return `${dateLabel}. No sessions scheduled.`;
+    }
+
+    return `${dateLabel}. ${sessionCount} session${sessionCount === 1 ? '' : 's'} scheduled. Open sessions list.`;
+};
+
 export default function ClientSessionsPage() {
     const [currentMonth, setCurrentMonth] = useState(() => createUtcDate(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     const [calendarData, setCalendarData] = useState<CalendarData>({});
@@ -67,12 +105,8 @@ export default function ClientSessionsPage() {
     const [selectedTherapistId, setSelectedTherapistId] = useState<string | null>(null);
     const [isLoadingTherapists, setIsLoadingTherapists] = useState(false);
 
-    // Popover
-    const [popoverDate, setPopoverDate] = useState<Date | null>(null);
-    const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
-
-    // AI Report Modal
-    const [reportSessionId, setReportSessionId] = useState<string | null>(null);
+    // Daily detail drawer
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
     const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     const monthKey = `${currentMonth.getUTCFullYear()}-${String(currentMonth.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -115,23 +149,7 @@ export default function ClientSessionsPage() {
         if (!socket) return;
 
         const applySessionCompletion = (data: SessionCompletedEvent) => {
-            setCalendarData((current) => {
-                let changed = false;
-                const nextEntries = Object.entries(current).map(([dateKey, sessions]) => {
-                    const nextSessions = sessions.map((session) => {
-                        if (session.id !== data.sessionId || session.status === 'COMPLETED') {
-                            return session;
-                        }
-
-                        changed = true;
-                        return { ...session, status: 'COMPLETED' };
-                    });
-
-                    return [dateKey, nextSessions] as const;
-                });
-
-                return changed ? Object.fromEntries(nextEntries) : current;
-            });
+            setCalendarData((current) => updateCompletedSessions(current, data.sessionId));
 
             void fetchCalendar();
         };
@@ -142,6 +160,21 @@ export default function ClientSessionsPage() {
             socket.off('session:completed', applySessionCompletion);
         };
     }, [fetchCalendar]);
+
+    useEffect(() => {
+        if (!selectedDate) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+
+            setSelectedDate(null);
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [selectedDate]);
 
     // ── Build calendar grid ──
     const year = currentMonth.getUTCFullYear();
@@ -191,34 +224,76 @@ export default function ClientSessionsPage() {
     const getInitials = (first: string, last: string) =>
         `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
 
-    // ── Popover ──
-    const handleDayClick = (day: number, e: React.MouseEvent) => {
+    // ── Daily details drawer ──
+    const handleDayClick = (day: number) => {
         const dateKey = getDateKey(day);
         const sessions = calendarData[dateKey] || [];
         if (sessions.length === 0) return; // Only open if there are sessions
 
         const date = createUtcDate(year, month, day);
-        if (popoverDate && popoverDate.getUTCDate() === day && popoverDate.getUTCMonth() === month) {
-            setPopoverDate(null);
+        if (selectedDate && selectedDate.getUTCDate() === day && selectedDate.getUTCMonth() === month) {
+            setSelectedDate(null);
             return;
         }
 
-        const cellRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        const popoverW = 340;
-        const popoverH = 420;
-        const viewportW = window.innerWidth;
-        const viewportH = window.innerHeight;
-
-        let top = cellRect.bottom + 4;
-        let left = cellRect.left;
-        if (left + popoverW > viewportW - 16) left = viewportW - popoverW - 16;
-        if (left < 16) left = 16;
-        if (top + popoverH > viewportH - 16) top = cellRect.top - popoverH - 4;
-        if (top < 16) top = 16;
-
-        setPopoverPos({ top, left });
-        setPopoverDate(date);
+        setSelectedDate(date);
     };
+
+    const selectedDateKey = selectedDate
+        ? getDateKey(selectedDate.getUTCDate())
+        : null;
+
+    const selectedDateSessions = selectedDateKey
+        ? [...(calendarData[selectedDateKey] || [])].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+        : [];
+
+    let therapistSidebarContent: React.ReactNode;
+    if (isLoadingTherapists) {
+        therapistSidebarContent = (
+            <div className="therapist-sidebar-empty">
+                <Loader2 size={20} className="client-spin" />
+                <span>Loading...</span>
+            </div>
+        );
+    } else if (therapists.length === 0) {
+        therapistSidebarContent = (
+            <div className="therapist-sidebar-empty">
+                <Users size={20} />
+                <span>No therapists yet</span>
+            </div>
+        );
+    } else {
+        therapistSidebarContent = (
+            <>
+                <button
+                    type="button"
+                    className={`therapist-item all-item ${selectedTherapistId === null ? 'active' : ''}`}
+                    onClick={() => setSelectedTherapistId(null)}
+                    aria-pressed={selectedTherapistId === null}
+                >
+                    <div className="therapist-avatar">
+                        <Users size={14} />
+                    </div>
+                    <span className="therapist-name">All Therapists</span>
+                </button>
+
+                {therapists.map((t) => (
+                    <button
+                        key={t.id}
+                        type="button"
+                        className={`therapist-item ${selectedTherapistId === t.id ? 'active' : ''}`}
+                        onClick={() => setSelectedTherapistId(t.id)}
+                        aria-pressed={selectedTherapistId === t.id}
+                    >
+                        <div className="therapist-avatar">
+                            {getInitials(t.firstName, t.lastName)}
+                        </div>
+                        <span className="therapist-name">{t.firstName} {t.lastName}</span>
+                    </button>
+                ))}
+            </>
+        );
+    }
 
     return (
         <div className="client-sessions-layout">
@@ -228,43 +303,7 @@ export default function ClientSessionsPage() {
                     <h4>My Therapists</h4>
                 </div>
                 <div className="therapist-list">
-                    {isLoadingTherapists ? (
-                        <div className="therapist-sidebar-empty">
-                            <Loader2 size={20} className="client-spin" />
-                            <span>Loading...</span>
-                        </div>
-                    ) : therapists.length === 0 ? (
-                        <div className="therapist-sidebar-empty">
-                            <Users size={20} />
-                            <span>No therapists yet</span>
-                        </div>
-                    ) : (
-                        <>
-                            {/* All therapists option */}
-                            <div
-                                className={`therapist-item all-item ${selectedTherapistId === null ? 'active' : ''}`}
-                                onClick={() => setSelectedTherapistId(null)}
-                            >
-                                <div className="therapist-avatar">
-                                    <Users size={14} />
-                                </div>
-                                <span className="therapist-name">All Therapists</span>
-                            </div>
-
-                            {therapists.map(t => (
-                                <div
-                                    key={t.id}
-                                    className={`therapist-item ${selectedTherapistId === t.id ? 'active' : ''}`}
-                                    onClick={() => setSelectedTherapistId(t.id)}
-                                >
-                                    <div className="therapist-avatar">
-                                        {getInitials(t.firstName, t.lastName)}
-                                    </div>
-                                    <span className="therapist-name">{t.firstName} {t.lastName}</span>
-                                </div>
-                            ))}
-                        </>
-                    )}
+                    {therapistSidebarContent}
                 </div>
             </aside>
 
@@ -285,15 +324,15 @@ export default function ClientSessionsPage() {
                 <div className="calendar-legend">
                     <div className="legend-item">
                         <span className="legend-dot scheduled" />
-                        Scheduled
+                        <span>Scheduled</span>
                     </div>
                     <div className="legend-item">
                         <span className="legend-dot completed" />
-                        Completed
+                        <span>Completed</span>
                     </div>
                     <div className="legend-item">
                         <span className="legend-dot cancelled" />
-                        Cancelled
+                        <span>Cancelled</span>
                     </div>
                 </div>
 
@@ -311,25 +350,31 @@ export default function ClientSessionsPage() {
                     ))}
 
                     {calendarDays.map((day, idx) => {
-                        if (day === null) return <div key={idx} className="client-day empty" />;
+                        if (day === null) return <div key={`empty-${year}-${month}-${idx}`} className="client-day empty" />;
 
                         const dateKey = getDateKey(day);
                         const sessions = calendarData[dateKey] || [];
                         const isToday = dateKey === todayStr;
-                        const isSelected = popoverDate?.getUTCDate() === day && popoverDate?.getUTCMonth() === month;
+                        const isSelected = selectedDate?.getUTCDate() === day && selectedDate?.getUTCMonth() === month;
+                        const date = createUtcDate(year, month, day);
+                        const isInteractiveDay = sessions.length > 0;
 
                         return (
-                            <div
-                                key={idx}
+                            <button
+                                type="button"
+                                key={dateKey}
                                 className={`client-day ${isToday ? 'today' : ''} ${sessions.length > 0 ? 'has-sessions' : ''} ${isSelected ? 'selected' : ''}`}
-                                onClick={(e) => handleDayClick(day, e)}
+                                onClick={() => handleDayClick(day)}
+                                disabled={!isInteractiveDay}
+                                aria-pressed={isSelected}
+                                aria-label={buildDayAriaLabel(date, sessions.length)}
                             >
                                 <span className="client-day-number">{day}</span>
                                 {sessions.length > 0 && (
                                     <>
                                         <div className="client-day-dots">
                                             {sessions.slice(0, 4).map((s, i) => (
-                                                <span key={i} className={`client-session-dot ${getStatusClass(s.status)}`} />
+                                                <span key={`${s.id}-${i}`} className={`client-session-dot ${getStatusClass(s.status)}`} />
                                             ))}
                                             {sessions.length > 4 && (
                                                 <span style={{ fontSize: '0.7rem', color: 'var(--gray-500)', fontWeight: 600 }}>
@@ -342,157 +387,109 @@ export default function ClientSessionsPage() {
                                         )}
                                     </>
                                 )}
-                            </div>
+                            </button>
                         );
                     })}
                 </div>
 
-                {/* Popover */}
-                {popoverDate && (() => {
-                    const dateKey = getDateKey(popoverDate.getUTCDate());
-                    const sessions = calendarData[dateKey] || [];
-                    return (
-                        <div className="client-popover" style={{ top: popoverPos.top, left: popoverPos.left }}>
-                            <div className="client-popover-header">
-                                <h4>{popoverDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</h4>
-                                <button className="client-popover-close" onClick={() => setPopoverDate(null)}>
-                                    <X size={16} />
+                {selectedDate && (
+                    <div className="client-agenda-overlay">
+                        <button
+                            type="button"
+                            className="client-agenda-backdrop"
+                            onClick={() => setSelectedDate(null)}
+                            aria-label="Close session details"
+                        />
+                        <section className="client-agenda-drawer animate-slide-in-right" aria-label="Session details for selected day">
+                            <div className="client-agenda-header">
+                                <div>
+                                    <h2>Session Details</h2>
+                                    <p>{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</p>
+                                </div>
+                                <button className="client-agenda-close btn-icon" onClick={() => setSelectedDate(null)}>
+                                    <X size={20} />
                                 </button>
                             </div>
-                            <div className="client-popover-sessions">
-                                {sessions.length === 0 ? (
-                                    <div className="client-popover-empty">No sessions on this day</div>
-                                ) : (
-                                    <>
-                                        <div className="client-popover-section-title">
-                                            <CalendarDays size={12} />
-                                            Sessions ({sessions.length})
-                                        </div>
-                                        {sessions.map(s => (
-                                            <div key={s.id} className="client-popover-session" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                                                {(() => {
-                                                    const isGroup = isGroupCalendarSession(s);
-                                                    const participants = getSessionParticipants(s);
-                                                    const participantSummary = formatParticipantNames(participants);
 
-                                                    return (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                    <span className={`client-popover-dot ${getStatusClass(s.status)}`} />
-                                                    <div className="client-popover-info">
-                                                        <span className="client-popover-time">
-                                                            {formatTime(s.startTime)} – {formatTime(s.endTime)}
-                                                        </span>
-                                                        <span className="client-popover-meta">
-                                                            {formatDateTimeUtc(s.startTime)}
-                                                        </span>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                                                            <span
-                                                                style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: 4,
-                                                                    padding: '2px 8px',
-                                                                    borderRadius: 999,
-                                                                    background: isGroup ? 'var(--primary-50)' : 'var(--gray-100)',
-                                                                    color: isGroup ? 'var(--primary-700)' : 'var(--gray-700)',
-                                                                    fontSize: '0.7rem',
-                                                                    fontWeight: 700,
-                                                                    textTransform: 'uppercase',
-                                                                    letterSpacing: '0.04em',
-                                                                }}
-                                                            >
-                                                                <Users size={11} /> {isGroup ? 'Group Session' : '1:1 Session'}
-                                                            </span>
-                                                            <span className="client-popover-meta" style={{ margin: 0 }}>
-                                                                {s.type.replace(/_/g, ' ')} • {s.therapist.firstName} {s.therapist.lastName}
-                                                            </span>
-                                                        </div>
-                                                        <span className="client-popover-meta" style={{ marginTop: 6 }}>
-                                                            {isGroup ? `${participants.length} participants` : 'Assigned participant'} • {participantSummary}
-                                                        </span>
-                                                        {participants.length > 0 && (
-                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                                                                {participants.map((participant) => (
-                                                                    <span
-                                                                        key={participant.id}
-                                                                        style={{
-                                                                            padding: '4px 8px',
-                                                                            borderRadius: 999,
-                                                                            background: 'var(--gray-100)',
-                                                                            color: 'var(--gray-700)',
-                                                                            fontSize: '0.72rem',
-                                                                            fontWeight: 600,
-                                                                        }}
-                                                                    >
-                                                                        {participant.firstName} {participant.lastName}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        {(s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS') && (
-                                                            <Link
-                                                                to={`/sessions/${s.id}/room`}
-                                                                className="client-popover-zoom"
-                                                                title="Join Video Session"
-                                                            >
-                                                                <Video size={12} />
-                                                                {s.status === 'IN_PROGRESS' ? 'Rejoin Session' : 'Join Session'}
-                                                            </Link>
-                                                        )}
-                                                        {s.status === 'COMPLETED' && (
-                                                            <button
-                                                                onClick={() => setReportSessionId(s.id)}
-                                                                className="client-popover-zoom"
-                                                                style={{ background: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', cursor: 'pointer', marginTop: 4, width: 'fit-content' }}
-                                                            >
-                                                                <Sparkles size={12} />
-                                                                View AI Report
-                                                            </button>
-                                                        )}
+                            <div className="client-agenda-body">
+                                <div className="client-agenda-section-title">
+                                    <CalendarDays size={14} />
+                                    Sessions ({selectedDateSessions.length})
+                                </div>
+
+                                <div className="client-agenda-list">
+                                    {selectedDateSessions.map((s) => {
+                                        const isGroup = isGroupCalendarSession(s);
+                                        const participants = getSessionParticipants(s);
+                                        const participantSummary = formatParticipantNames(participants);
+                                        const visibleParticipants = participants.slice(0, 3);
+                                        const extraParticipants = Math.max(participants.length - visibleParticipants.length, 0);
+
+                                        return (
+                                            <article key={s.id} className="client-agenda-card">
+                                                <div className="client-agenda-card-time">
+                                                    <Clock size={14} />
+                                                    <span>{formatTime(s.startTime)} – {formatTime(s.endTime)}</span>
+                                                </div>
+
+                                                <div className="client-agenda-card-top">
+                                                    <div className="client-agenda-card-title-wrap">
+                                                        <h3 className="client-agenda-card-title">{getSessionDisplayTitle(s)}</h3>
+                                                        <p className="client-agenda-card-meta">
+                                                            {s.type.replaceAll('_', ' ')} • {s.therapist.firstName} {s.therapist.lastName}
+                                                        </p>
                                                     </div>
-                                                    <span className={`client-popover-badge ${getStatusClass(s.status)}`}>
-                                                        {s.status.toLowerCase().replace(/_/g, ' ')}
+                                                    <span className={`client-agenda-status ${getStatusClass(s.status)}`}>
+                                                        {s.status.toLowerCase().replaceAll('_', ' ')}
                                                     </span>
                                                 </div>
-                                                    );
-                                                })()}
 
-                                                {s.status === 'SCHEDULED' && (() => {
-                                                    const now = new Date();
-                                                    const st = new Date(s.startTime);
-                                                    const is24hSent = now > new Date(st.getTime() - 24 * 60 * 60 * 1000);
-                                                    const is1hSent = now > new Date(st.getTime() - 60 * 60 * 1000);
-                                                    return (
-                                                        <div style={{ fontSize: '11px', color: 'var(--gray-500)', marginTop: '6px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                                <Clock size={10} />
-                                                                24h: <span style={{ color: is24hSent ? 'var(--green-600)' : 'inherit' }}>{is24hSent ? 'Sent' : 'Queued'}</span>
+                                                <div className="client-agenda-card-tags">
+                                                    <span className={`client-agenda-tag ${isGroup ? 'group' : 'individual'}`}>
+                                                        <Users size={12} />
+                                                        {isGroup ? 'Group Session' : '1:1 Session'}
+                                                    </span>
+                                                    <span className="client-agenda-card-meta subtle">{formatDateTimeUtc(s.startTime)}</span>
+                                                </div>
+
+                                                <p className="client-agenda-summary">
+                                                    {isGroup ? `${participants.length} participants` : 'Assigned participant'} • {participantSummary}
+                                                </p>
+
+                                                {visibleParticipants.length > 0 && (
+                                                    <div className="client-agenda-participants">
+                                                        {visibleParticipants.map((participant) => (
+                                                            <span key={participant.id} className="client-agenda-participant-chip">
+                                                                {participant.firstName} {participant.lastName}
                                                             </span>
-                                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                                <Clock size={10} />
-                                                                1h: <span style={{ color: is1hSent ? 'var(--green-600)' : 'inherit' }}>{is1hSent ? 'Sent' : 'Queued'}</span>
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </div>
-                                        ))}
-                                    </>
-                                )}
+                                                        ))}
+                                                        {extraParticipants > 0 && (
+                                                            <span className="client-agenda-participant-chip muted">+{extraParticipants} more</span>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                <div className="client-agenda-actions">
+                                                    {(s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS') && (
+                                                        <Link
+                                                            to={`/sessions/${s.id}/room`}
+                                                            className="client-agenda-action primary"
+                                                            title="Join Video Session"
+                                                        >
+                                                            <Video size={14} />
+                                                            {s.status === 'IN_PROGRESS' ? 'Rejoin Session' : 'Join Session'}
+                                                        </Link>
+                                                    )}
+                                                </div>
+                                            </article>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                        </div>
-                    );
-                })()}
-            </div>
-
-            {/* AI Report Modal */}
-            {reportSessionId && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(2px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                    <div style={{ width: '90%', maxWidth: '800px', height: '85vh', background: 'white', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
-                        <SessionReportPanel sessionId={reportSessionId} onClose={() => setReportSessionId(null)} />
+                        </section>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }

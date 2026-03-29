@@ -2,6 +2,7 @@ export interface Session {
     id: string;
     clientId: string;
     therapistId: string;
+    title?: string | null;
     scheduledAt: string;
     durationMins: number;
     status: string;

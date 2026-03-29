@@ -45,10 +45,25 @@
     cursor: pointer;
     transition: all 0.15s;
     margin-bottom: 2px;
+    width: 100%;
+    border: none;
+    background: transparent;
+    text-align: left;
+    appearance: none;
+    -webkit-appearance: none;
+    font: inherit;
 }
 
 .client-item:hover {
     background: var(--gray-100);
+}
+
+.client-item:focus-visible,
+.popover-action-btn:focus-visible,
+.complete-modal-actions .btn-cancel:focus-visible,
+.complete-modal-actions .btn-save:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
 }
 
 .client-item.active {
@@ -186,6 +201,15 @@
     animation: fadeIn 0.15s;
 }
 
+.complete-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: default;
+}
+
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -197,6 +221,8 @@
 }
 
 .complete-modal {
+    position: relative;
+    z-index: 1;
     background: var(--bg-surface);
     border-radius: 16px;
     padding: 24px;

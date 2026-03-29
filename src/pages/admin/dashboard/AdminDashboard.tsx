@@ -13,7 +13,6 @@ import {
 import api from '../../../lib/api';
 import type { ApiResponse } from '../../../lib/api';
 import { useAuthStore } from '../../../stores/authStore';
-import ScheduleSessionModal from '../../../components/admin/ScheduleSessionModal';
 import './AdminDashboard.css';
 
 interface DashboardStats {
@@ -48,7 +47,6 @@ export default function AdminDashboard() {
     });
     const [recentUsers, setRecentUsers] = useState<RecentUser[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
     const { user: currentUser } = useAuthStore();
 
     // Filter out current user from recent users
@@ -86,8 +84,48 @@ export default function AdminDashboard() {
     };
 
     const formatRole = (role: string) => {
-        return role.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        return role.replaceAll('_', ' ').toLowerCase().replaceAll(/\b\w/g, c => c.toUpperCase());
     };
+
+    let recentUsersContent;
+    if (isLoading) {
+        recentUsersContent = (
+            <div className="loading-placeholder">
+                {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="skeleton-row">
+                        <div className="skeleton-avatar" />
+                        <div className="skeleton-text" />
+                    </div>
+                ))}
+            </div>
+        );
+    } else if (filteredRecentUsers.length === 0) {
+        recentUsersContent = (
+            <div className="empty-state-mini">
+                <Users size={32} />
+                <p>No other users yet</p>
+            </div>
+        );
+    } else {
+        recentUsersContent = (
+            <div className="user-list">
+                {filteredRecentUsers.map((user) => (
+                    <div key={user.id} className="user-row">
+                        <div className="user-avatar-sm">
+                            {user.firstName[0]}{user.lastName[0]}
+                        </div>
+                        <div className="user-details">
+                            <span className="user-name">{user.firstName} {user.lastName}</span>
+                            <span className="user-meta">{user.email}</span>
+                        </div>
+                        <span className={`role-badge role-${user.role.toLowerCase()}`}>
+                            {formatRole(user.role)}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        );
+    }
 
 
 
@@ -100,28 +138,16 @@ export default function AdminDashboard() {
                     <p>Monitor your platform, manage users, and view key metrics</p>
                 </div>
                 <div className="welcome-actions">
-                    <button
-                        onClick={() => setIsScheduleModalOpen(true)}
-                        className="btn btn-primary"
-                    >
+                    <Link to="/admin/sessions?create=1" className="btn btn-primary">
                         <Calendar size={18} />
                         Schedule Session
-                    </button>
+                    </Link>
                     <Link to="/admin/users" className="btn btn-primary">
                         <UserPlus size={18} />
                         Add New User
                     </Link>
                 </div>
             </div>
-
-            <ScheduleSessionModal
-                isOpen={isScheduleModalOpen}
-                onClose={() => setIsScheduleModalOpen(false)}
-                onSuccess={() => {
-                    // Refresh stats potentially
-                    fetchDashboardData();
-                }}
-            />
 
             {/* Stats Grid */}
             <div className="stats-grid">
@@ -188,38 +214,7 @@ export default function AdminDashboard() {
                         </Link>
                     </div>
                     <div className="card-body">
-                        {isLoading ? (
-                            <div className="loading-placeholder">
-                                {[1, 2, 3, 4].map((i) => (
-                                    <div key={i} className="skeleton-row">
-                                        <div className="skeleton-avatar" />
-                                        <div className="skeleton-text" />
-                                    </div>
-                                ))}
-                            </div>
-                        ) : filteredRecentUsers.length === 0 ? (
-                            <div className="empty-state-mini">
-                                <Users size={32} />
-                                <p>No other users yet</p>
-                            </div>
-                        ) : (
-                            <div className="user-list">
-                                {filteredRecentUsers.map((user) => (
-                                    <div key={user.id} className="user-row">
-                                        <div className="user-avatar-sm">
-                                            {user.firstName[0]}{user.lastName[0]}
-                                        </div>
-                                        <div className="user-details">
-                                            <span className="user-name">{user.firstName} {user.lastName}</span>
-                                            <span className="user-meta">{user.email}</span>
-                                        </div>
-                                        <span className={`role-badge role-${user.role.toLowerCase()}`}>
-                                            {formatRole(user.role)}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        {recentUsersContent}
                     </div>
                 </div>
 

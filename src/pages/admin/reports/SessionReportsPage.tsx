@@ -16,6 +16,7 @@ import './SessionReportsPage.css';
 
 interface Session {
     id: string;
+    title?: string | null;
     scheduledAt: string;
     durationMins: number;
     status: string;
@@ -35,6 +36,9 @@ const STATUS_BADGE: Record<string, string> = {
     NO_SHOW: 'badge-cancelled',
     IN_PROGRESS: 'badge-inprogress',
 };
+
+const getSessionDisplayTitle = (session: Pick<Session, 'title' | 'type'>) =>
+    session.title?.trim() || session.type.replaceAll('_', ' ');
 
 export default function SessionReportsPage() {
     const navigate = useNavigate();
@@ -103,6 +107,7 @@ export default function SessionReportsPage() {
         return (
             clientName.includes(q) ||
             therapistName.includes(q) ||
+            (s.title ?? '').toLowerCase().includes(q) ||
             s.client.email.toLowerCase().includes(q) ||
             s.therapist.email.toLowerCase().includes(q)
         );
@@ -155,7 +160,7 @@ export default function SessionReportsPage() {
                         <th>Client</th>
                         <th>Therapist</th>
                         <th>Duration</th>
-                        <th>Type</th>
+                        <th>Session</th>
                         <th>Status</th>
                         <th>AI Report</th>
                     </tr>
@@ -182,9 +187,12 @@ export default function SessionReportsPage() {
                             </td>
                             <td className="srp-duration">{session.durationMins} min</td>
                             <td>
-                                <span className="srp-type-badge">
-                                    {session.type.replaceAll('_', ' ')}
-                                </span>
+                                <div className="srp-session-cell">
+                                    <div className="srp-session-title">{getSessionDisplayTitle(session)}</div>
+                                    <span className="srp-type-badge">
+                                        {session.type.replaceAll('_', ' ')}
+                                    </span>
+                                </div>
                             </td>
                             <td>
                                 <span className={`srp-status-badge ${STATUS_BADGE[session.status] ?? ''}`}>

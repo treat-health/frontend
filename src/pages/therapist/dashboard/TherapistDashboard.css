@@ -148,6 +148,15 @@
     margin: 0 0 0.25rem 0;
 }
 
+.appointment-subtitle {
+    margin: 0 0 0.35rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--gray-500, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 .session-details {
     display: flex;
     align-items: center;
@@ -316,8 +325,8 @@
 
 .btn-confirm {
     padding: 0.5rem 1rem;
-    background: var(--success-600, #16a34a);
-    color: white;
+    background: var(--success-700, #15803d);
+    color: #f8fafc;
     border: none;
     border-radius: var(--radius-lg, 0.5rem);
     font-weight: 500;
@@ -328,5 +337,5 @@
 }
 
 .btn-confirm:hover {
-    background: var(--success-700, #15803d);
+    background: var(--success-800, #166534);
 }

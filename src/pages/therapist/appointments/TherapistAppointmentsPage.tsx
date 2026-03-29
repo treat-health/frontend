@@ -10,6 +10,7 @@ import '../../dashboard/ClientSessionsPage.css'; // Reuse calendar grid base sty
 
 interface CalendarSession {
     id: string;
+    title?: string | null;
     status: string;
     startTime: string;
     endTime: string;
@@ -57,6 +58,25 @@ const formatParticipantNames = (participants: Array<{ firstName: string; lastNam
     if (names.length === 1) return names[0];
     if (names.length === 2) return `${names[0]} and ${names[1]}`;
     return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
+};
+
+const getSessionDisplayTitle = (session: Pick<CalendarSession, 'title' | 'type'>) =>
+    session.title?.trim() || session.type.replaceAll('_', ' ');
+
+const buildDayAriaLabel = (date: Date, sessionCount: number) => {
+    const dateLabel = date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+    });
+
+    if (sessionCount === 0) {
+        return `${dateLabel}. No sessions scheduled.`;
+    }
+
+    return `${dateLabel}. ${sessionCount} session${sessionCount === 1 ? '' : 's'} scheduled. Open sessions list.`;
 };
 
 export default function TherapistAppointmentsPage() {
@@ -152,6 +172,26 @@ export default function TherapistAppointmentsPage() {
         };
     }, [completingSessionId, fetchCalendar]);
 
+    useEffect(() => {
+        if (!popoverDate && !completingSessionId) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+
+            if (completingSessionId) {
+                setCompletingSessionId(null);
+                return;
+            }
+
+            setPopoverDate(null);
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [popoverDate, completingSessionId]);
+
     // ── Actions ──
     const handleCompleteClick = (session: CalendarSession) => {
         const participants = getSessionParticipants(session);
@@ -177,7 +217,7 @@ export default function TherapistAppointmentsPage() {
     };
 
     const handleMarkNoShow = async (id: string) => {
-        if (!window.confirm('Mark this session as No-Show?')) return;
+        if (!globalThis.confirm('Mark this session as No-Show?')) return;
         try {
             await schedulingService.markNoShow(id);
             toast.success('Marked as No-Show');
@@ -265,6 +305,54 @@ export default function TherapistAppointmentsPage() {
         setPopoverDate(date);
     };
 
+    let clientSidebarContent: React.ReactNode;
+    if (isLoadingClients) {
+        clientSidebarContent = (
+            <div className="client-sidebar-empty">
+                <Loader2 size={20} className="client-spin" />
+                <span>Loading...</span>
+            </div>
+        );
+    } else if (clients.length === 0) {
+        clientSidebarContent = (
+            <div className="client-sidebar-empty">
+                <Users size={20} />
+                <span>No clients yet</span>
+            </div>
+        );
+    } else {
+        clientSidebarContent = (
+            <>
+                <button
+                    type="button"
+                    className={`client-item all-item ${selectedClientId === null ? 'active' : ''}`}
+                    onClick={() => setSelectedClientId(null)}
+                    aria-pressed={selectedClientId === null}
+                >
+                    <div className="client-avatar">
+                        <Users size={14} />
+                    </div>
+                    <span className="client-item-name">All Clients</span>
+                </button>
+
+                {clients.map((c) => (
+                    <button
+                        key={c.id}
+                        type="button"
+                        className={`client-item ${selectedClientId === c.id ? 'active' : ''}`}
+                        onClick={() => setSelectedClientId(c.id)}
+                        aria-pressed={selectedClientId === c.id}
+                    >
+                        <div className="client-avatar">
+                            {getInitials(c.firstName, c.lastName)}
+                        </div>
+                        <span className="client-item-name">{c.firstName} {c.lastName}</span>
+                    </button>
+                ))}
+            </>
+        );
+    }
+
     return (
         <div className="therapist-appointments-layout">
             {/* ── Client Sidebar ── */}
@@ -273,42 +361,7 @@ export default function TherapistAppointmentsPage() {
                     <h4>My Clients</h4>
                 </div>
                 <div className="client-list">
-                    {isLoadingClients ? (
-                        <div className="client-sidebar-empty">
-                            <Loader2 size={20} className="client-spin" />
-                            <span>Loading...</span>
-                        </div>
-                    ) : clients.length === 0 ? (
-                        <div className="client-sidebar-empty">
-                            <Users size={20} />
-                            <span>No clients yet</span>
-                        </div>
-                    ) : (
-                        <>
-                            <div
-                                className={`client-item all-item ${selectedClientId === null ? 'active' : ''}`}
-                                onClick={() => setSelectedClientId(null)}
-                            >
-                                <div className="client-avatar">
-                                    <Users size={14} />
-                                </div>
-                                <span className="client-item-name">All Clients</span>
-                            </div>
-
-                            {clients.map(c => (
-                                <div
-                                    key={c.id}
-                                    className={`client-item ${selectedClientId === c.id ? 'active' : ''}`}
-                                    onClick={() => setSelectedClientId(c.id)}
-                                >
-                                    <div className="client-avatar">
-                                        {getInitials(c.firstName, c.lastName)}
-                                    </div>
-                                    <span className="client-item-name">{c.firstName} {c.lastName}</span>
-                                </div>
-                            ))}
-                        </>
-                    )}
+                    {clientSidebarContent}
                 </div>
             </aside>
 
@@ -326,9 +379,9 @@ export default function TherapistAppointmentsPage() {
 
                 {/* Legend */}
                 <div className="calendar-legend">
-                    <div className="legend-item"><span className="legend-dot scheduled" /> Scheduled</div>
-                    <div className="legend-item"><span className="legend-dot completed" /> Completed</div>
-                    <div className="legend-item"><span className="legend-dot cancelled" /> Cancelled</div>
+                    <div className="legend-item"><span className="legend-dot scheduled" /><span>Scheduled</span></div>
+                    <div className="legend-item"><span className="legend-dot completed" /><span>Completed</span></div>
+                    <div className="legend-item"><span className="legend-dot cancelled" /><span>Cancelled</span></div>
                 </div>
 
                 {isLoading && (
@@ -344,31 +397,37 @@ export default function TherapistAppointmentsPage() {
                     ))}
 
                     {calendarDays.map((day, idx) => {
-                        if (day === null) return <div key={idx} className="client-day empty" />;
+                        if (day === null) return <div key={`empty-${year}-${month}-${idx}`} className="client-day empty" />;
 
                         const dateKey = getDateKey(day);
                         const sessions = calendarData[dateKey] || [];
                         const isToday = dateKey === todayStr;
                         const isSelected = popoverDate?.getUTCDate() === day && popoverDate?.getUTCMonth() === month;
+                        const date = createUtcDate(year, month, day);
+                        const isInteractiveDay = sessions.length > 0;
 
                         return (
-                            <div
-                                key={idx}
+                            <button
+                                type="button"
+                                key={dateKey}
                                 className={`client-day ${isToday ? 'today' : ''} ${sessions.length > 0 ? 'has-sessions' : ''} ${isSelected ? 'selected' : ''}`}
                                 onClick={(e) => handleDayClick(day, e)}
+                                disabled={!isInteractiveDay}
+                                aria-pressed={isSelected}
+                                aria-label={buildDayAriaLabel(date, sessions.length)}
                             >
                                 <span className="client-day-number">{day}</span>
                                 {sessions.length > 0 && (
                                     <>
                                         <div className="client-day-dots">
                                             {sessions.slice(0, 4).map((s, i) => (
-                                                <span key={i} className={`client-session-dot ${getStatusClass(s.status)}`} />
+                                                <span key={`${s.id}-${i}`} className={`client-session-dot ${getStatusClass(s.status)}`} />
                                             ))}
                                         </div>
                                         <span className="client-count-badge">{sessions.length}</span>
                                     </>
                                 )}
-                            </div>
+                            </button>
                         );
                     })}
                 </div>
@@ -404,6 +463,9 @@ export default function TherapistAppointmentsPage() {
                                                 <span className="client-popover-time">
                                                     {formatTime(s.startTime)} – {formatTime(s.endTime)}
                                                 </span>
+                                                <span className="client-popover-title">
+                                                    {getSessionDisplayTitle(s)}
+                                                </span>
                                                 <span className="client-popover-meta">
                                                     {formatDateTimeUtc(s.startTime)}
                                                 </span>
@@ -426,7 +488,7 @@ export default function TherapistAppointmentsPage() {
                                                         <Users size={11} /> {isGroup ? 'Group Session' : '1:1 Session'}
                                                     </span>
                                                     <span className="client-popover-meta" style={{ margin: 0 }}>
-                                                        {s.type.replace(/_/g, ' ')}
+                                                        {s.type.replaceAll('_', ' ')}
                                                     </span>
                                                 </div>
                                                 <span className="client-popover-meta" style={{ marginTop: 6 }}>
@@ -453,7 +515,7 @@ export default function TherapistAppointmentsPage() {
                                                 )}
                                             </div>
                                             <span className={`client-popover-badge ${getStatusClass(s.status)}`}>
-                                                {s.status.toLowerCase().replace(/_/g, ' ')}
+                                                {s.status.toLowerCase().replaceAll('_', ' ')}
                                             </span>
                                         </div>
                                             );
@@ -504,8 +566,14 @@ export default function TherapistAppointmentsPage() {
 
             {/* ── Complete modal ── */}
             {completingSessionId && (
-                <div className="complete-modal-overlay" onClick={() => setCompletingSessionId(null)}>
-                    <div className="complete-modal" onClick={e => e.stopPropagation()}>
+                <div className="complete-modal-overlay">
+                    <button
+                        type="button"
+                        className="complete-modal-backdrop"
+                        onClick={() => setCompletingSessionId(null)}
+                        aria-label="Close complete session dialog"
+                    />
+                    <section className="complete-modal" aria-label="Complete session dialog">
                         <h3>Complete Session</h3>
                         <p>
                             {completingIsGroup
@@ -528,7 +596,7 @@ export default function TherapistAppointmentsPage() {
                                 </button>
                             </div>
                         </form>
-                    </div>
+                    </section>
                 </div>
             )}
         </div>

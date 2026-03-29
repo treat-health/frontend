@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import {
     User,
@@ -13,6 +13,7 @@ import {
     Loader2,
     Settings
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import api from '../../lib/api';
@@ -21,6 +22,14 @@ import './SettingsPage.css';
 
 type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability' | 'system';
 
+function isSettingsTab(value: string | null): value is SettingsTab {
+    return value === 'profile'
+        || value === 'security'
+        || value === 'notifications'
+        || value === 'availability'
+        || value === 'system';
+}
+
 /**
  * Settings Page — Profile, Security, and Notification Preferences
  * Shared across all roles
@@ -28,7 +37,11 @@ type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability' | '
 export default function SettingsPage() {
     const { user, checkAuth } = useAuthStore();
     const { pushRegistered, requestPushPermission } = useNotificationStore();
-    const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+        const requestedTab = searchParams.get('tab');
+        return isSettingsTab(requestedTab) ? requestedTab : 'profile';
+    });
 
     // Availability state
     const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
@@ -269,13 +282,36 @@ export default function SettingsPage() {
     const formatRole = (role: string) =>
         role.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 
-    const TABS: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
-        { id: 'profile', label: 'Profile', icon: User },
-        { id: 'security', label: 'Security', icon: Lock },
-        { id: 'notifications', label: 'Notifications', icon: Bell },
+    const TABS = useMemo(() => [
+        { id: 'profile' as SettingsTab, label: 'Profile', icon: User },
+        { id: 'security' as SettingsTab, label: 'Security', icon: Lock },
+        { id: 'notifications' as SettingsTab, label: 'Notifications', icon: Bell },
         ...(user?.role === 'THERAPIST' ? [{ id: 'availability' as SettingsTab, label: 'Availability', icon: Clock }] : []),
         ...(user?.role === 'ADMIN' ? [{ id: 'system' as SettingsTab, label: 'System', icon: Settings }] : []),
-    ];
+    ], [user?.role]);
+
+    useEffect(() => {
+        const requestedTab = searchParams.get('tab');
+        const allowedTabIds = new Set(TABS.map((tab) => tab.id));
+
+        if (requestedTab && isSettingsTab(requestedTab) && allowedTabIds.has(requestedTab)) {
+            if (requestedTab !== activeTab) {
+                setActiveTab(requestedTab);
+            }
+            return;
+        }
+
+        if (!allowedTabIds.has(activeTab)) {
+            setActiveTab('profile');
+        }
+    }, [searchParams, TABS, activeTab]);
+
+    const handleTabChange = (tab: SettingsTab) => {
+        setActiveTab(tab);
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.set('tab', tab);
+        setSearchParams(nextParams, { replace: true });
+    };
 
     return (
         <div className="settings-page">
@@ -292,7 +328,7 @@ export default function SettingsPage() {
                         <button
                             key={tab.id}
                             className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
-                            onClick={() => setActiveTab(tab.id)}
+                            onClick={() => handleTabChange(tab.id)}
                         >
                             <tab.icon size={18} />
                             <span>{tab.label}</span>

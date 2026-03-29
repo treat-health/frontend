@@ -127,8 +127,15 @@
     border-bottom: 1px solid var(--gray-200);
     min-height: 85px;
     padding: 8px;
+    width: 100%;
     cursor: pointer;
     transition: background 0.2s, box-shadow 0.2s;
+    background: transparent;
+    text-align: left;
+    appearance: none;
+    -webkit-appearance: none;
+    font: inherit;
+    border-radius: 0;
 }
 
 .calendar-day:nth-child(7n + 7) {
@@ -146,6 +153,17 @@
 
 .calendar-day.readonly {
     cursor: default;
+}
+
+.calendar-day:disabled {
+    cursor: default;
+}
+
+.calendar-day:focus-visible,
+.calendar-nav-btn:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: -2px;
+    z-index: 1;
 }
 
 .calendar-day.selected {

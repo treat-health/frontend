@@ -1,0 +1,538 @@
+.help-wizard-dialog {
+    padding: 0;
+    border: none;
+    background: transparent;
+    width: min(94vw, 560px);
+    max-width: 560px;
+    overflow: visible;
+}
+
+.help-wizard-dialog::backdrop {
+    background: rgba(17, 24, 39, 0.45);
+    backdrop-filter: blur(4px);
+}
+
+.help-wizard-modal {
+    width: 100%;
+    max-height: min(86vh, 820px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.help-wizard-modal .modal-header {
+    flex-shrink: 0;
+}
+
+.help-wizard-modal .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+    padding-bottom: 1rem;
+}
+
+.help-tabs {
+    display: flex;
+    gap: 1.25rem;
+    border-bottom: 1px solid var(--gray-200);
+    width: 100%;
+}
+
+.help-tab-btn {
+    background: none;
+    border: none;
+    padding: 0.75rem 0;
+    font-weight: 500;
+    color: var(--gray-500);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    outline: none;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.help-tab-btn.active {
+    color: var(--primary-600);
+    font-weight: 600;
+    border-bottom-color: var(--primary-500);
+}
+
+.help-tutorials-shell,
+.help-tutorial-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-bottom: 0.25rem;
+}
+
+.help-tutorials-intro h4,
+.help-tutorial-detail-copy h4 {
+    margin: 0.35rem 0;
+    font-size: 1.125rem;
+}
+
+.help-tutorials-intro p,
+.help-tutorial-detail-copy p {
+    margin: 0;
+    color: var(--gray-600);
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+
+.help-role-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    background: var(--primary-50);
+    color: var(--primary-700);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.help-tutorial-grid {
+    display: grid;
+    gap: 0.875rem;
+}
+
+.help-tutorial-card {
+    width: 100%;
+    border: 1px solid var(--gray-200);
+    background: var(--bg-surface);
+    border-radius: 16px;
+    padding: 0.9rem;
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 0.9rem;
+    text-align: left;
+    cursor: pointer;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.help-tutorial-card:hover {
+    transform: translateY(-1px);
+    border-color: var(--primary-300);
+    box-shadow: var(--shadow-md);
+}
+
+.help-tutorial-card-copy {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.help-tutorial-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.help-tutorial-card-header h5,
+.help-step-card h5 {
+    margin: 0;
+    font-size: 0.98rem;
+}
+
+.help-tutorial-card-copy p,
+.help-step-card p {
+    margin: 0;
+    color: var(--gray-600);
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+
+.help-tutorial-illustration {
+    min-height: 96px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--primary-50), var(--secondary-50));
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    padding: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.help-screen-window,
+.help-settings-card,
+.help-notification-card,
+.help-appointment-card {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.82);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 10px 24px rgba(89, 140, 143, 0.12);
+}
+
+.help-screen-window {
+    padding: 0.45rem;
+}
+
+.help-screen-bar {
+    height: 6px;
+    width: 40%;
+    border-radius: 999px;
+    background: var(--gray-200);
+    margin-bottom: 0.45rem;
+}
+
+.help-video-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.35rem;
+    margin-bottom: 0.45rem;
+}
+
+.help-video-tile {
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+
+.help-video-tile.therapist {
+    background: linear-gradient(135deg, var(--secondary-500), var(--secondary-700));
+}
+
+.help-video-tile.client {
+    background: linear-gradient(135deg, var(--primary-400), var(--primary-600));
+}
+
+.help-join-button,
+.help-save-pill {
+    height: 26px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.76rem;
+    font-weight: 700;
+    background: var(--gradient-primary);
+    color: white;
+}
+
+.help-message-sidebar {
+    width: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.help-message-sidebar span,
+.help-appointment-line,
+.help-notification-line,
+.help-settings-row {
+    display: block;
+    border-radius: 999px;
+    background: var(--gray-200);
+}
+
+.help-message-sidebar span {
+    height: 8px;
+}
+
+.help-message-thread {
+    width: calc(100% - 36px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.help-bubble {
+    max-width: 84%;
+    padding: 0.45rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.help-bubble.incoming {
+    background: white;
+    color: var(--gray-700);
+    border: 1px solid var(--gray-200);
+}
+
+.help-bubble.outgoing {
+    background: var(--secondary-500);
+    color: white;
+    align-self: flex-end;
+}
+
+.help-message-input {
+    margin-top: auto;
+    border-radius: 999px;
+    border: 1px solid var(--gray-200);
+    background: white;
+    padding: 0.4rem 0.55rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.68rem;
+    color: var(--gray-500);
+}
+
+.help-settings-card,
+.help-notification-card,
+.help-appointment-card {
+    padding: 0.7rem;
+}
+
+.help-settings-row,
+.help-notification-line,
+.help-appointment-line {
+    height: 10px;
+    margin-bottom: 0.55rem;
+}
+
+.help-settings-row.strong,
+.help-notification-line.strong,
+.help-appointment-line.strong {
+    height: 14px;
+    width: 70%;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    color: var(--gray-700);
+    font-weight: 700;
+}
+
+.help-bell-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-600);
+    box-shadow: var(--shadow-sm);
+    margin-right: 0.55rem;
+}
+
+.help-notification-card {
+    flex: 1;
+}
+
+.help-notification-toggle {
+    margin-top: 0.35rem;
+    height: 22px;
+    width: 44px;
+    border-radius: 999px;
+    background: rgba(89, 140, 143, 0.18);
+    padding: 3px;
+}
+
+.help-notification-toggle span {
+    display: block;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--secondary-500);
+    margin-left: auto;
+}
+
+.help-support-stack {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+}
+
+.help-support-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-600);
+    box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
+}
+
+.help-support-card {
+    flex: 1;
+    padding: 0.7rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 10px 24px rgba(192, 117, 116, 0.12);
+}
+
+.help-support-line {
+    height: 10px;
+    border-radius: 999px;
+    background: var(--gray-200);
+    margin-bottom: 0.55rem;
+}
+
+.help-support-line.strong {
+    height: auto;
+    background: transparent;
+    margin-bottom: 0.4rem;
+    color: var(--gray-700);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.help-support-actions {
+    display: flex;
+    gap: 0.45rem;
+    margin-top: 0.3rem;
+}
+
+.help-support-actions span {
+    padding: 0.28rem 0.52rem;
+    border-radius: 999px;
+    font-size: 0.64rem;
+    font-weight: 700;
+    background: var(--primary-50);
+    color: var(--primary-700);
+}
+
+.help-calendar-mini {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.help-calendar-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.45rem 0.65rem;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 10px;
+    font-size: 0.72rem;
+    color: var(--gray-600);
+    font-weight: 700;
+}
+
+.help-calendar-row.active {
+    color: var(--secondary-700);
+}
+
+.help-action-pills {
+    display: flex;
+    gap: 0.45rem;
+    margin-top: 0.4rem;
+}
+
+.help-action-pills span {
+    padding: 0.3rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+}
+
+.help-action-pills .complete {
+    background: #5f6f45;
+    color: #ffffff;
+}
+
+.help-action-pills .no-show {
+    background: #8a4c4c;
+    color: #ffffff;
+}
+
+.help-tutorial-back {
+    align-self: flex-start;
+    border: none;
+    background: transparent;
+    color: var(--gray-600);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0;
+}
+
+.help-tutorial-detail-hero {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 1rem;
+    align-items: center;
+}
+
+.help-steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.help-step-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 14px;
+    padding: 0.85rem;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 0.8rem;
+    background: var(--bg-surface);
+}
+
+.help-step-number {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--primary-50);
+    color: var(--primary-700);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.help-tips-box {
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(197, 157, 95, 0.12), rgba(89, 140, 143, 0.1));
+    border: 1px solid rgba(197, 157, 95, 0.18);
+    padding: 0.9rem 1rem;
+}
+
+.help-tips-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 700;
+    color: var(--gray-800);
+    margin-bottom: 0.45rem;
+}
+
+.help-tips-box ul {
+    margin: 0;
+    padding-left: 1.15rem;
+    color: var(--gray-700);
+    font-size: 0.85rem;
+}
+
+.help-tips-box li + li {
+    margin-top: 0.35rem;
+}
+
+@media (max-width: 640px) {
+    .help-wizard-dialog {
+        width: 94vw;
+    }
+
+    .help-wizard-modal {
+        max-height: 88vh;
+    }
+
+    .help-tutorial-card,
+    .help-tutorial-detail-hero {
+        grid-template-columns: 1fr;
+    }
+
+    .help-tutorial-illustration {
+        min-height: 110px;
+    }
+}

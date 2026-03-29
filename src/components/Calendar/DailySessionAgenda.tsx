@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import { X, Calendar, Clock, User, Users } from 'lucide-react';
 import './DailySessionAgenda.css';
 
 interface Session {
     id: string;
+    title?: string | null;
     status: string;
     startTime: string;
     endTime: string;
@@ -29,15 +31,37 @@ const formatTimeStr = (iso: string) => {
     return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm} (UTC)`;
 };
 
-export default function DailySessionAgenda({ date, sessions, onClose }: Props) {
+const getSessionDisplayTitle = (session: Pick<Session, 'title' | 'type'>) =>
+    session.title?.trim() || session.type.replaceAll('_', ' ');
+
+export default function DailySessionAgenda({ date, sessions, onClose }: Readonly<Props>) {
     const dateStr = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
     // sort sessions chronologically
     const sorted = [...sessions].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [onClose]);
+
     return (
-        <div className="daily-agenda-overlay" onClick={onClose}>
-            <div className="daily-agenda-drawer animate-slide-in-right" onClick={e => e.stopPropagation()}>
+        <div className="daily-agenda-overlay">
+            <button
+                type="button"
+                className="daily-agenda-backdrop-btn"
+                onClick={onClose}
+                aria-label="Close daily agenda"
+            />
+            <section className="daily-agenda-drawer animate-slide-in-right" aria-label="Daily agenda">
                 <div className="agenda-header">
                     <div>
                         <h2>Daily Agenda</h2>
@@ -70,9 +94,14 @@ export default function DailySessionAgenda({ date, sessions, onClose }: Props) {
                                         
                                         <div className="agenda-card-details">
                                             <div className="agenda-card-row" style={{marginBottom: 8}}>
-                                                <strong style={{fontSize: 15}}>{s.type.replace(/_/g, ' ')}{isGroup ? ' (Group)' : ''}</strong>
+                                                <div>
+                                                    <strong className="agenda-card-title">{getSessionDisplayTitle(s)}</strong>
+                                                    <div className="agenda-card-type-meta">
+                                                        {s.type.replaceAll('_', ' ')}{isGroup ? ' • Group Session' : ' • 1:1 Session'}
+                                                    </div>
+                                                </div>
                                                 <span className={`status-badge ${s.status.toLowerCase()}`}>
-                                                    {s.status.toLowerCase().replace(/_/g, ' ')}
+                                                    {s.status.toLowerCase().replaceAll('_', ' ')}
                                                 </span>
                                             </div>
                                             
@@ -97,7 +126,7 @@ export default function DailySessionAgenda({ date, sessions, onClose }: Props) {
                         </div>
                     )}
                 </div>
-            </div>
+            </section>
         </div>
     );
 }

@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import { X, Check, ChevronRight } from 'lucide-react';
-import { useUnifiedSessionStore } from './useUnifiedSessionStore';
+import { MAX_SESSION_NOTES_LENGTH, MAX_SESSION_TITLE_LENGTH, useUnifiedSessionStore } from './useUnifiedSessionStore';
 import Step1Details from './Step1Details';
 import Step2Schedule from './Step2Schedule';
+import Step3SessionDetails from './Step3SessionDetails';
 import Step3Preview from './Step3Preview';
 import api from '../../../../lib/api';
 import { toast } from 'react-hot-toast';
@@ -11,6 +12,11 @@ import './UnifiedSessionWizard.css';
 
 const MAX_LIVE_SESSION_PARTICIPANTS = 50;
 const MAX_GROUP_SESSION_CLIENTS = MAX_LIVE_SESSION_PARTICIPANTS - 1;
+
+const normalizeOptionalText = (value: string) => {
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+};
 
 interface Props {
   onClose: () => void;
@@ -58,12 +64,31 @@ const validateStepTwo = (state: ReturnType<typeof useUnifiedSessionStore.getStat
   return null;
 };
 
+const validateStepThree = (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
+  const title = state.title.trim();
+  const notes = state.notes.trim();
+
+  if (title.length > MAX_SESSION_TITLE_LENGTH) {
+    return `Session title cannot exceed ${MAX_SESSION_TITLE_LENGTH} characters.`;
+  }
+
+  if (notes.length > MAX_SESSION_NOTES_LENGTH) {
+    return `Session notes cannot exceed ${MAX_SESSION_NOTES_LENGTH} characters.`;
+  }
+
+  return null;
+};
+
 const buildSessionPayload = (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
+  const title = normalizeOptionalText(state.title);
+  const notes = normalizeOptionalText(state.notes);
   const basePayload: any = {
     clientIds: state.clientIds,
     therapistId: state.therapistId,
     type: state.type,
     mode: state.mode,
+    title,
+    notes,
   };
 
   if (state.mode === 'CUSTOM_DATES') {
@@ -89,6 +114,12 @@ const buildSessionPayload = (state: ReturnType<typeof useUnifiedSessionStore.get
   };
 };
 
+const getNextButtonLabel = (step: number, previewStatus: ReturnType<typeof useUnifiedSessionStore.getState>['previewStatus']) => {
+  if (previewStatus === 'LOADING') return 'Analyzing...';
+  if (step === 3) return 'Generate Preview';
+  return 'Next Step';
+};
+
 export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Props>) {
   const { step, setStep, reset, previewStatus } = useUnifiedSessionStore();
 
@@ -97,6 +128,24 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Pr
     reset();
     return () => reset(); // Cleanup strictly on unmount
   }, [reset]);
+
+  const generatePreview = async (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
+    try {
+      useUnifiedSessionStore.setState({ previewStatus: 'LOADING' });
+      const payload = buildSessionPayload(state);
+
+      const res = await api.post('/admin/sessions/preview', payload);
+      useUnifiedSessionStore.setState({
+        previewSessions: res.data.sessions,
+        previewStatus: res.data.status,
+        previewSummary: res.data.summary,
+      });
+      setStep(4);
+    } catch (err: any) {
+      useUnifiedSessionStore.setState({ previewStatus: 'IDLE' });
+      toast.error(err?.response?.data?.message || 'Failed to generate unified preview');
+    }
+  };
 
   const handleNext = async () => {
     const state = useUnifiedSessionStore.getState();
@@ -112,29 +161,29 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Pr
       const validationMessage = validateStepTwo(state);
       if (validationMessage) return toast.error(validationMessage);
 
-      // Fire Preview Endpoint
-      try {
-        useUnifiedSessionStore.setState({ previewStatus: 'LOADING' });
-        const payload = buildSessionPayload(state);
+      useUnifiedSessionStore.setState({
+        previewSessions: [],
+        previewStatus: 'IDLE',
+        previewSummary: null,
+      });
 
-        const res = await api.post('/admin/sessions/preview', payload);
-        useUnifiedSessionStore.setState({
-           previewSessions: res.data.sessions,
-           previewStatus: res.data.status, // SUCCESS | HAS_CONFLICTS
-           previewSummary: res.data.summary
-        });
-        setStep(3);
+      setStep(3);
+    }
+    // Step 3 Validation & Trigger Preview
+    else if (step === 3) {
+      const validationMessage = validateStepThree(state);
+      if (validationMessage) return toast.error(validationMessage);
 
-      } catch (err: any) {
-        useUnifiedSessionStore.setState({ previewStatus: 'IDLE' });
-        toast.error(err?.response?.data?.message || 'Failed to generate unified preview');
-      }
+      await generatePreview(state);
     }
   };
 
   const handleCreateBatch = async () => {
      // Strictly prevent block commit if unresolved conflicts exist
      const state = useUnifiedSessionStore.getState();
+     if (state.previewStatus === 'IDLE' || state.previewStatus === 'LOADING') {
+       return toast.error('Please generate the preview before scheduling sessions.');
+     }
      if (state.previewStatus === 'HAS_CONFLICTS') {
          return toast.error('You must resolve all conflicts in schedule before creating.');
      }
@@ -177,7 +226,12 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Pr
            </div>
            <div className="step-connector"></div>
            <div className={`step-item ${step >= 3 ? 'active' : ''}`}>
-               <div className="step-circle">3</div>
+               <div className="step-circle">{step > 3 ? <Check size={14}/> : '3'}</div>
+               <span>Session Details</span>
+             </div>
+             <div className="step-connector"></div>
+             <div className={`step-item ${step >= 4 ? 'active' : ''}`}>
+               <div className="step-circle">4</div>
                <span>Preview & Verify</span>
            </div>
         </div>
@@ -186,7 +240,8 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Pr
         <div className="wizard-body">
             {step === 1 && <Step1Details />}
             {step === 2 && <Step2Schedule />}
-            {step === 3 && <Step3Preview />}
+          {step === 3 && <Step3SessionDetails />}
+          {step === 4 && <Step3Preview />}
         </div>
 
         {/* Global Modal Footers */}
@@ -195,9 +250,9 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Pr
                 {step === 1 ? 'Cancel' : 'Back'}
             </button>
 
-            {step < 3 ? (
+            {step < 4 ? (
                 <button className="btn btn-primary" onClick={handleNext} disabled={previewStatus === 'LOADING'}>
-                    {previewStatus === 'LOADING' ? 'Analyzing...' : 'Next Step'} <ChevronRight size={16} style={{marginLeft: 6}}/>
+              {getNextButtonLabel(step, previewStatus)} <ChevronRight size={16} style={{marginLeft: 6}}/>
                 </button>
             ) : (
                 <button 

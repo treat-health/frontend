@@ -53,6 +53,9 @@ function getJoinAvailability(appointment: Appointment, nowMs = Date.now()) {
     return { canJoin: true, reason: '' };
 }
 
+const getSessionDisplayTitle = (appointment: Pick<Appointment, 'title' | 'type'>) =>
+    appointment.title?.trim() || appointment.type.replaceAll('_', ' ');
+
 export default function TherapistDashboard() {
     const { user } = useAuthStore();
     const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -64,6 +67,11 @@ export default function TherapistDashboard() {
     useEffect(() => {
         fetchSchedule();
     }, []);
+
+    const isUpcomingAppointment = (appointment: Appointment) => {
+        const terminalStates = ['COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED'];
+        return !terminalStates.includes(appointment.status);
+    };
 
     const fetchSchedule = async () => {
         try {
@@ -78,7 +86,7 @@ export default function TherapistDashboard() {
             );
 
             // Sort by date
-            const sortedSchedule = [...schedule];
+            const sortedSchedule = schedule.filter(isUpcomingAppointment);
             sortedSchedule.sort((a: Appointment, b: Appointment) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
             setAppointments(sortedSchedule);
         } catch (error) {
@@ -180,14 +188,15 @@ export default function TherapistDashboard() {
                                 </span>
                             </div>
                             <h3 className="client-name">
-                                {apt.client.firstName} {apt.client.lastName}
+                                {getSessionDisplayTitle(apt)}
                             </h3>
+                            <p className="appointment-subtitle">
+                                {apt.client.firstName} {apt.client.lastName} • {apt.type.replaceAll('_', ' ')}
+                            </p>
                             <div className="session-details">
                                 <span>{formatDateTimeLocal(apt.scheduledAt)}</span>
                                 <span className="dot-separator">•</span>
                                 <span className="session-utc">{formatDateTimeUtc(apt.scheduledAt)}</span>
-                                <span className="dot-separator">•</span>
-                                <span>{apt.type.replaceAll('_', ' ')}</span>
                             </div>
                             {apt.notes && (
                                 <div className="notes-preview">

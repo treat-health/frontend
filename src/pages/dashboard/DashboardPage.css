@@ -80,6 +80,56 @@
     background: rgba(255, 255, 255, 0.18);
 }
 
+.dashboard-session-title {
+    margin: 0 0 0.15rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.35;
+}
+
+.dashboard-session-subtitle {
+    margin: 0 0 0.1rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.dashboard-session-time {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--primary-600);
+}
+
+.dashboard-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.refresh-btn {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--primary-600, #2563eb);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.refresh-btn:hover {
+    color: var(--primary-700, #1d4ed8);
+    text-decoration: underline;
+}
+
+.refresh-btn:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
 @media (max-width: 900px) {
     .dashboard-hero-quote-shell {
         margin-left: 0;

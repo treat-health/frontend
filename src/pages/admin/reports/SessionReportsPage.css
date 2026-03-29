@@ -173,6 +173,8 @@
     white-space: nowrap;
 }
 .srp-type-badge {
+    display: inline-flex;
+    align-items: center;
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 12px;
@@ -181,6 +183,17 @@
     border: 1px solid var(--gray-200, #e2e8f0);
     white-space: nowrap;
     text-transform: capitalize;
+}
+.srp-session-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.srp-session-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray-900, #0f172a);
+    line-height: 1.35;
 }
 .srp-na {
     color: var(--gray-300, #cbd5e1);

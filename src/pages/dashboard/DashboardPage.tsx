@@ -13,6 +13,14 @@ import { quoteService } from '../../services/quote.service';
 import type { HealthQuote } from '../../services/quote.service';
 import './DashboardPage.css';
 
+const getSessionDisplayTitle = (session: Pick<Appointment, 'title' | 'type'>) =>
+    session.title?.trim() || session.type.replaceAll('_', ' ');
+
+const isUpcomingAppointment = (appointment: Appointment) => {
+    const terminalStates = ['COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED'];
+    return !terminalStates.includes(appointment.status);
+};
+
 const DEFAULT_QUOTE: HealthQuote = {
     text: 'Your health is an investment, not an expense.',
     author: 'Unknown',
@@ -34,9 +42,12 @@ export default function DashboardPage() {
 
     const fetchAppointments = async () => {
         try {
+            setIsLoading(true);
             const data = await schedulingService.getMyAppointments(false);
             // Sort by earliest first
-            const sorted = [...data].sort((a: Appointment, b: Appointment) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+            const sorted = data
+                .filter(isUpcomingAppointment)
+                .sort((a: Appointment, b: Appointment) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
             setAppointments(sorted.slice(0, 5)); // Show next 5
         } catch (error) {
             console.error('Failed to fetch appointments:', error);
@@ -66,13 +77,16 @@ export default function DashboardPage() {
                 borderBottom: '1px solid var(--gray-100)',
             }}>
                 <div>
-                    <p style={{ fontWeight: 500 }}>{session.type.replaceAll('_', ' ')}</p>
+                    <p className="dashboard-session-title">{getSessionDisplayTitle(session)}</p>
+                    <p className="dashboard-session-subtitle">
+                        {session.type.replaceAll('_', ' ')}
+                    </p>
                     <p style={{ fontSize: '0.875rem', color: 'var(--gray-500)' }}>
                         with {session.therapist.firstName} {session.therapist.lastName}
                     </p>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--primary-600)' }}>
+                    <p className="dashboard-session-time">
                         {new Date(session.scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                     </p>
                     {(session.status === 'SCHEDULED' || session.status === 'IN_PROGRESS') && (
@@ -186,7 +200,12 @@ export default function DashboardPage() {
                 gap: 'var(--spacing-xl)',
             }}>
                 <div className="card">
-                    <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Upcoming Sessions</h3>
+                    <div className="dashboard-section-header">
+                        <h3 style={{ marginBottom: 0 }}>Upcoming Sessions</h3>
+                        <button type="button" className="refresh-btn" onClick={fetchAppointments}>
+                            Refresh
+                        </button>
+                    </div>
                     {upcomingSessionsContent}
                 </div>
 

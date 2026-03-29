@@ -151,12 +151,8 @@ function compareDisplayParticipants(left: SessionDisplayParticipant, right: Sess
         return left.isTherapist ? -1 : 1;
     }
 
-    if (left.isSpeaking !== right.isSpeaking) {
-        return left.isSpeaking ? -1 : 1;
-    }
-
-    if (left.hasVideo !== right.hasVideo) {
-        return left.hasVideo ? -1 : 1;
+    if (left.kind !== right.kind) {
+        return left.kind === 'local' ? -1 : 1;
     }
 
     return left.joinedAt - right.joinedAt;
@@ -640,6 +636,7 @@ function useMeteredJoinEffect(params: {
     disconnectIntentRef: React.RefObject<'LEAVE' | 'COMPLETE' | null>;
     desiredAudioEnabledRef: React.RefObject<boolean>;
     desiredVideoEnabledRef: React.RefObject<boolean>;
+    remoteParticipantsRef: { current: SdkRemoteParticipant[] };
     clearVideoContainers: () => void;
     setLocalPreviewStream: (stream: MediaStream | null) => void;
 }) {
@@ -669,6 +666,7 @@ function useMeteredJoinEffect(params: {
         disconnectIntentRef,
         desiredAudioEnabledRef,
         desiredVideoEnabledRef,
+        remoteParticipantsRef,
         clearVideoContainers,
         setLocalPreviewStream,
     } = params;
@@ -836,6 +834,26 @@ function useMeteredJoinEffect(params: {
                 const participantRegistry = new Map<string, { participantId: string; participantKey: string; active: boolean; lastUpdatedAt: number }>();
                 const participantTrackMap = new Map<string, { videoTrackId?: string; audioTrackId?: string }>();
                 const bufferedTracks = new Map<string, { participantId: string; participantName: string; videoTrack?: MediaStreamTrack; audioTrack?: MediaStreamTrack; bufferedAt: number }>();
+                const matchesParticipantBinding = (
+                    participant: Pick<SdkRemoteParticipant, 'id' | 'identityKey' | 'sourceParticipantId' | 'providerParticipantId'>,
+                    options: {
+                        identityKey: string;
+                        effectiveSourceId: string;
+                        rawParticipantId: string;
+                        participantKey: string;
+                    },
+                ) => (
+                    participant.identityKey === options.identityKey
+                    || participant.sourceParticipantId === options.effectiveSourceId
+                    || (!!options.rawParticipantId && participant.providerParticipantId === options.rawParticipantId)
+                    || participant.id === options.participantKey
+                );
+
+                const resolveCanonicalIdentityKey = (currentIdentityKey: string, nextIdentityKey: string) => {
+                    if (currentIdentityKey.startsWith('sid:')) return currentIdentityKey;
+                    if (nextIdentityKey.startsWith('sid:')) return nextIdentityKey;
+                    return currentIdentityKey || nextIdentityKey;
+                };
 
                 const scheduleLocalVideoRecovery = (reason: string) => {
                     if (localVideoRecoveryTimeout || isUnmounting || joinAttemptRef.current !== joinAttemptId) {
@@ -958,6 +976,27 @@ function useMeteredJoinEffect(params: {
                     return parsedIdentity.appUserId || '';
                 };
 
+                const resolveStableParticipantKey = (
+                    identityKey: string,
+                    effectiveSourceId: string,
+                    rawParticipantId: string,
+                    participantKey: string,
+                ) => {
+                    const registryParticipant = participantRegistry.get(identityKey);
+                    if (registryParticipant?.participantKey) {
+                        return registryParticipant.participantKey;
+                    }
+
+                    const existingParticipant = remoteParticipantsRef.current.find((participant) => matchesParticipantBinding(participant, {
+                        identityKey,
+                        effectiveSourceId,
+                        rawParticipantId,
+                        participantKey,
+                    }));
+
+                    return existingParticipant?.id || participantKey;
+                };
+
                 const resolveTrackType = (trackItem: any): 'video' | 'audio' | 'unknown' => {
                     // 1. Explicit type field from SDK payload
                     const typeFromPayload = String(trackItem?.type ?? '').toLowerCase();
@@ -1024,22 +1063,38 @@ function useMeteredJoinEffect(params: {
                     participantName: string,
                     rawParticipantId = '',
                     patch?: Partial<Omit<SdkRemoteParticipant, 'id' | 'name' | 'joinedAt' | 'identityKey'>>,
+                    stableParticipantKeyOverride?: string,
                 ) => {
                     if (!participantId && !participantName) return;
                     const { identityKey, participantKey, displayName, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     if (identityKey === 'unknown') return;
                     const effectiveSourceId = stableIdentity || participantId;
+                    const stableParticipantKey = stableParticipantKeyOverride || resolveStableParticipantKey(
+                        identityKey,
+                        effectiveSourceId,
+                        rawParticipantId,
+                        participantKey,
+                    );
+
+                    participantRegistry.set(identityKey, {
+                        participantId: effectiveSourceId,
+                        participantKey: stableParticipantKey,
+                        active: true,
+                        lastUpdatedAt: Date.now(),
+                    });
+
                     setRemoteParticipants((current) => {
-                        const existing = current.find((participant) => (
-                            participant.identityKey === identityKey
-                            || participant.sourceParticipantId === effectiveSourceId
-                            || (!!rawParticipantId && participant.providerParticipantId === rawParticipantId)
-                        ));
+                        const existing = current.find((participant) => matchesParticipantBinding(participant, {
+                            identityKey,
+                            effectiveSourceId,
+                            rawParticipantId,
+                            participantKey: stableParticipantKey,
+                        }));
                         if (!existing) {
                             return [
                                 ...current,
                                 {
-                                    id: participantKey,
+                                    id: stableParticipantKey,
                                     name: displayName,
                                     sourceParticipantId: effectiveSourceId,
                                     providerParticipantId: rawParticipantId || participantId,
@@ -1051,13 +1106,15 @@ function useMeteredJoinEffect(params: {
                                 },
                             ];
                         }
-                        return current.map((participant) => participant.identityKey === existing.identityKey
+                        const canonicalIdentityKey = resolveCanonicalIdentityKey(existing.identityKey, identityKey);
+                        return current.map((participant) => participant.id === existing.id
                             ? {
                                 ...participant,
-                                id: participantKey,
+                                id: existing.id,
                                 name: displayName || participant.name,
                                 sourceParticipantId: effectiveSourceId || participant.sourceParticipantId,
                                 providerParticipantId: rawParticipantId || participant.providerParticipantId,
+                                identityKey: canonicalIdentityKey,
                                 hasVideo: patch?.hasVideo ?? participant.hasVideo,
                                 hasAudio: patch?.hasAudio ?? participant.hasAudio,
                                 lastTrackAt: patch?.lastTrackAt ?? participant.lastTrackAt,
@@ -1066,14 +1123,25 @@ function useMeteredJoinEffect(params: {
                     });
                 };
 
-                const removeRemoteParticipant = (participantId: string, participantName = '', rawParticipantId = '') => {
+                const removeRemoteParticipant = (
+                    participantId: string,
+                    participantName = '',
+                    rawParticipantId = '',
+                    stableParticipantKeyOverride?: string,
+                ) => {
                     if (!participantId && !participantName) return;
                     const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     const effectiveSourceId = stableIdentity || participantId;
+                    const stableParticipantKey = stableParticipantKeyOverride || resolveStableParticipantKey(
+                        identityKey,
+                        effectiveSourceId,
+                        rawParticipantId,
+                        participantKey,
+                    );
                     setRemoteParticipants((current) => current.filter((participant) => (
                         participant.identityKey !== identityKey
                         && participant.sourceParticipantId !== effectiveSourceId
-                        && participant.id !== participantKey
+                        && participant.id !== stableParticipantKey
                         && (!rawParticipantId || participant.providerParticipantId !== rawParticipantId)
                     )));
                 };
@@ -1321,13 +1389,19 @@ function useMeteredJoinEffect(params: {
 
                     if (!crossRefResolved && (!participantState || !participantState.active)) {
                         if (effectiveSourceId) {
+                            const stableParticipantKey = resolveStableParticipantKey(
+                                identityKey,
+                                effectiveSourceId,
+                                rawParticipantId,
+                                participantKey,
+                            );
                             participantRegistry.set(identityKey, {
                                 participantId: effectiveSourceId,
-                                participantKey,
+                                participantKey: stableParticipantKey,
                                 active: true,
                                 lastUpdatedAt: Date.now(),
                             });
-                            upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { lastTrackAt: Date.now() });
+                            upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { lastTrackAt: Date.now() }, stableParticipantKey);
                             console.warn('[SessionRoom] participant:synthesized_from_track', {
                                 joinAttemptId,
                                 participantId: effectiveSourceId,
@@ -1359,22 +1433,35 @@ function useMeteredJoinEffect(params: {
                         }
                     }
 
+                    const stableParticipantKey = resolveStableParticipantKey(
+                        identityKey,
+                        effectiveSourceId,
+                        rawParticipantId,
+                        participantKey,
+                    );
+                    participantRegistry.set(identityKey, {
+                        participantId: effectiveSourceId,
+                        participantKey: stableParticipantKey,
+                        active: true,
+                        lastUpdatedAt: Date.now(),
+                    });
+
                     const existingTracks = participantTrackMap.get(identityKey) ?? {};
                     if (trackType === 'video' && mediaTrack) {
                         if (existingTracks.videoTrackId !== mediaTrack.id) {
-                            ensureVideoElement(participantKey, mediaTrack);
+                            ensureVideoElement(stableParticipantKey, mediaTrack);
                             participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: mediaTrack.id });
                         }
-                        upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasVideo: true, lastTrackAt: Date.now() });
+                        upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasVideo: true, lastTrackAt: Date.now() }, stableParticipantKey);
                     } else if (trackType === 'audio' && mediaTrack) {
                         if (existingTracks.audioTrackId !== mediaTrack.id) {
-                            ensureAudioElement(participantKey, mediaTrack);
+                            ensureAudioElement(stableParticipantKey, mediaTrack);
                             participantTrackMap.set(identityKey, { ...existingTracks, audioTrackId: mediaTrack.id });
                         }
-                        upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasAudio: true, lastTrackAt: Date.now() });
+                        upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasAudio: true, lastTrackAt: Date.now() }, stableParticipantKey);
                         console.info('[SessionRoom] audio:track_attached_success', {
                             joinAttemptId,
-                            participantKey,
+                            participantKey: stableParticipantKey,
                             trackId: mediaTrack.id,
                             trackEnabled: mediaTrack.enabled,
                             trackReadyState: mediaTrack.readyState,
@@ -1444,13 +1531,19 @@ function useMeteredJoinEffect(params: {
                             const effectiveSourceId = stableIdentity || participantId;
                             if (effectiveSourceId && userId && effectiveSourceId === userId) return;
                             discoveredRemote += 1;
+                            const stableParticipantKey = resolveStableParticipantKey(
+                                identityKey,
+                                effectiveSourceId,
+                                participantId,
+                                participantKey,
+                            );
                             participantRegistry.set(identityKey, {
                                 participantId: effectiveSourceId,
-                                participantKey,
+                                participantKey: stableParticipantKey,
                                 active: true,
                                 lastUpdatedAt: Date.now(),
                             });
-                            upsertRemoteParticipant(effectiveSourceId, participantName, participantId, { lastTrackAt: Date.now() });
+                            upsertRemoteParticipant(effectiveSourceId, participantName, participantId, { lastTrackAt: Date.now() }, stableParticipantKey);
                             drainBufferedTracks(effectiveSourceId, participantName);
                         });
                         if (discoveredRemote > 0) {
@@ -1525,11 +1618,13 @@ function useMeteredJoinEffect(params: {
 
                     // Audio-specific: verify DOM element was created and is playing
                     if (trackType === 'audio' && mediaTrack) {
-                        const { participantKey } = resolveParticipantMeta(participantId, participantName);
-                        const audioEl = document.getElementById(`metered-remote-audio-${participantKey}`) as HTMLAudioElement | null;
+                        const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
+                        const effectiveSourceId = stableIdentity || participantId;
+                        const stableParticipantKey = resolveStableParticipantKey(identityKey, effectiveSourceId, '', participantKey);
+                        const audioEl = document.getElementById(`metered-remote-audio-${stableParticipantKey}`) as HTMLAudioElement | null;
                         console.info('[SessionRoom] audio:remote_element_verify', {
                             joinAttemptId,
-                            participantKey,
+                            participantKey: stableParticipantKey,
                             trackId: mediaTrack.id,
                             elementExists: !!audioEl,
                             elementPaused: audioEl?.paused,
@@ -1582,6 +1677,12 @@ function useMeteredJoinEffect(params: {
                     const mediaTrack = resolveMediaTrack(trackItem, trackType);
                     const { identityKey, participantKey, stableIdentity } = resolveParticipantMeta(participantId, participantName);
                     const effectiveSourceId = stableIdentity || participantId;
+                    const stableParticipantKey = resolveStableParticipantKey(
+                        identityKey,
+                        effectiveSourceId,
+                        rawParticipantId,
+                        participantKey,
+                    );
                     console.info('[SessionRoom] track:remote_stopped', {
                         joinAttemptId,
                         type: trackType,
@@ -1597,21 +1698,21 @@ function useMeteredJoinEffect(params: {
                     });
                     const existingTracks = participantTrackMap.get(identityKey) ?? {};
                     if (trackType === 'video') {
-                        const videoElement = document.getElementById(`metered-remote-video-${participantKey}`);
+                        const videoElement = document.getElementById(`metered-remote-video-${stableParticipantKey}`);
                         detachElementMedia(videoElement);
                         videoElement?.remove();
-                        remoteStreamsRef.current.delete(`video-${participantKey}`);
+                        remoteStreamsRef.current.delete(`video-${stableParticipantKey}`);
                         participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: undefined });
-                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId || participant.providerParticipantId === rawParticipantId
+                        setRemoteParticipants((current) => current.map((participant) => participant.id === stableParticipantKey || participant.sourceParticipantId === effectiveSourceId || participant.providerParticipantId === rawParticipantId
                             ? { ...participant, hasVideo: false }
                             : participant));
                     }
                     if (trackType === 'audio') {
-                        const audioElement = document.getElementById(`metered-remote-audio-${participantKey}`) as HTMLAudioElement | null;
+                        const audioElement = document.getElementById(`metered-remote-audio-${stableParticipantKey}`) as HTMLAudioElement | null;
                         // Diagnostic: log element state before removal
                         console.info('[SessionRoom] audio:remote_element_removing', {
                             joinAttemptId,
-                            participantKey,
+                            participantKey: stableParticipantKey,
                             trackId: mediaTrack?.id ?? '(unresolved)',
                             elementExists: !!audioElement,
                             elementPaused: audioElement?.paused,
@@ -1620,9 +1721,9 @@ function useMeteredJoinEffect(params: {
                         });
                         detachElementMedia(audioElement);
                         audioElement?.remove();
-                        remoteStreamsRef.current.delete(`audio-${participantKey}`);
+                        remoteStreamsRef.current.delete(`audio-${stableParticipantKey}`);
                         participantTrackMap.set(identityKey, { ...existingTracks, audioTrackId: undefined });
-                        setRemoteParticipants((current) => current.map((participant) => participant.id === participantKey || participant.sourceParticipantId === effectiveSourceId || participant.providerParticipantId === rawParticipantId
+                        setRemoteParticipants((current) => current.map((participant) => participant.id === stableParticipantKey || participant.sourceParticipantId === effectiveSourceId || participant.providerParticipantId === rawParticipantId
                             ? { ...participant, hasAudio: false }
                             : participant));
                     }
@@ -1752,9 +1853,15 @@ function useMeteredJoinEffect(params: {
                     if (effectiveSourceId && userId && effectiveSourceId === userId) {
                         return;
                     }
+                    const stableParticipantKey = resolveStableParticipantKey(
+                        identityKey,
+                        effectiveSourceId,
+                        participantId,
+                        participantKey,
+                    );
                     participantRegistry.set(identityKey, {
                         participantId: effectiveSourceId,
-                        participantKey,
+                        participantKey: stableParticipantKey,
                         active: true,
                         lastUpdatedAt: Date.now(),
                     });
@@ -1763,7 +1870,7 @@ function useMeteredJoinEffect(params: {
                         participant,
                     });
                     toast(`${displayName} joined the room`);
-                    upsertRemoteParticipant(effectiveSourceId, participantName, participantId, { lastTrackAt: Date.now() });
+                    upsertRemoteParticipant(effectiveSourceId, participantName, participantId, { lastTrackAt: Date.now() }, stableParticipantKey);
                     drainBufferedTracks(effectiveSourceId, participantName);
                 });
 
@@ -1775,9 +1882,15 @@ function useMeteredJoinEffect(params: {
                     if (effectiveSourceId && userId && effectiveSourceId === userId) {
                         return;
                     }
+                    const stableParticipantKey = resolveStableParticipantKey(
+                        identityKey,
+                        effectiveSourceId,
+                        participantId,
+                        participantKey,
+                    );
                     participantRegistry.set(identityKey, {
                         participantId: effectiveSourceId,
-                        participantKey,
+                        participantKey: stableParticipantKey,
                         active: false,
                         lastUpdatedAt: Date.now(),
                     });
@@ -1786,11 +1899,11 @@ function useMeteredJoinEffect(params: {
                         participant,
                     });
                     toast(`${displayName} left the room`);
-                    removeTrackElements(participantKey);
+                    removeTrackElements(stableParticipantKey);
                     removeTrackElements(toDomSafeKey(`sid:${participantId}`));
                     participantTrackMap.delete(identityKey);
                     bufferedTracks.delete(identityKey);
-                    removeRemoteParticipant(effectiveSourceId, participantName, participantId);
+                    removeRemoteParticipant(effectiveSourceId, participantName, participantId, stableParticipantKey);
                 });
 
                 on('reconnecting', () => {
@@ -2507,6 +2620,7 @@ export default function SessionRoom() {
     const roomRef = useRef<MeteredMeeting | null>(null); // Metered meeting instance
     const localStreamRef = useRef<MediaStream | null>(null);
     const remoteStreamsRef = useRef<Map<string, HTMLElement>>(new Map());
+    const remoteParticipantsRef = useRef<SdkRemoteParticipant[]>([]);
     const disconnectIntentRef = useRef<'LEAVE' | 'COMPLETE' | null>(null);
     const desiredAudioEnabledRef = useRef(true);
     const desiredVideoEnabledRef = useRef(true);
@@ -2594,20 +2708,10 @@ export default function SessionRoom() {
     const orderedVisibleParticipants = [localDisplayParticipant, ...visibleRemoteParticipants].sort(compareDisplayParticipants);
     const totalLiveParticipantCount = orderedRemoteParticipants.length + (isInRoom ? 1 : 0);
     const isPagedLargeRoom = orderedRemoteParticipants.length > MAX_REMOTE_TILES_PER_PAGE;
-    const pinnedTherapistParticipant = isGroupSession
-        ? orderedRemoteParticipants.find((participant) => participant.isTherapist)
-            ?? (localDisplayParticipant.isTherapist && isInRoom ? localDisplayParticipant : null)
-        : null;
-    const shouldHardPinTherapist = isGroupSession && totalLiveParticipantCount > 1 && !!pinnedTherapistParticipant;
-    const canUseSpeakerSpotlightMode = isGroupSession && totalLiveParticipantCount > 2 && !shouldHardPinTherapist;
-    const shouldRenderSpotlightLayout = shouldHardPinTherapist || (isSpeakerSpotlightMode && canUseSpeakerSpotlightMode);
-    const spotlightParticipantId = shouldHardPinTherapist
-        ? pinnedTherapistParticipant?.id ?? null
-        : activeSpeakerIds[0]
-            ?? orderedRemoteParticipants.find((participant) => participant.isTherapist)?.id
-            ?? (localDisplayParticipant.isTherapist ? localDisplayParticipant.id : null)
-            ?? orderedVisibleParticipants[0]?.id
-            ?? null;
+    const shouldHardPinTherapist = false;
+    const canUseSpeakerSpotlightMode = false;
+    const shouldRenderSpotlightLayout = false;
+    const spotlightParticipantId = null;
     const spotlightParticipant = spotlightParticipantId === 'local'
         ? localDisplayParticipant
         : orderedRemoteParticipants.find((participant) => participant.id === spotlightParticipantId) ?? null;
@@ -3071,6 +3175,10 @@ export default function SessionRoom() {
         }
     };
 
+    useEffect(() => {
+        remoteParticipantsRef.current = remoteParticipants;
+    }, [remoteParticipants]);
+
 
     useMeteredJoinEffect({
         id,
@@ -3096,6 +3204,7 @@ export default function SessionRoom() {
         disconnectIntentRef,
         desiredAudioEnabledRef,
         desiredVideoEnabledRef,
+        remoteParticipantsRef,
         clearVideoContainers,
         setLocalPreviewStream,
     });

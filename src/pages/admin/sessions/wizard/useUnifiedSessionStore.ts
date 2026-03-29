@@ -6,6 +6,9 @@ import {
   getDefaultUtcStartTime,
 } from './sessionWizardUtils';
 
+export const MAX_SESSION_TITLE_LENGTH = 150;
+export const MAX_SESSION_NOTES_LENGTH = 2000;
+
 export type SessionType = 'INDIVIDUAL_THERAPY' | 'GROUP_THERAPY' | 'PSYCHIATRIC_EVAL' | 'PSYCHIATRIC_FOLLOWUP' | 'BPS_ASSESSMENT' | 'INTAKE_CALL';
 export type SchedulingMode = 'CUSTOM_DATES' | 'RECURRING';
 export type RecurrenceType = 'WEEKLY' | 'MONTHLY';
@@ -49,6 +52,8 @@ export interface PreviewSession {
 interface UnifiedSessionState {
   step: number;
   type: SessionType;
+  title: string;
+  notes: string;
   selectedState: string;
   participantTimezone: string | null;
   clientIds: string[];
@@ -67,6 +72,8 @@ interface UnifiedSessionState {
   // Actions
   setStep: (step: number) => void;
   setType: (type: SessionType) => void;
+  setTitle: (title: string) => void;
+  setNotes: (notes: string) => void;
   setSelectedState: (state: string) => void;
   setParticipantTimezone: (timezone: string | null) => void;
   setClientIds: (ids: string[]) => void;
@@ -110,6 +117,8 @@ const buildDefaultCustomDate = (): CustomDateParam => {
 export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   step: 1,
   type: 'INDIVIDUAL_THERAPY',
+  title: '',
+  notes: '',
   selectedState: '',
   participantTimezone: null,
   clientIds: [],
@@ -125,6 +134,8 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
 
   setStep: (step) => set({ step }),
   setType: (type) => set({ type, clientIds: [] }),
+  setTitle: (title) => set({ title }),
+  setNotes: (notes) => set({ notes }),
   setSelectedState: (selectedState) => set({ selectedState }),
   setParticipantTimezone: (participantTimezone) => set({ participantTimezone }),
   setClientIds: (ids) => set({ clientIds: ids }),
@@ -174,6 +185,8 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   reset: () => set({
     step: 1,
     type: 'INDIVIDUAL_THERAPY',
+    title: '',
+    notes: '',
     selectedState: '',
     participantTimezone: null,
     clientIds: [],
