@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import api from '../lib/api';
 import type { ApiResponse } from '../lib/api';
-import type { User, UserRole } from './authStore';
+import type { User, UserRole, TreatmentStatus } from './authStore';
 
 /**
  * Invite info returned when creating a user
@@ -54,6 +54,7 @@ export interface ListUsersQuery {
     page?: number;
     limit?: number;
     role?: UserRole;
+    treatmentStatus?: TreatmentStatus;
     state?: string;
     isActive?: boolean;
     search?: string;
@@ -103,6 +104,7 @@ export const useUserStore = create<UserState>()((set, _get) => ({
             if (query.page) params.append('page', String(query.page));
             if (query.limit) params.append('limit', String(query.limit));
             if (query.role) params.append('role', query.role);
+            if (query.treatmentStatus) params.append('treatmentStatus', query.treatmentStatus);
             if (query.state) params.append('state', query.state);
             if (query.isActive !== undefined) params.append('isActive', String(query.isActive));
             if (query.search) params.append('search', query.search);

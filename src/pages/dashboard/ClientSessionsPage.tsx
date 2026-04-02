@@ -14,7 +14,8 @@ interface CalendarSession {
     durationMins: number;
     type: string;
     isGroupSession?: boolean;
-    client: { id: string; firstName: string; lastName: string; email: string };
+    participantCount?: number;
+    client: { id: string; firstName: string; lastName: string; email: string } | null;
     therapist: { id: string; firstName: string; lastName: string; email: string };
     participants?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
     notes?: string;
@@ -421,8 +422,10 @@ export default function ClientSessionsPage() {
                                     {selectedDateSessions.map((s) => {
                                         const isGroup = isGroupCalendarSession(s);
                                         const participants = getSessionParticipants(s);
-                                        const participantSummary = formatParticipantNames(participants);
-                                        const visibleParticipants = participants.slice(0, 3);
+                                        const participantSummary = isGroup
+                                            ? 'Participant details are hidden for group sessions.'
+                                            : formatParticipantNames(participants);
+                                        const visibleParticipants = isGroup ? [] : participants.slice(0, 3);
                                         const extraParticipants = Math.max(participants.length - visibleParticipants.length, 0);
 
                                         return (
@@ -453,7 +456,7 @@ export default function ClientSessionsPage() {
                                                 </div>
 
                                                 <p className="client-agenda-summary">
-                                                    {isGroup ? `${participants.length} participants` : 'Assigned participant'} • {participantSummary}
+                                                    {isGroup ? 'Group session' : 'Assigned participant'} • {participantSummary}
                                                 </p>
 
                                                 {visibleParticipants.length > 0 && (

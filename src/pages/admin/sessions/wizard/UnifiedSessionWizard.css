@@ -170,18 +170,18 @@
 }
 
 .preview-chip.success {
-  background: rgba(34, 197, 94, 0.15);
-  color: #86efac;
+  background: #dcfce7;
+  color: #166534;
 }
 
 .preview-chip.error {
-  background: rgba(239, 68, 68, 0.15);
-  color: #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .conflict-alert {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
   padding: 16px;
   border-radius: 8px;
   margin-bottom: 24px;
@@ -190,45 +190,45 @@
   gap: 12px;
 }
 
-.conflict-alert h4 { margin: 0 0 8px; color: #fca5a5; }
-.conflict-alert p { margin: 0; color: #fecaca; font-size: 0.875rem; }
+.conflict-alert h4 { margin: 0 0 8px; color: #991b1b; }
+.conflict-alert p { margin: 0; color: #b91c1c; font-size: 0.875rem; }
 
 .success-alert {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
   padding: 16px;
   border-radius: 8px;
   margin-bottom: 24px;
 }
 
-.success-alert h4 { margin: 0 0 4px; color: #86efac; }
-.success-alert p { margin: 0; color: #bbf7d0; font-size: 0.875rem; }
+.success-alert h4 { margin: 0 0 4px; color: #166534; }
+.success-alert p { margin: 0; color: #15803d; font-size: 0.875rem; }
 
-[data-theme="light"] .preview-chip.success {
-  background: #dcfce7;
-  color: #166534;
+[data-theme="dark"] .preview-chip.success {
+  background: #14532d;
+  color: #dcfce7;
 }
 
-[data-theme="light"] .preview-chip.error {
-  background: #fee2e2;
-  color: #991b1b;
+[data-theme="dark"] .preview-chip.error {
+  background: #7f1d1d;
+  color: #fee2e2;
 }
 
-[data-theme="light"] .conflict-alert {
-  background: #fef2f2;
-  border-color: #fecaca;
+[data-theme="dark"] .conflict-alert {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
-[data-theme="light"] .conflict-alert h4 { color: #991b1b; }
-[data-theme="light"] .conflict-alert p { color: #b91c1c; }
+[data-theme="dark"] .conflict-alert h4 { color: #fca5a5; }
+[data-theme="dark"] .conflict-alert p { color: #fecaca; }
 
-[data-theme="light"] .success-alert {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
+[data-theme="dark"] .success-alert {
+  background: rgba(20, 83, 45, 0.5);
+  border-color: #166534;
 }
 
-[data-theme="light"] .success-alert h4 { color: #166534; }
-[data-theme="light"] .success-alert p { color: #15803d; }
+[data-theme="dark"] .success-alert h4 { color: #dcfce7; }
+[data-theme="dark"] .success-alert p { color: #bbf7d0; }
 
 .preview-list {
   display: flex;
