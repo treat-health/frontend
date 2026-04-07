@@ -220,6 +220,10 @@ export default function DashboardPage() {
                             <MessageSquare size={18} />
                             Message
                         </Link>
+                        <Link to="/feedback" className="btn btn-secondary w-full">
+                            <MessageSquare size={18} />
+                            Program Feedback
+                        </Link>
                         <Link to="/settings" className="btn btn-secondary w-full">
                             <Settings size={18} />
                             Settings

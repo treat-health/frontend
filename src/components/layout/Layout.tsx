@@ -16,6 +16,7 @@ import {
     Sun,
     Moon,
     HelpCircle,
+    Sparkles,
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
@@ -57,6 +58,7 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
                 { path: '/admin/sessions', icon: Calendar, label: 'Sessions' },
                 { path: '/clients', icon: UserPlus, label: 'Clients' },
                 { path: '/reports', icon: BarChart2, label: 'Reports' },
+                { path: '/admin/feedback', icon: Sparkles, label: 'Program Feedback' },
                 ...baseItems,
             ];
 
@@ -81,6 +83,7 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
             return [
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                 { path: '/appointments', icon: Calendar, label: 'My Appointments' },
+                { path: '/feedback', icon: Sparkles, label: 'Program Feedback' },
                 ...baseItems,
             ];
     }

@@ -11,7 +11,20 @@ interface SessionReportPanelProps {
     refreshTrigger?: number;
 }
 
-export default function SessionReportPanel({ sessionId, onClose, refreshTrigger = 0 }: SessionReportPanelProps) {
+function getSentimentColor(sentiment: SessionTranscript['sentiment']) {
+    switch (sentiment) {
+        case 'POSITIVE':
+            return 'bg-success text-white';
+        case 'NEGATIVE':
+            return 'bg-danger text-white';
+        case 'NEUTRAL':
+            return 'bg-warning text-dark';
+        default:
+            return 'bg-gray-200 text-dark';
+    }
+}
+
+export default function SessionReportPanel({ sessionId, onClose, refreshTrigger = 0 }: Readonly<SessionReportPanelProps>) {
     const [report, setReport] = useState<SessionTranscript | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -60,8 +73,28 @@ export default function SessionReportPanel({ sessionId, onClose, refreshTrigger 
     if (isLoading && !report) {
         return (
             <div className="report-panel loading-state">
-                <Loader2 className="animate-spin text-primary" size={32} />
-                <p>Loading AI Session Report...</p>
+                <div className="report-loading-shell" aria-live="polite" aria-busy="true">
+                    <div className="report-loading-orbit">
+                        <div className="report-loading-ring report-loading-ring-primary" />
+                        <div className="report-loading-ring report-loading-ring-secondary" />
+                        <div className="report-loading-core">
+                            <Loader2 className="report-loading-icon text-primary" size={28} />
+                        </div>
+                    </div>
+
+                    <div className="report-loading-copy">
+                        <p className="report-loading-title">Loading AI Session Report...</p>
+                        <p className="report-loading-subtitle">
+                            Preparing transcript insights, session summary, and attention highlights.
+                        </p>
+                    </div>
+
+                    <div className="report-loading-skeleton" aria-hidden="true">
+                        <div className="report-loading-skeleton-line report-loading-skeleton-line-lg" />
+                        <div className="report-loading-skeleton-line report-loading-skeleton-line-md" />
+                        <div className="report-loading-skeleton-line report-loading-skeleton-line-sm" />
+                    </div>
+                </div>
             </div>
         );
     }
@@ -101,11 +134,7 @@ export default function SessionReportPanel({ sessionId, onClose, refreshTrigger 
 
     if (!report) return null;
 
-    const sentimentColor =
-        report.sentiment === 'POSITIVE' ? 'bg-success text-white' :
-            report.sentiment === 'NEGATIVE' ? 'bg-danger text-white' :
-                report.sentiment === 'NEUTRAL' ? 'bg-warning text-dark' :
-                    'bg-gray-200 text-dark';
+    const sentimentColor = getSentimentColor(report.sentiment);
 
     const formatDuration = (seconds: number) => {
         if (!seconds || seconds <= 0) return '00:00';
@@ -150,7 +179,7 @@ export default function SessionReportPanel({ sessionId, onClose, refreshTrigger 
                     {report.keyPoints && report.keyPoints.length > 0 ? (
                         <ul className="key-points-list">
                             {report.keyPoints.map((point, idx) => (
-                                <li key={idx}><CheckCircle size={16} className="text-success" /> {point}</li>
+                                <li key={`${point}-${idx}`}><CheckCircle size={16} className="text-success" /> {point}</li>
                             ))}
                         </ul>
                     ) : (
@@ -158,29 +187,30 @@ export default function SessionReportPanel({ sessionId, onClose, refreshTrigger 
                     )}
                 </div>
 
-                {report.attentionMetrics && report.attentionMetrics.metrics && (
+                {report.attentionMetrics && report.attentionMetrics.participants && (
                     <div className="report-section attention-section">
                         <h4>Attention Metrics</h4>
                         <div className="attention-grid">
-                            {Object.entries(report.attentionMetrics.metrics).map(([userId, m]) => (
-                                <div key={userId} className="attention-card">
-                                    <h5>User: {userId.substring(0, 8)}...</h5>
+                            {report.attentionMetrics.participants.map((participant) => (
+                                <div key={`${participant.participantName}-${participant.role}`} className="attention-card">
+                                    <h5>{participant.participantName}</h5>
+                                    <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>{participant.role}</p>
                                     <div className="attention-stats">
                                         <div className="stat-item">
                                             <span className="stat-label">Camera Off</span>
-                                            <span className="stat-value">{formatDuration(m.cameraOffSeconds)}</span>
+                                            <span className="stat-value">{formatDuration(participant.cameraOffSeconds)}</span>
                                         </div>
                                         <div className="stat-item">
                                             <span className="stat-label">Mic Off</span>
-                                            <span className="stat-value">{formatDuration(m.micOffSeconds)}</span>
+                                            <span className="stat-value">{formatDuration(participant.micOffSeconds)}</span>
                                         </div>
                                         <div className="stat-item">
                                             <span className="stat-label">Audio Inactive</span>
-                                            <span className="stat-value text-warning">{formatDuration(m.audioInactiveSeconds)}</span>
+                                            <span className="stat-value text-warning">{formatDuration(participant.audioInactiveSeconds)}</span>
                                         </div>
                                         <div className="stat-item">
                                             <span className="stat-label">Nudges</span>
-                                            <span className="stat-value">{m.nudgesCount}</span>
+                                            <span className="stat-value">{participant.nudgesCount}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -201,13 +231,13 @@ export default function SessionReportPanel({ sessionId, onClose, refreshTrigger 
                                 {isTimelineOpen && (
                                     <div className="transcript-body">
                                         <ul className="timeline-list">
-                                            {report.attentionMetrics.timeline.map((event, idx) => (
-                                                <li key={idx} className="timeline-item">
+                                            {report.attentionMetrics.timeline.map((event) => (
+                                                <li key={`${event.timestamp}-${event.type}-${event.participantName}`} className="timeline-item">
                                                     <span className="timeline-time">{new Date(event.timestamp).toLocaleTimeString()}</span>
-                                                    <span className="timeline-user">{event.userId.substring(0, 8)}:</span>
-                                                    <span className="timeline-type badge bg-gray-200">{event.type.replace(/_/g, ' ')}</span>
-                                                    {event.meta && event.meta.reason && (
-                                                        <span className="timeline-meta">({event.meta.reason})</span>
+                                                    <span className="timeline-user">{event.participantName}:</span>
+                                                    <span className="timeline-type badge bg-gray-200">{event.type.replaceAll('_', ' ')}</span>
+                                                    {event.reason && (
+                                                        <span className="timeline-meta">({event.reason})</span>
                                                     )}
                                                 </li>
                                             ))}

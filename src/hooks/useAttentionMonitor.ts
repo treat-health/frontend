@@ -27,6 +27,10 @@ interface AttentionMonitorProps {
     room: AttentionRoomAdapter | null;
     role: string;
     enabled: boolean;
+    mediaState?: {
+        isMicOff: boolean;
+        isCameraOff: boolean;
+    };
 }
 
 interface BufferEvent {
@@ -41,7 +45,7 @@ const AUDIO_INACTIVITY_THRESHOLD_MS = 10 * 1000; // 10 seconds empty audio
 const AUDIO_VOLUME_THRESHOLD = 5; // Out of 255 byte scale
 const BATCH_INTERVAL_MS = 30 * 1000; // 30 seconds
 
-export function useAttentionMonitor({ sessionId, room, role, enabled }: AttentionMonitorProps) {
+export function useAttentionMonitor({ sessionId, room, role, enabled, mediaState }: AttentionMonitorProps) {
     const eventBuffer = useRef<BufferEvent[]>([]);
     const lastNudgeTime = useRef<number>(0);
     const hookStartTime = useRef<number>(Date.now());
@@ -115,6 +119,28 @@ export function useAttentionMonitor({ sessionId, room, role, enabled }: Attentio
 
         addEvent('NUDGE_SHOWN', { reason });
     };
+
+    useEffect(() => {
+        if (!enabled || !mediaState) return;
+
+        if (mediaState.isCameraOff && !stateRefs.current.cameraOff) {
+            stateRefs.current.cameraOff = true;
+            addEvent('CAMERA_OFF_START');
+            attemptNudge("Looks like your camera is off - please turn it on if possible.", 'camera_off');
+        } else if (!mediaState.isCameraOff && stateRefs.current.cameraOff) {
+            stateRefs.current.cameraOff = false;
+            addEvent('CAMERA_OFF_END');
+        }
+
+        if (mediaState.isMicOff && !stateRefs.current.micOff) {
+            stateRefs.current.micOff = true;
+            addEvent('MIC_OFF_START');
+            attemptNudge("Your microphone is off - please unmute if you're speaking.", 'mic_off');
+        } else if (!mediaState.isMicOff && stateRefs.current.micOff) {
+            stateRefs.current.micOff = false;
+            addEvent('MIC_OFF_END');
+        }
+    }, [enabled, mediaState?.isCameraOff, mediaState?.isMicOff]);
 
     // 1. Setup recurring flush and beforeunload
     useEffect(() => {

@@ -2,8 +2,6 @@ import api from '../lib/api';
 import type { ApiResponse } from '../lib/api';
 
 export interface SessionTranscript {
-    id: string;
-    sessionId: string;
     text: string | null;
     summary: string | null;
     keyPoints: string[];
@@ -11,13 +9,21 @@ export interface SessionTranscript {
     wordCount: number;
     generatedAt: string;
     attentionMetrics?: {
-        metrics: Record<string, {
+        participants: Array<{
+            participantName: string;
+            role: string;
             cameraOffSeconds: number;
             micOffSeconds: number;
             audioInactiveSeconds: number;
             nudgesCount: number;
         }>;
-        timeline: any[];
+        timeline: Array<{
+            timestamp: string;
+            type: string;
+            participantName: string;
+            role: string;
+            reason?: string | null;
+        }>;
     } | null;
 }
 

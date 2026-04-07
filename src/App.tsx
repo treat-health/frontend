@@ -23,6 +23,8 @@ import NotificationsPage from './pages/notifications/NotificationsPage';
 import Layout from './components/layout/Layout';
 import MyIssues from './pages/issues/MyIssues';
 import AdminIssues from './pages/admin/issues/AdminIssues';
+import ProgramFeedbackPage from './pages/feedback/ProgramFeedbackPage';
+import AdminProgramFeedbackPage from './pages/admin/feedback/AdminProgramFeedbackPage';
 
 /**
  * Protected Route Component
@@ -280,6 +282,26 @@ export default function App() {
                         </ProtectedRoute>
                     }
                 />
+
+                <Route
+                    path="/feedback"
+                    element={
+                        <ProtectedRoute>
+                            <ProgramFeedbackPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route
+                    path="/admin/feedback"
+                    element={
+                        <ProtectedRoute>
+                            <AdminProgramFeedbackPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route path="/feedback/invite/:token" element={<ProgramFeedbackPage />} />
 
                 {/* Public Invite Accept Route */}
                 <Route path="/invite/:token" element={<InvitePage />} />

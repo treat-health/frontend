@@ -2647,7 +2647,11 @@ export default function SessionRoom() {
         sessionId: id || '',
         room: attentionAdapter,
         role: roleInSession,
-        enabled: isMonitoringEnabled && !!attentionAdapter
+        enabled: isMonitoringEnabled && !!attentionAdapter,
+        mediaState: {
+            isMicOff: isMuted,
+            isCameraOff: isVideoOff,
+        }
     });
 
     const canUserCompleteSession = user?.role === 'THERAPIST' || user?.role === 'ADMIN' || user?.role === 'PROGRAM_DIRECTOR';
