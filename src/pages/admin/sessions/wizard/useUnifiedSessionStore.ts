@@ -40,6 +40,21 @@ export interface PreviewConflict {
     entityType: 'THERAPIST' | 'CLIENT';
 }
 
+export interface PreviewIssue {
+  code: string;
+  message: string;
+  entityId?: string;
+  entityType?: 'THERAPIST' | 'CLIENT';
+  conflictingSessionId?: string;
+}
+
+export interface PreviewSuggestedSlot {
+  startTime: string;
+  endTime: string;
+  available: boolean;
+  reasons: PreviewIssue[];
+}
+
 export interface PreviewSession {
     therapistId: string;
     clientIds: string[];
@@ -47,6 +62,17 @@ export interface PreviewSession {
     endTime: string;
     durationMins: number;
     conflict: PreviewConflict | null;
+    validation?: {
+      valid: boolean;
+      issues: PreviewIssue[];
+      suggestedSlots: PreviewSuggestedSlot[];
+    };
+}
+
+export interface ScheduleRulesValidation {
+  isReady: boolean;
+  valid: boolean;
+  message: string | null;
 }
 
 interface UnifiedSessionState {
@@ -68,6 +94,7 @@ interface UnifiedSessionState {
   previewSessions: PreviewSession[];
   previewStatus: 'IDLE' | 'LOADING' | 'SUCCESS' | 'HAS_CONFLICTS';
   previewSummary: { total: number; conflicts: number } | null;
+  scheduleRulesValidation: ScheduleRulesValidation;
 
   // Actions
   setStep: (step: number) => void;
@@ -85,9 +112,16 @@ interface UnifiedSessionState {
   removeCustomDate: (id: string) => void;
 
   updateRecurrence: (updates: Partial<RecurrenceConfig>) => void;
+  setScheduleRulesValidation: (validation: ScheduleRulesValidation) => void;
   setPreviewResults: (sessions: PreviewSession[], status: any, summary: any) => void;
   reset: () => void;
 }
+
+const defaultScheduleRulesValidation: ScheduleRulesValidation = {
+  isReady: false,
+  valid: true,
+  message: null,
+};
 
 const defaultRecurrence: RecurrenceConfig = {
   recurrenceType: 'WEEKLY',
@@ -131,6 +165,7 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   previewSessions: [],
   previewStatus: 'IDLE',
   previewSummary: null,
+  scheduleRulesValidation: { ...defaultScheduleRulesValidation },
 
   setStep: (step) => set({ step }),
   setType: (type) => set({ type, clientIds: [] }),
@@ -176,6 +211,8 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
     })()
   })),
 
+  setScheduleRulesValidation: (scheduleRulesValidation) => set({ scheduleRulesValidation }),
+
   setPreviewResults: (sessions, status, summary) => set({
     previewSessions: sessions,
     previewStatus: status,
@@ -196,6 +233,7 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
     recurrenceConfig: { ...defaultRecurrence },
     previewSessions: [],
     previewStatus: 'IDLE',
-    previewSummary: null
+    previewSummary: null,
+    scheduleRulesValidation: { ...defaultScheduleRulesValidation },
   })
 }));

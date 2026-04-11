@@ -5,19 +5,30 @@ import {
     Lock,
     Bell,
     Save,
+    PlusCircle,
     Eye,
     EyeOff,
     CheckCircle,
     Shield,
     Clock,
     Loader2,
-    Settings
+    Settings,
+    Trash2,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import api from '../../lib/api';
 import type { ApiResponse } from '../../lib/api';
+import {
+    type AvailabilityTemplateDay,
+    type LocalAvailabilityWindow,
+    buildAvailabilityPreview,
+    buildUtcAvailabilityPayloadFromLocalSchedule,
+    deriveTimezoneFromState,
+    getBrowserTimezone,
+    mapUtcAvailabilityTemplateToLocalSchedule,
+} from './availabilityTimezoneUtils';
 import './SettingsPage.css';
 
 type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability' | 'system';
@@ -29,6 +40,73 @@ function isSettingsTab(value: string | null): value is SettingsTab {
         || value === 'availability'
         || value === 'system';
 }
+
+type AvailabilityWindow = LocalAvailabilityWindow;
+
+type DayAvailability = AvailabilityTemplateDay;
+
+const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const;
+
+const buildWindow = (seed: string, startTime = '09:00', endTime = '17:00', id?: string): AvailabilityWindow => ({
+    id,
+    localId: seed,
+    startTime,
+    endTime,
+});
+
+const buildEmptySchedule = (): DayAvailability[] => DAYS.map((dayOfWeek) => ({
+    dayOfWeek,
+    windows: [],
+}));
+
+const getAvailabilitySummary = (windows: AvailabilityWindow[]) => {
+    if (windows.length === 0) return 'Unavailable';
+    return `${windows.length} available window${windows.length > 1 ? 's' : ''}`;
+};
+
+const updateScheduleDay = (
+    schedule: DayAvailability[],
+    dayIndex: number,
+    updater: (day: DayAvailability) => DayAvailability
+) => schedule.map((day, index) => (index === dayIndex ? updater(day) : day));
+
+const updateWindowFieldInSchedule = (
+    schedule: DayAvailability[],
+    dayIndex: number,
+    windowId: string,
+    field: keyof AvailabilityWindow,
+    value: string
+) => updateScheduleDay(schedule, dayIndex, (day) => ({
+    ...day,
+    windows: day.windows.map((window) => {
+        if (window.localId !== windowId) return window;
+        return { ...window, [field]: value };
+    }),
+}));
+
+const removeWindowFromSchedule = (
+    schedule: DayAvailability[],
+    dayIndex: number,
+    windowId: string
+) => updateScheduleDay(schedule, dayIndex, (day) => ({
+    ...day,
+    windows: day.windows.filter((window) => window.localId !== windowId),
+}));
+
+const formatRoleLabel = (role: string) =>
+    role.replaceAll('_', ' ').toLowerCase().replaceAll(/\b\w/g, (char) => char.toUpperCase());
+
+const visuallyHiddenStyle = {
+    position: 'absolute' as const,
+    width: 1,
+    height: 1,
+    padding: 0,
+    margin: -1,
+    overflow: 'hidden' as const,
+    clip: 'rect(0, 0, 0, 0)',
+    whiteSpace: 'nowrap' as const,
+    border: 0,
+};
 
 /**
  * Settings Page — Profile, Security, and Notification Preferences
@@ -44,17 +122,7 @@ export default function SettingsPage() {
     });
 
     // Availability state
-    const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
-    type DayAvailability = {
-        dayOfWeek: string;
-        isActive: boolean;
-        startTime: string;
-        endTime: string;
-        id?: string;
-    };
-    const [schedule, setSchedule] = useState<DayAvailability[]>(
-        DAYS.map(d => ({ dayOfWeek: d, isActive: false, startTime: '09:00', endTime: '17:00' }))
-    );
+    const [schedule, setSchedule] = useState<DayAvailability[]>(buildEmptySchedule);
     const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
     const [isSavingAvailability, setIsSavingAvailability] = useState(false);
 
@@ -77,6 +145,12 @@ export default function SettingsPage() {
     const [sysSettings, setSysSettings] = useState<Record<string, string>>({});
     const [isLoadingSys, setIsLoadingSys] = useState(false);
     const [isSavingSys, setIsSavingSys] = useState(false);
+
+    const therapistStateTimezone = useMemo(
+        () => deriveTimezoneFromState(user?.state ?? state) || 'UTC',
+        [user?.state, state],
+    );
+    const browserTimezone = useMemo(() => getBrowserTimezone(), []);
 
     useEffect(() => {
         if (user) {
@@ -102,6 +176,7 @@ export default function SettingsPage() {
             for (const s of res.data.data) map[s.key] = s.value;
             setSysSettings(map);
         } catch (err) {
+            console.error('Failed to load system settings', err);
             toast.error('Failed to load system settings');
         } finally {
             setIsLoadingSys(false);
@@ -115,6 +190,7 @@ export default function SettingsPage() {
             await api.put('/settings', { settings });
             toast.success('System settings saved!');
         } catch (err) {
+            console.error('Failed to save system settings', err);
             toast.error('Failed to save system settings');
         } finally {
             setIsSavingSys(false);
@@ -126,24 +202,11 @@ export default function SettingsPage() {
             if (user?.role === 'THERAPIST' && activeTab === 'availability') {
                 setIsLoadingAvailability(true);
                 try {
-                    const res = await api.get('/scheduling/availability');
-                    const slots: any[] = res.data.data || [];
-
-                    const newSchedule = DAYS.map(day => {
-                        const existingSlot = slots.find(s => s.dayOfWeek === day);
-                        if (existingSlot) {
-                            return {
-                                dayOfWeek: day,
-                                isActive: true,
-                                startTime: existingSlot.startTime,
-                                endTime: existingSlot.endTime,
-                                id: existingSlot.id
-                            };
-                        }
-                        return { dayOfWeek: day, isActive: false, startTime: '09:00', endTime: '17:00' };
-                    });
-                    setSchedule(newSchedule);
+                    const res = await api.get('/scheduling/availability/template');
+                    const days: Array<{ dayOfWeek: string; windows?: Array<{ id?: string; startTime: string; endTime: string }> }> = res.data.data || [];
+                    setSchedule(mapUtcAvailabilityTemplateToLocalSchedule(days, therapistStateTimezone));
                 } catch (error) {
+                    console.error('Failed to load availability', error);
                     toast.error('Failed to load availability');
                 } finally {
                     setIsLoadingAvailability(false);
@@ -151,63 +214,63 @@ export default function SettingsPage() {
             }
         };
         fetchAvailability();
-    }, [user, activeTab]);
+    }, [user, activeTab, therapistStateTimezone]);
 
-    const handleScheduleChange = (dayIndex: number, field: keyof DayAvailability, value: any) => {
-        const updated = [...schedule];
-        updated[dayIndex] = { ...updated[dayIndex], [field]: value };
-        setSchedule(updated);
+    const handleWindowChange = (dayIndex: number, windowId: string, field: keyof AvailabilityWindow, value: string) => {
+        setSchedule((current) => updateWindowFieldInSchedule(current, dayIndex, windowId, field, value));
+    };
+
+    const handleAddWindow = (dayIndex: number) => {
+        const dayKey = schedule[dayIndex]?.dayOfWeek ?? `day-${dayIndex}`;
+        setSchedule((current) => current.map((day, index) => index === dayIndex
+            ? {
+                ...day,
+                windows: [...day.windows, buildWindow(`${dayKey}-${Date.now()}-${day.windows.length}`)],
+            }
+            : day));
+    };
+
+    const handleRemoveWindow = (dayIndex: number, windowId: string) => {
+        setSchedule((current) => removeWindowFromSchedule(current, dayIndex, windowId));
+    };
+
+    const validateAvailabilityTemplate = () => {
+        for (const day of schedule) {
+            const sorted = [...day.windows].sort((left, right) => left.startTime.localeCompare(right.startTime));
+            for (let index = 0; index < sorted.length; index += 1) {
+                const current = sorted[index];
+                if (current.startTime >= current.endTime) {
+                    return `${day.dayOfWeek} has a window where the end time must be after the start time.`;
+                }
+                if (index > 0 && current.startTime < sorted[index - 1].endTime) {
+                    return `${day.dayOfWeek} has overlapping availability windows.`;
+                }
+            }
+        }
+        return null;
     };
 
     const handleSaveAvailability = async () => {
+        const validationError = validateAvailabilityTemplate();
+        if (validationError) {
+            toast.error(validationError);
+            return;
+        }
+
         setIsSavingAvailability(true);
         try {
-            const promises = schedule.map(async (daySlot) => {
-                if (daySlot.isActive) {
-                    if (daySlot.id) {
-                        return api.patch(`/scheduling/availability/${daySlot.id}`, {
-                            startTime: daySlot.startTime,
-                            endTime: daySlot.endTime,
-                        });
-                    } else {
-                        return api.post('/scheduling/availability', {
-                            dayOfWeek: daySlot.dayOfWeek,
-                            startTime: daySlot.startTime,
-                            endTime: daySlot.endTime,
-                            isRecurring: true,
-                        });
-                    }
-                } else {
-                    if (daySlot.id) {
-                        return api.delete(`/scheduling/availability/${daySlot.id}`);
-                    }
-                }
-                return Promise.resolve();
-            });
+            await api.put('/scheduling/availability/template', buildUtcAvailabilityPayloadFromLocalSchedule(schedule, therapistStateTimezone));
 
-            await Promise.all(promises);
             toast.success('Availability schedule updated successfully!');
 
             // refetch to get new IDs
-            const res = await api.get('/scheduling/availability');
-            const slots: any[] = res.data.data || [];
+            const res = await api.get('/scheduling/availability/template');
+            const days: Array<{ dayOfWeek: string; windows?: Array<{ id?: string; startTime: string; endTime: string }> }> = res.data.data || [];
 
-            const newSchedule = DAYS.map(day => {
-                const existingSlot = slots.find(s => s.dayOfWeek === day);
-                if (existingSlot) {
-                    return {
-                        dayOfWeek: day,
-                        isActive: true,
-                        startTime: existingSlot.startTime,
-                        endTime: existingSlot.endTime,
-                        id: existingSlot.id
-                    };
-                }
-                return { dayOfWeek: day, isActive: false, startTime: '09:00', endTime: '17:00' };
-            });
-            setSchedule(newSchedule);
+            setSchedule(mapUtcAvailabilityTemplateToLocalSchedule(days, therapistStateTimezone));
 
         } catch (error) {
+            console.error('Failed to save availability', error);
             toast.error('Failed to save availability');
         } finally {
             setIsSavingAvailability(false);
@@ -278,9 +341,6 @@ export default function SettingsPage() {
             setIsChangingPassword(false);
         }
     };
-
-    const formatRole = (role: string) =>
-        role.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 
     const TABS = useMemo(() => [
         { id: 'profile' as SettingsTab, label: 'Profile', icon: User },
@@ -356,7 +416,7 @@ export default function SettingsPage() {
                                     <span className="profile-email">{user?.email}</span>
                                     <span className="profile-role-badge">
                                         <Shield size={12} />
-                                        {formatRole(user?.role || '')}
+                                        {formatRoleLabel(user?.role || '')}
                                     </span>
                                 </div>
                             </div>
@@ -365,8 +425,9 @@ export default function SettingsPage() {
                             <div className="settings-form">
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label>First Name</label>
+                                        <label htmlFor="settings-first-name">First Name</label>
                                         <input
+                                            id="settings-first-name"
                                             type="text"
                                             value={firstName}
                                             onChange={(e) => setFirstName(e.target.value)}
@@ -374,8 +435,9 @@ export default function SettingsPage() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>Last Name</label>
+                                        <label htmlFor="settings-last-name">Last Name</label>
                                         <input
+                                            id="settings-last-name"
                                             type="text"
                                             value={lastName}
                                             onChange={(e) => setLastName(e.target.value)}
@@ -385,8 +447,9 @@ export default function SettingsPage() {
                                 </div>
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label>Phone</label>
+                                        <label htmlFor="settings-phone">Phone</label>
                                         <input
+                                            id="settings-phone"
                                             type="tel"
                                             value={phone}
                                             onChange={(e) => setPhone(e.target.value)}
@@ -394,8 +457,8 @@ export default function SettingsPage() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>State</label>
-                                        <select value={state} onChange={(e) => setState(e.target.value)}>
+                                        <label htmlFor="settings-state">State</label>
+                                        <select id="settings-state" value={state} onChange={(e) => setState(e.target.value)}>
                                             <option value="">Select State</option>
                                             <option value="CA">California</option>
                                             <option value="TX">Texas</option>
@@ -405,8 +468,9 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
                                 <div className="form-group">
-                                    <label>Email</label>
+                                    <label htmlFor="settings-email">Email</label>
                                     <input
+                                        id="settings-email"
                                         type="email"
                                         value={user?.email || ''}
                                         disabled
@@ -443,9 +507,10 @@ export default function SettingsPage() {
 
                             <div className="settings-form">
                                 <div className="form-group">
-                                    <label>Current Password</label>
+                                    <label htmlFor="settings-current-password">Current Password</label>
                                     <div className="password-input">
                                         <input
+                                            id="settings-current-password"
                                             type={showCurrentPassword ? 'text' : 'password'}
                                             value={currentPassword}
                                             onChange={(e) => setCurrentPassword(e.target.value)}
@@ -461,9 +526,10 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
                                 <div className="form-group">
-                                    <label>New Password</label>
+                                    <label htmlFor="settings-new-password">New Password</label>
                                     <div className="password-input">
                                         <input
+                                            id="settings-new-password"
                                             type={showNewPassword ? 'text' : 'password'}
                                             value={newPassword}
                                             onChange={(e) => setNewPassword(e.target.value)}
@@ -479,9 +545,10 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
                                 <div className="form-group">
-                                    <label>Confirm New Password</label>
+                                    <label htmlFor="settings-confirm-password">Confirm New Password</label>
                                     <div className="password-input">
                                         <input
+                                            id="settings-confirm-password"
                                             type="password"
                                             value={confirmPassword}
                                             onChange={(e) => setConfirmPassword(e.target.value)}
@@ -532,6 +599,7 @@ export default function SettingsPage() {
                                             </span>
                                         </div>
                                         <label className="toggle-switch">
+                                            <span style={visuallyHiddenStyle}>Toggle session confirmation emails</span>
                                             <input type="checkbox" defaultChecked />
                                             <span className="toggle-slider" />
                                         </label>
@@ -544,6 +612,7 @@ export default function SettingsPage() {
                                             </span>
                                         </div>
                                         <label className="toggle-switch">
+                                            <span style={visuallyHiddenStyle}>Toggle session reminder emails</span>
                                             <input type="checkbox" defaultChecked />
                                             <span className="toggle-slider" />
                                         </label>
@@ -556,6 +625,7 @@ export default function SettingsPage() {
                                             </span>
                                         </div>
                                         <label className="toggle-switch">
+                                            <span style={visuallyHiddenStyle}>Toggle cancellation alert emails</span>
                                             <input type="checkbox" defaultChecked />
                                             <span className="toggle-slider" />
                                         </label>
@@ -583,6 +653,7 @@ export default function SettingsPage() {
                                             </span>
                                         </div>
                                         <label className="toggle-switch">
+                                            <span style={visuallyHiddenStyle}>Toggle push notifications for sessions starting soon</span>
                                             <input type="checkbox" defaultChecked />
                                             <span className="toggle-slider" />
                                         </label>
@@ -595,6 +666,7 @@ export default function SettingsPage() {
                                             </span>
                                         </div>
                                         <label className="toggle-switch">
+                                            <span style={visuallyHiddenStyle}>Toggle push notifications for new messages</span>
                                             <input type="checkbox" defaultChecked />
                                             <span className="toggle-slider" />
                                         </label>
@@ -610,10 +682,29 @@ export default function SettingsPage() {
                         <div className="settings-section">
                             <div className="section-header" style={{ paddingBottom: '0.5rem' }}>
                                 <h2>Availability Schedule</h2>
-                                <p>Set your weekly recurring working hours (UTC)</p>
+                                <p>Set your weekly recurring working hours in your therapist state timezone. Browser local time and stored UTC are shown as previews.</p>
                             </div>
 
                             <div className="settings-form" style={{ paddingTop: '0.1rem' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--primary-50)', color: 'var(--primary-color)', fontWeight: 600, fontSize: 12 }}>
+                                        Therapist state: {user?.state || 'Not set'}
+                                    </div>
+                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
+                                        Scheduling timezone: {therapistStateTimezone}
+                                    </div>
+                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
+                                        Browser timezone: {browserTimezone}
+                                    </div>
+                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
+                                        Storage timezone: UTC
+                                    </div>
+                                </div>
+
+                                <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', fontSize: 13, lineHeight: 1.5 }}>
+                                    Availability is edited using your therapist state timezone. The backend still stores the saved windows in UTC. If you later change states, the displayed schedule will follow the new state timezone mapping.
+                                </div>
+
                                 {isLoadingAvailability ? (
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '2rem', justifyContent: 'center', color: 'var(--gray-500)' }}>
                                         <Loader2 size={16} className="spin" />
@@ -622,39 +713,86 @@ export default function SettingsPage() {
                                 ) : (
                                     <div className="availability-list" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                         {schedule.map((day, index) => (
-                                            <div key={day.dayOfWeek} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', border: `1px solid ${day.isActive ? 'var(--secondary-color)' : 'var(--gray-200)'}`, borderRadius: '8px', backgroundColor: day.isActive ? 'var(--bg-surface)' : 'var(--gray-50)' }}>
-                                                <div style={{ width: '120px' }}>
-                                                    <span style={{ fontWeight: 600, fontSize: '14px', color: day.isActive ? 'var(--gray-900)' : 'var(--gray-500)' }}>
+                                            <div key={day.dayOfWeek} style={{ display: 'grid', gap: '1rem', padding: '1rem', border: `1px solid ${day.windows.length > 0 ? 'var(--secondary-color)' : 'var(--gray-200)'}`, borderRadius: '8px', backgroundColor: day.windows.length > 0 ? 'var(--bg-surface)' : 'var(--gray-50)' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                                    <div>
+                                                        <span style={{ fontWeight: 600, fontSize: '14px', color: day.windows.length > 0 ? 'var(--gray-900)' : 'var(--gray-500)' }}>
                                                         {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()}
-                                                    </span>
+                                                        </span>
+                                                        <div style={{ marginTop: 4, fontSize: 12, color: 'var(--gray-500)' }}>
+                                                            {getAvailabilitySummary(day.windows)}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary"
+                                                        onClick={() => handleAddWindow(index)}
+                                                        style={{ padding: '8px 12px', fontSize: 13 }}
+                                                    >
+                                                        <PlusCircle size={16} style={{ marginRight: 6 }} />
+                                                        Add Window
+                                                    </button>
                                                 </div>
 
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, opacity: day.isActive ? 1 : 0.5, pointerEvents: day.isActive ? 'auto' : 'none' }}>
-                                                    <input
-                                                        type="time"
-                                                        value={day.startTime}
-                                                        onChange={(e) => handleScheduleChange(index, 'startTime', e.target.value)}
-                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
-                                                    />
-                                                    <span style={{ color: 'var(--gray-500)', fontWeight: 500, fontSize: '14px' }}>to</span>
-                                                    <input
-                                                        type="time"
-                                                        value={day.endTime}
-                                                        onChange={(e) => handleScheduleChange(index, 'endTime', e.target.value)}
-                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
-                                                    />
-                                                </div>
+                                                {day.windows.length === 0 ? (
+                                                    <div style={{ fontSize: 13, color: 'var(--gray-500)', padding: '0.25rem 0 0.5rem' }}>
+                                                        No working hours configured for this day yet.
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ display: 'grid', gap: 12 }}>
+                                                        {day.windows.map((window, windowIndex) => (
+                                                            <div key={window.localId} style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid var(--gray-200)', borderRadius: 8, background: 'var(--gray-50)' }}>
+                                                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto minmax(120px, 1fr) auto', gap: 10, alignItems: 'center' }}>
+                                                                    <input
+                                                                        type="time"
+                                                                        value={window.startTime}
+                                                                        onChange={(e) => handleWindowChange(index, window.localId, 'startTime', e.target.value)}
+                                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
+                                                                        aria-label={`${day.dayOfWeek} window ${windowIndex + 1} start time`}
+                                                                    />
+                                                                    <span style={{ color: 'var(--gray-500)', fontWeight: 500, fontSize: '14px', textAlign: 'center' }}>to</span>
+                                                                    <input
+                                                                        type="time"
+                                                                        value={window.endTime}
+                                                                        onChange={(e) => handleWindowChange(index, window.localId, 'endTime', e.target.value)}
+                                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
+                                                                        aria-label={`${day.dayOfWeek} window ${windowIndex + 1} end time`}
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        className="btn-icon"
+                                                                        onClick={() => handleRemoveWindow(index, window.localId)}
+                                                                        style={{ color: 'var(--error-500)' }}
+                                                                        aria-label={`Remove ${day.dayOfWeek} window ${windowIndex + 1}`}
+                                                                    >
+                                                                        <Trash2 size={18} />
+                                                                    </button>
+                                                                </div>
 
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                                                    <label className="toggle-switch">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={day.isActive}
-                                                            onChange={(e) => handleScheduleChange(index, 'isActive', e.target.checked)}
-                                                        />
-                                                        <span className="toggle-slider" />
-                                                    </label>
-                                                </div>
+                                                                <div style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--gray-600)' }}>
+                                                                    <div>
+                                                                        <strong style={{ color: 'var(--gray-800)' }}>State time ({therapistStateTimezone})</strong>: {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()} • {window.startTime} – {window.endTime}
+                                                                    </div>
+                                                                    {(() => {
+                                                                        const browserPreview = buildAvailabilityPreview(day.dayOfWeek as any, window, therapistStateTimezone, browserTimezone);
+                                                                        const utcPreview = buildAvailabilityPreview(day.dayOfWeek as any, window, therapistStateTimezone, 'UTC');
+
+                                                                        return (
+                                                                            <>
+                                                                                <div>
+                                                                                    <strong style={{ color: 'var(--gray-800)' }}>Browser local</strong>: {browserPreview ? `${browserPreview.dayLabel} • ${browserPreview.rangeLabel} (${browserPreview.abbreviation})` : 'Unavailable'}
+                                                                                </div>
+                                                                                <div>
+                                                                                    <strong style={{ color: 'var(--gray-800)' }}>Stored UTC</strong>: {utcPreview ? `${utcPreview.dayLabel} • ${utcPreview.rangeLabel} (${utcPreview.abbreviation})` : 'Unavailable'}
+                                                                                </div>
+                                                                            </>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -693,11 +831,12 @@ export default function SettingsPage() {
                             ) : (
                                 <div className="settings-form">
                                     <div className="form-group">
-                                        <label>First Reminder (minutes before session)</label>
+                                        <label htmlFor="settings-reminder-first">First Reminder (minutes before session)</label>
                                         <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
                                             Common values: 60 = 1 hour, 120 = 2 hours, 30 = 30 min
                                         </p>
                                         <input
+                                            id="settings-reminder-first"
                                             type="number"
                                             min={5}
                                             max={1440}
@@ -707,11 +846,12 @@ export default function SettingsPage() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>Second Reminder (minutes before session)</label>
+                                        <label htmlFor="settings-reminder-second">Second Reminder (minutes before session)</label>
                                         <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
                                             Common values: 1440 = 24 hours, 720 = 12 hours
                                         </p>
                                         <input
+                                            id="settings-reminder-second"
                                             type="number"
                                             min={5}
                                             max={2880}

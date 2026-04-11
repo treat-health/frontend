@@ -22,8 +22,7 @@ const isUpcomingAppointment = (appointment: Appointment) => {
 };
 
 const DEFAULT_QUOTE: HealthQuote = {
-    text: 'Your health is an investment, not an expense.',
-    author: 'Unknown',
+    text: 'Healing can begin with one honest breath and one gentle thought.',
 };
 
 export default function DashboardPage() {
@@ -132,9 +131,6 @@ export default function DashboardPage() {
                         <div className="dashboard-hero-quote">
                             <p className="dashboard-hero-quote-text">
                                 {quote.text}
-                            </p>
-                            <p className="dashboard-hero-quote-author">
-                                — {quote.author}
                             </p>
                         </div>
                     )}

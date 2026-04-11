@@ -2,7 +2,7 @@ import api from '../lib/api';
 
 export interface HealthQuote {
     text: string;
-    author: string;
+    author?: string;
 }
 
 class QuoteService {

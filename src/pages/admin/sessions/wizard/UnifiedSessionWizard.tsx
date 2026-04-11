@@ -45,6 +45,12 @@ const validateStepTwo = (state: ReturnType<typeof useUnifiedSessionStore.getStat
       return duration < MIN_SESSION_DURATION_MINS || duration > MAX_SESSION_DURATION_MINS;
     });
     if (invalidDate) return `Each session must be between ${MIN_SESSION_DURATION_MINS} and ${MAX_SESSION_DURATION_MINS} minutes.`;
+    if (!state.scheduleRulesValidation.isReady) {
+      return state.scheduleRulesValidation.message || 'Please wait while therapist availability is being checked.';
+    }
+    if (!state.scheduleRulesValidation.valid) {
+      return state.scheduleRulesValidation.message || 'Please choose a session time within the therapist\'s available slots.';
+    }
     return null;
   }
 
@@ -60,6 +66,12 @@ const validateStepTwo = (state: ReturnType<typeof useUnifiedSessionStore.getStat
   const recurringDuration = calculateDurationBetweenUtcTimes(state.recurrenceConfig.startTime, state.recurrenceConfig.endTime).durationMins ?? 0;
   if (recurringDuration < MIN_SESSION_DURATION_MINS || recurringDuration > MAX_SESSION_DURATION_MINS) {
     return `Recurring sessions must be between ${MIN_SESSION_DURATION_MINS} and ${MAX_SESSION_DURATION_MINS} minutes.`;
+  }
+  if (!state.scheduleRulesValidation.isReady) {
+    return state.scheduleRulesValidation.message || 'Please wait while therapist availability is being checked.';
+  }
+  if (!state.scheduleRulesValidation.valid) {
+    return state.scheduleRulesValidation.message || 'Please choose a recurring time within the therapist\'s available slots.';
   }
   return null;
 };

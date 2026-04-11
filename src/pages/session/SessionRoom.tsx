@@ -12,6 +12,9 @@ import './SessionRoom.css';
 // MeteredMeeting interface is available globally from that declaration file.
 import type { MeteredMeeting } from '../../types/metered';
 
+const TREAT_HEALTH_LOGO_URL = 'https://afjfaedsjbyjfjkquira.supabase.co/storage/v1/object/public/treat-health-bucket/Logo.png';
+const TREAT_HEALTH_NAME_URL = 'https://afjfaedsjbyjfjkquira.supabase.co/storage/v1/object/public/treat-health-bucket/Treat-health-logo-white-health-name.png';
+
 const ROOM_OPEN_EARLY_MINUTES = 15;
 const ROOM_REJOIN_GRACE_MINUTES = 5; // Enterprise: 5-min grace period for reconnection after session end
 const SESSION_TAB_LOCK_TTL_MS = 15000;
@@ -87,6 +90,18 @@ interface PresenceSummary {
     recentEvents: PresenceEventSummary[];
 }
 
+interface SessionRaisedHandState {
+    userId: string;
+    raisedAt: number;
+}
+
+interface SessionRaisedHandPayload {
+    sessionId: string;
+    hands: SessionRaisedHandState[];
+    action?: 'SYNC' | 'RAISED' | 'LOWERED' | 'CLEARED';
+    changedUserId?: string;
+}
+
 interface SdkRemoteParticipant {
     id: string;
     name: string;
@@ -101,11 +116,13 @@ interface SdkRemoteParticipant {
 
 interface SessionDisplayParticipant {
     id: string;
+    userId: string | null;
     kind: 'local' | 'remote';
     displayName: string;
     initials: string;
     roleLabel: string;
     isTherapist: boolean;
+    isHandRaised: boolean;
     isSpeaking: boolean;
     hasVideo: boolean;
     hasAudio: boolean;
@@ -114,13 +131,46 @@ interface SessionDisplayParticipant {
     remoteParticipant?: SdkRemoteParticipant;
 }
 
+function formatFullName(firstName?: string | null, lastName?: string | null) {
+    return `${firstName ?? ''} ${lastName ?? ''}`.trim();
+}
+
+function formatParticipantNameForSession(options: {
+    firstName?: string | null;
+    lastName?: string | null;
+    fallback?: string;
+    preferFirstNameOnly?: boolean;
+}) {
+    const fullName = formatFullName(options.firstName, options.lastName);
+    const preferredFirstName = options.firstName?.trim();
+
+    if (options.preferFirstNameOnly && preferredFirstName) {
+        return preferredFirstName;
+    }
+
+    return fullName || options.fallback || 'Participant';
+}
+
+function formatPresenceParticipantName(
+    participant: Pick<PresenceParticipantSummary, 'firstName' | 'lastName' | 'role'>,
+    options?: { preferFirstNameOnlyForClients?: boolean },
+) {
+    const isClientParticipant = (participant.role ?? '').toUpperCase() === 'CLIENT';
+    return formatParticipantNameForSession({
+        firstName: participant.firstName,
+        lastName: participant.lastName,
+        preferFirstNameOnly: !!options?.preferFirstNameOnlyForClients && isClientParticipant,
+    });
+}
+
 function resolveParticipantDisplayName(
     participant: Pick<SdkRemoteParticipant, 'name' | 'sourceParticipantId'>,
     presenceParticipants: PresenceParticipantSummary[],
+    options?: { preferFirstNameOnlyForClients?: boolean },
 ) {
     const presenceMatch = presenceParticipants.find((presenceParticipant) => presenceParticipant.userId === participant.sourceParticipantId);
     return presenceMatch
-        ? `${presenceMatch.firstName ?? ''} ${presenceMatch.lastName ?? ''}`.trim() || participant.name
+        ? formatPresenceParticipantName(presenceMatch, options) || participant.name
         : participant.name;
 }
 
@@ -156,6 +206,10 @@ function compareDisplayParticipants(left: SessionDisplayParticipant, right: Sess
     }
 
     return left.joinedAt - right.joinedAt;
+}
+
+function sortRaisedHands(hands: SessionRaisedHandState[]) {
+    return [...hands].sort((left, right) => left.raisedAt - right.raisedAt);
 }
 
 function parseSessionDate(value: string) {
@@ -279,9 +333,13 @@ function formatPresenceEventLabel(eventType: string) {
     return eventType.replaceAll('_', ' ').toLowerCase();
 }
 
-function getPresenceEventDescription(event: PresenceEventSummary, participants: PresenceParticipantSummary[]) {
+function getPresenceEventDescription(
+    event: PresenceEventSummary,
+    participants: PresenceParticipantSummary[],
+    options?: { preferFirstNameOnlyForClients?: boolean },
+) {
     const actor = participants.find((participant) => participant.userId === event.userId);
-    const actorName = actor ? `${actor.firstName} ${actor.lastName}` : 'System';
+    const actorName = actor ? formatPresenceParticipantName(actor, options) : 'System';
 
     switch (event.eventType) {
         case 'PARTICIPANT_CONNECTED':
@@ -2612,6 +2670,7 @@ export default function SessionRoom() {
     const [remoteParticipantPage, setRemoteParticipantPage] = useState(1);
     const [sidebarParticipantSearch, setSidebarParticipantSearch] = useState('');
     const [isSpeakerSpotlightMode, setIsSpeakerSpotlightMode] = useState(true);
+    const [raisedHands, setRaisedHands] = useState<SessionRaisedHandState[]>([]);
 
     // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
@@ -2631,6 +2690,8 @@ export default function SessionRoom() {
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const retryTickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const lockHeartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const announcedRaisedHandsRef = useRef<Set<string>>(new Set());
+    const participantNameLookupRef = useRef<Map<string, string>>(new Map());
 
     // Role detection & feature gating
     let roleInSession: 'CLIENT' | 'THERAPIST' | 'UNKNOWN' = 'UNKNOWN';
@@ -2664,18 +2725,29 @@ export default function SessionRoom() {
     const isGroupSession = !!sessionDetails?.isGroupSession || (sessionDetails?.participants?.length ?? 0) > 1;
     const userInitial = user ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase() : 'ME';
     const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'You';
+    const localParticipantBaseName = user
+        ? formatParticipantNameForSession({
+            firstName: user.firstName,
+            lastName: user.lastName,
+            fallback: userName,
+            preferFirstNameOnly: isGroupSession && roleInSession === 'CLIENT',
+        })
+        : 'You';
     const presenceParticipants = presenceSummary?.participants ?? [];
     const localPresenceState = isInRoom ? 'CONNECTED' : 'NOT_JOINED';
     const activeSpeakerSet = new Set(activeSpeakerIds);
+    const raisedHandMap = new Map(raisedHands.map((hand) => [hand.userId, hand]));
     const localSessionRoleLabel = formatRoleLabel(roleInSession !== 'UNKNOWN' ? roleInSession : user?.role);
     const hasLiveLocalVideoTrack = !!localPreviewStream?.getVideoTracks().some((track) => track.readyState === 'live');
     const localDisplayParticipant: SessionDisplayParticipant = {
         id: 'local',
+        userId: user?.id ?? null,
         kind: 'local',
-        displayName: `${userName} (You)`,
+        displayName: `${localParticipantBaseName} (You)`,
         initials: userInitial,
         roleLabel: localSessionRoleLabel,
         isTherapist: roleInSession === 'THERAPIST' || user?.id === sessionDetails?.therapistId,
+        isHandRaised: !!user?.id && raisedHandMap.has(user.id),
         isSpeaking: activeSpeakerSet.has('local'),
         hasVideo: !isVideoOff && hasLiveLocalVideoTrack,
         hasAudio: !isMuted,
@@ -2686,14 +2758,19 @@ export default function SessionRoom() {
         .slice(0, Math.max(0, MAX_GROUP_SESSION_PARTICIPANTS - 1))
         .map<SessionDisplayParticipant>((participant) => {
             const presenceMatch = presenceParticipants.find((presenceParticipant) => presenceParticipant.userId === participant.sourceParticipantId);
-            const displayName = resolveParticipantDisplayName(participant, presenceParticipants);
+            const participantIsTherapist = isTherapistParticipant(participant, presenceParticipants, sessionDetails);
+            const displayName = resolveParticipantDisplayName(participant, presenceParticipants, {
+                preferFirstNameOnlyForClients: isGroupSession && !participantIsTherapist,
+            });
             return {
                 id: participant.id,
+                userId: participant.sourceParticipantId || null,
                 kind: 'remote',
                 displayName,
                 initials: getParticipantInitials(displayName),
                 roleLabel: formatRoleLabel(presenceMatch?.role ?? 'participant'),
-                isTherapist: isTherapistParticipant(participant, presenceParticipants, sessionDetails),
+                isTherapist: participantIsTherapist,
+                isHandRaised: !!participant.sourceParticipantId && raisedHandMap.has(participant.sourceParticipantId),
                 isSpeaking: activeSpeakerSet.has(participant.id),
                 hasVideo: participant.hasVideo,
                 hasAudio: participant.hasAudio,
@@ -3106,6 +3183,64 @@ export default function SessionRoom() {
         setRetryInMs(null);
         startJoining();
     }, [startJoining]);
+
+    useEffect(() => {
+        if (!id || !user?.id || !isInRoom) {
+            setRaisedHands([]);
+            announcedRaisedHandsRef.current = new Set();
+            return;
+        }
+
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) return;
+
+        const roomId = `video:${id}`;
+        const participantId = user.id;
+        const participantName = userName || localParticipantBaseName || 'Participant';
+
+        const handleHandState = (payload: SessionRaisedHandPayload) => {
+            if (payload.sessionId !== id) return;
+
+            const sortedHands = sortRaisedHands(payload.hands ?? []);
+            setRaisedHands(sortedHands);
+
+            if (
+                roleInSession === 'THERAPIST'
+                && payload.action === 'RAISED'
+                && payload.changedUserId
+                && payload.changedUserId !== user.id
+            ) {
+                const nextHandIds = new Set(sortedHands.map((hand) => hand.userId));
+                const alreadyAnnounced = announcedRaisedHandsRef.current.has(payload.changedUserId);
+
+                if (nextHandIds.has(payload.changedUserId) && !alreadyAnnounced) {
+                    announcedRaisedHandsRef.current.add(payload.changedUserId);
+                    const raisedByName = participantNameLookupRef.current.get(payload.changedUserId) ?? 'A participant';
+                    toast(`${raisedByName} raised their hand.`, {
+                        duration: 3000,
+                        icon: '✋',
+                    });
+                }
+            }
+
+            announcedRaisedHandsRef.current = new Set(sortedHands.map((hand) => hand.userId));
+        };
+
+        socket.emit('webrtc:join', {
+            roomId,
+            participantId,
+            participantName,
+        });
+        socket.on('session:hand_state', handleHandState);
+
+        return () => {
+            socket.emit('webrtc:leave', {
+                roomId,
+                participantId,
+            });
+            socket.off('session:hand_state', handleHandState);
+        };
+    }, [id, isInRoom, localParticipantBaseName, roleInSession, user?.id, userName]);
 
     useEffect(() => {
         if (connectionState !== 'FAILED' || joinState === 'COMPLETED' || isMultiTabBlocked || retryAttempt >= AUTO_RETRY_MAX_ATTEMPTS) {
@@ -3599,6 +3734,21 @@ export default function SessionRoom() {
         });
     };
 
+    const toggleRaisedHand = () => {
+        if (!id || !user?.id || !canCurrentUserRaiseHand) return;
+
+        const socket = getSocket() ?? connectSocket();
+        if (!socket) {
+            toast.error('Live hand controls are not available right now.');
+            return;
+        }
+
+        socket.emit(localHandRaised ? 'session:hand_lower' : 'session:hand_raise', {
+            sessionId: id,
+            userId: user.id,
+        });
+    };
+
     const handleSaveNotes = async () => {
         try {
             if (!id) return;
@@ -3663,6 +3813,49 @@ export default function SessionRoom() {
     const shouldShowBlockingWaitingPlaceholder = !isInRoom && !hasRemoteParticipants;
 
     const speakingParticipantCount = activeSpeakerIds.length;
+    const localHandRaised = !!user?.id && raisedHandMap.has(user.id);
+    const canCurrentUserRaiseHand = roleInSession === 'CLIENT' && isInRoom;
+    const participantNameLookup = new Map<string, string>();
+    if (user?.id) {
+        participantNameLookup.set(user.id, localParticipantBaseName);
+    }
+    presenceParticipants.forEach((participant) => {
+        participantNameLookup.set(
+            participant.userId,
+            formatPresenceParticipantName(participant, {
+                preferFirstNameOnlyForClients: isGroupSession,
+            }),
+        );
+    });
+    sessionDetails?.participants?.forEach((participant) => {
+        if (!participant.clientId) return;
+        participantNameLookup.set(
+            participant.clientId,
+            formatParticipantNameForSession({
+                firstName: participant.client?.firstName,
+                lastName: participant.client?.lastName,
+                fallback: 'Participant',
+                preferFirstNameOnly: isGroupSession,
+            }),
+        );
+    });
+    participantNameLookupRef.current = participantNameLookup;
+    const raisedHandQueue = sortRaisedHands(raisedHands).map((hand, index) => ({
+        ...hand,
+        order: index + 1,
+        displayName: participantNameLookup.get(hand.userId) ?? 'Participant',
+        isCurrentUser: hand.userId === user?.id,
+        isTherapist: hand.userId === sessionDetails?.therapistId,
+    }));
+    let raisedHandSummary = 'No hands raised';
+    if (raisedHandQueue.length === 1) {
+        raisedHandSummary = '1 hand raised';
+    } else if (raisedHandQueue.length > 1) {
+        raisedHandSummary = `${raisedHandQueue.length} hands raised`;
+    }
+    const shouldShowRaisedHandPanel = isInRoom && (canCurrentUserRaiseHand || roleInSession === 'THERAPIST' || raisedHandQueue.length > 0);
+    const raisedHandPanelLabel = isGroupSession ? 'Live queue' : 'Raise hand status';
+    const localRaisedHandLabel = isGroupSession ? 'You’re in the queue' : 'Your hand is raised';
     const normalizedSidebarParticipantSearch = sidebarParticipantSearch.trim().toLowerCase();
     const filteredSidebarParticipants = orderedRemoteParticipants.filter((participant) => {
         if (!normalizedSidebarParticipantSearch) return true;
@@ -3682,6 +3875,8 @@ export default function SessionRoom() {
         const tileClassName = [
             'video-tile',
             participant.isSpeaking ? 'speaking' : '',
+            participant.isHandRaised ? 'hand-raised' : '',
+            participant.isHandRaised && roleInSession === 'THERAPIST' ? 'hand-raised-therapist-view' : '',
             participant.isTherapist ? 'priority-therapist' : '',
             isSpotlightTile ? 'spotlight-tile' : '',
             isFilmstripTile ? 'filmstrip-tile' : '',
@@ -3702,10 +3897,17 @@ export default function SessionRoom() {
                 <div className={`tile-role-badge ${participant.isTherapist ? 'therapist' : participant.isSpeaking ? 'speaking' : ''}`}>
                     {participant.isTherapist ? 'Therapist' : participant.roleLabel}
                 </div>
+                {participant.isHandRaised && (
+                    <div className={`tile-hand-badge ${participant.isTherapist ? 'therapist' : ''}`}>
+                        <span aria-hidden="true">✋</span>
+                        <span>{participant.kind === 'local' ? 'Your hand is raised' : 'Hand raised'}</span>
+                    </div>
+                )}
                 <div className="tile-name-bar">
                     <span className={`tile-name ${participant.isSpeaking ? 'tile-name-speaking' : ''}`}>
                         {participant.displayName}
                     </span>
+                    {participant.isHandRaised && <span className="tile-hand-chip">✋ Raised</span>}
                     {participant.isSpeaking && <span className="tile-speaking-chip">Speaking</span>}
                     {!participant.hasAudio && <MicOff size={14} className="tile-mic-off" />}
                 </div>
@@ -3912,10 +4114,31 @@ export default function SessionRoom() {
                                         <Clock size={12} /> {formatCountdown(timeRemainingMs)} remaining
                                     </span>
                                 )}
+                                {raisedHandQueue.length > 0 && (
+                                    <span className="session-hand-summary-badge">
+                                        <span aria-hidden="true">✋</span> {raisedHandSummary}
+                                    </span>
+                                )}
                             </div>
                         )}
                     </div>
                     <div className="header-right">
+                        <div className="session-branding" aria-label="Treat Health branding">
+                            <img
+                                src={TREAT_HEALTH_LOGO_URL}
+                                alt="Treat Health logo"
+                                className="session-branding-logo"
+                                loading="eager"
+                                decoding="async"
+                            />
+                            <img
+                                src={TREAT_HEALTH_NAME_URL}
+                                alt="Treat Health"
+                                className="session-branding-name"
+                                loading="eager"
+                                decoding="async"
+                            />
+                        </div>
                         <span className="badge">End-to-End Encrypted (P2P)</span>
                         <button
                             className={`sidebar-toggle-btn ${isSidebarOpen ? 'active' : ''}`}
@@ -3970,6 +4193,16 @@ export default function SessionRoom() {
                     >
                         {isVideoOff ? <VideoOff size={22} /> : <Video size={22} />}
                     </button>
+
+                    {canCurrentUserRaiseHand && (
+                        <button
+                            className={`control-btn hand-btn ${localHandRaised ? 'active' : ''}`}
+                            onClick={toggleRaisedHand}
+                            title={localHandRaised ? 'Lower Hand' : 'Raise Hand'}
+                        >
+                            <span className="hand-btn-emoji" aria-hidden="true">✋</span>
+                        </button>
+                    )}
 
                     {/* End call */}
                     <button
@@ -4027,7 +4260,47 @@ export default function SessionRoom() {
                                     <span className="people-panel-summary-label">Page</span>
                                     <strong>{remoteParticipantPage}/{totalRemoteParticipantPages}</strong>
                                 </div>
+                                {shouldShowRaisedHandPanel && (
+                                    <div className="people-panel-summary-card people-panel-summary-card-accent">
+                                        <span className="people-panel-summary-label">Raised hands</span>
+                                        <strong>{raisedHandQueue.length}</strong>
+                                    </div>
+                                )}
                             </div>
+
+                            {shouldShowRaisedHandPanel && (
+                                <div className="raised-hand-panel">
+                                    <div className="raised-hand-panel-header">
+                                        <div>
+                                            <span className="raised-hand-panel-label">{raisedHandPanelLabel}</span>
+                                            <strong>{raisedHandSummary}</strong>
+                                        </div>
+                                        {localHandRaised && <span className="raised-hand-panel-self">{localRaisedHandLabel}</span>}
+                                    </div>
+
+                                    {raisedHandQueue.length === 0 ? (
+                                        <div className="presence-panel-state compact">
+                                            No one has raised a hand yet.
+                                        </div>
+                                    ) : (
+                                        <div className="raised-hand-queue">
+                                            {raisedHandQueue.map((hand) => (
+                                                <div
+                                                    key={hand.userId}
+                                                    className={`raised-hand-queue-item ${hand.isCurrentUser ? 'current-user' : ''} ${hand.isTherapist ? 'therapist' : ''}`}
+                                                >
+                                                    <span className="raised-hand-order">#{hand.order}</span>
+                                                    <div className="raised-hand-queue-copy">
+                                                        <strong>{hand.displayName}{hand.isCurrentUser ? ' (You)' : ''}</strong>
+                                                        <span>{new Date(hand.raisedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                                                    </div>
+                                                    <span className="raised-hand-indicator" aria-hidden="true">✋</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="people-panel-search">
                                 <Search size={15} className="people-panel-search-icon" />
@@ -4054,7 +4327,12 @@ export default function SessionRoom() {
                                                 fontWeight: 600,
                                             }}
                                         >
-                                            {participant.firstName} {participant.lastName}
+                                            {formatParticipantNameForSession({
+                                                firstName: participant.firstName,
+                                                lastName: participant.lastName,
+                                                fallback: 'Participant',
+                                                preferFirstNameOnly: true,
+                                            })}
                                         </span>
                                     ))}
                                 </div>
@@ -4065,7 +4343,10 @@ export default function SessionRoom() {
                                         <div key={participant.id} className="participant-item">
                                             <div className="participant-avatar">{participant.initials}</div>
                                             <div className="participant-info">
-                                                <span className="participant-name">{participant.displayName}</span>
+                                                <span className="participant-name">
+                                                    {participant.displayName}
+                                                    {participant.isHandRaised && <span className="participant-hand-inline">✋</span>}
+                                                </span>
                                                 <span className="participant-role">{participant.roleLabel}</span>
                                                 <span className={`participant-presence-badge ${participant.isSpeaking ? 'live' : getPresenceStateTone(participant.presenceState)}`}>
                                                     {participant.isSpeaking ? 'Speaking' : formatPresenceStateLabel(participant.presenceState)}
@@ -4080,7 +4361,10 @@ export default function SessionRoom() {
                                         <div className="participant-item participant-item-compact">
                                             <div className="participant-avatar" style={{ background: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' }}>{participant.initials}</div>
                                             <div className="participant-info">
-                                                <span className="participant-name">{participant.displayName}</span>
+                                                <span className="participant-name">
+                                                    {participant.displayName}
+                                                    {participant.isHandRaised && <span className="participant-hand-inline">✋</span>}
+                                                </span>
                                                 <span className="participant-role">{participant.roleLabel}</span>
                                             </div>
                                             <span className={`participant-presence-badge ${participant.isSpeaking ? 'live' : getPresenceStateTone(participant.presenceState)}`}>
@@ -4152,7 +4436,9 @@ export default function SessionRoom() {
                                                 <div key={event.id} className="presence-event-item">
                                                     <div>
                                                         <p className="presence-event-title">
-                                                            {getPresenceEventDescription(event, presenceParticipants)}
+                                                            {getPresenceEventDescription(event, presenceParticipants, {
+                                                                preferFirstNameOnlyForClients: isGroupSession,
+                                                            })}
                                                         </p>
                                                         <p className="presence-event-subtitle">
                                                             {formatPresenceEventLabel(event.eventType)} • {event.source.toLowerCase().replaceAll('_', ' ')}

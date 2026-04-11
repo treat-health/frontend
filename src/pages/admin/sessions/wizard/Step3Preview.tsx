@@ -6,6 +6,8 @@ export default function Step3Preview() {
 
         const formattedType = type.replaceAll('_', ' ').toLowerCase().replaceAll(/\b\w/g, (char) => char.toUpperCase());
 
+    const formatSuggestedSlot = (startTime: string, endTime: string) => `${startTime} – ${endTime} UTC`;
+
     const formatUtcRange = (startIsoString: string, endIsoString: string) => {
             const start = new Date(startIsoString);
             const end = new Date(endIsoString);
@@ -66,14 +68,14 @@ export default function Step3Preview() {
             <div className="conflict-alert">
                 <AlertCircle style={{color: 'var(--error-500)', flexShrink: 0}} size={24}/>
                 <div>
-                    <h4>Action Required: Scheduling Conflicts Detected</h4>
-                    <p>There are {previewSummary.conflicts} exact overlaps blocking this transaction. Please go back to Step 2 to adjust your times, or select an available Therapist in Step 1.</p>
+                    <h4>Action Required: Scheduling Validation Issues Detected</h4>
+                    <p>There are {previewSummary.conflicts} occurrence(s) blocked by therapist availability, existing conflicts, or client conflicts. Review the suggested slots below and adjust the schedule before confirming.</p>
                 </div>
             </div>
         ) : (
             <div className="success-alert">
                 <h4>All Clear!</h4>
-                <p>This blueprint is free of any therapist double-bookings or active client overlaps.</p>
+                <p>This blueprint fits therapist availability and is free of active therapist/client scheduling conflicts.</p>
             </div>
         )}
 
@@ -94,7 +96,30 @@ export default function Step3Preview() {
                         </div>
                     </div>
                     {ps.conflict ? (
-                        <div className="preview-chip error">{ps.conflict.reason}</div>
+                        <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
+                            <div className="preview-chip error">{ps.conflict.reason}</div>
+                            {ps.validation?.issues?.length ? (
+                                <div style={{ maxWidth: 360, display: 'grid', gap: 6 }}>
+                                    {ps.validation.issues.map((issue) => (
+                                        <div key={`${issue.code}-${issue.entityId ?? 'na'}-${issue.conflictingSessionId ?? 'none'}`} style={{ fontSize: 12, color: 'var(--error-600)', textAlign: 'right' }}>
+                                            {issue.message}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+                            {ps.validation?.suggestedSlots?.length ? (
+                                <div style={{ maxWidth: 360, display: 'grid', gap: 6, justifyItems: 'end' }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>Suggested available slots</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+                                        {ps.validation.suggestedSlots.map((slot) => (
+                                            <span key={`${ps.startTime}-${slot.startTime}-${slot.endTime}`} className="preview-chip success" style={{ background: 'var(--primary-50)', color: 'var(--primary-color)' }}>
+                                                {formatSuggestedSlot(slot.startTime, slot.endTime)}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
                     ) : (
                         <div className="preview-chip success">Scheduled</div>
                     )}

@@ -280,3 +280,283 @@
 .client-tag-remove:hover {
   opacity: 1;
 }
+
+.therapist-weekly-panel {
+  margin-bottom: 24px;
+  border-radius: 14px;
+  border: 1px solid var(--gray-200);
+  background: linear-gradient(180deg, var(--gray-50) 0%, var(--bg-surface) 100%);
+  padding: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.therapist-weekly-panel-trigger {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.therapist-weekly-panel-trigger:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.therapist-weekly-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.therapist-weekly-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.therapist-weekly-panel-subtitle {
+  font-size: 13px;
+  color: var(--gray-600);
+  margin-top: 4px;
+  line-height: 1.55;
+}
+
+.therapist-weekly-panel-meta {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--gray-500);
+  text-align: right;
+}
+
+.therapist-weekly-panel-meta-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.therapist-weekly-panel-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--gray-300);
+  background: var(--bg-surface);
+  color: var(--gray-700);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform var(--transition-normal), background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.therapist-weekly-panel-trigger:hover .therapist-weekly-panel-chevron {
+  background: var(--gray-100);
+  color: var(--gray-900);
+}
+
+.therapist-weekly-panel-trigger.is-expanded .therapist-weekly-panel-chevron {
+  transform: rotate(180deg);
+}
+
+.therapist-weekly-panel-content {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 320ms ease, opacity 220ms ease;
+}
+
+.therapist-weekly-panel-content.is-expanded {
+  opacity: 1;
+}
+
+.therapist-weekly-panel-content-inner {
+  padding-top: 4px;
+}
+
+.therapist-weekly-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.therapist-weekly-rows-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.therapist-weekly-row {
+  border-radius: 12px;
+  border: 1px solid var(--gray-200);
+  background: var(--bg-surface);
+  padding: 14px;
+}
+
+.therapist-weekly-row-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.therapist-weekly-row-day {
+  min-width: 112px;
+}
+
+.therapist-weekly-row-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.therapist-weekly-row-status {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-top: 4px;
+}
+
+.therapist-weekly-row-status.is-empty,
+.therapist-weekly-row-empty {
+  color: var(--gray-400);
+}
+
+.therapist-weekly-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.therapist-weekly-row-empty {
+  font-size: 13px;
+  padding-top: 2px;
+}
+
+.therapist-weekly-row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.therapist-weekly-window-chip {
+  border-radius: 999px;
+  border: 1px solid var(--primary-100);
+  background: var(--primary-50);
+  color: var(--gray-900);
+  padding: 8px 12px;
+}
+
+.therapist-weekly-window-chip.is-expanded {
+  border-radius: 18px;
+  min-width: 190px;
+  padding: 10px 12px;
+}
+
+.therapist-weekly-window-chip-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.therapist-weekly-window-chip-label,
+.therapist-weekly-window-chip-local,
+.therapist-weekly-row-hint {
+  font-size: 11px;
+  color: var(--gray-500);
+}
+
+.therapist-weekly-window-chip-label {
+  margin-top: 2px;
+}
+
+.therapist-weekly-window-chip-local,
+.therapist-weekly-row-hint {
+  margin-top: 6px;
+}
+
+.therapist-weekly-row-hint {
+  margin-top: 8px;
+}
+
+.therapist-weekly-toggle {
+  border-radius: 999px;
+  border: 1px solid var(--gray-300);
+  background: var(--bg-surface);
+  color: var(--gray-600);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.therapist-weekly-toggle:hover {
+  background: var(--gray-50);
+  color: var(--gray-800);
+}
+
+.therapist-weekly-toggle-more {
+  border-style: dashed;
+  background: transparent;
+}
+
+[data-theme="dark"] .therapist-weekly-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, var(--bg-surface) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .therapist-weekly-panel-chevron {
+  background: var(--gray-100);
+  border-color: var(--gray-300);
+  color: var(--gray-800);
+}
+
+[data-theme="dark"] .therapist-weekly-panel-trigger:hover .therapist-weekly-panel-chevron {
+  background: var(--gray-200);
+  color: var(--gray-900);
+}
+
+[data-theme="dark"] .therapist-weekly-row {
+  background: var(--gray-50);
+}
+
+[data-theme="dark"] .therapist-weekly-window-chip {
+  border-color: rgba(197, 157, 95, 0.3);
+  background: rgba(197, 157, 95, 0.12);
+}
+
+[data-theme="dark"] .therapist-weekly-toggle {
+  background: var(--gray-100);
+}
+
+[data-theme="dark"] .therapist-weekly-toggle:hover {
+  background: var(--gray-200);
+}
+
+@media (max-width: 768px) {
+  .therapist-weekly-panel-header,
+  .therapist-weekly-rows-header,
+  .therapist-weekly-row-layout {
+    flex-direction: column;
+  }
+
+  .therapist-weekly-panel-meta {
+    text-align: left;
+  }
+
+  .therapist-weekly-panel-meta-wrap {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .therapist-weekly-row-day {
+    min-width: 0;
+  }
+}
