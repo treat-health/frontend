@@ -83,7 +83,6 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
             return [
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                 { path: '/appointments', icon: Calendar, label: 'My Appointments' },
-                { path: '/feedback', icon: Sparkles, label: 'Program Feedback' },
                 ...baseItems,
             ];
     }
