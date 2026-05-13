@@ -1,0 +1,331 @@
+/* ── Hero ─────────────────────────────────────────────────────────── */
+.omv-hero {
+    padding: var(--spacing-2xl) var(--spacing-xl);
+    background: linear-gradient(145deg, var(--primary-50) 0%, var(--secondary-50) 100%);
+    border: 1px solid var(--primary-100);
+    border-radius: var(--radius-2xl);
+    margin-bottom: var(--spacing-2xl);
+    text-align: center;
+}
+
+.omv-hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--primary-700);
+    background: var(--primary-100);
+    border-radius: var(--radius-full);
+    padding: 0.3rem 0.85rem;
+    margin-bottom: var(--spacing-lg);
+}
+
+.omv-hero-headline {
+    margin: 0 auto var(--spacing-lg);
+    font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+    font-weight: 800;
+    color: var(--gray-900);
+    line-height: 1.2;
+    max-width: 640px;
+}
+
+.omv-hero-quote {
+    margin: 0 auto var(--spacing-xl);
+    max-width: 620px;
+    font-size: 1.05rem;
+    line-height: 1.75;
+    color: var(--gray-600);
+    border-left: 4px solid var(--primary-400);
+    padding-left: var(--spacing-lg);
+    text-align: left;
+    font-style: italic;
+}
+
+.omv-highlights {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--spacing-sm);
+}
+
+.omv-highlight-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.35rem 0.9rem;
+    background: white;
+    border: 1px solid var(--primary-200);
+    border-radius: var(--radius-full);
+    color: var(--primary-700);
+}
+
+.omv-highlight-pill::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-500);
+    flex-shrink: 0;
+}
+
+/* ── Belief banner ────────────────────────────────────────────────── */
+.omv-belief {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-xl) var(--spacing-2xl);
+    margin-bottom: var(--spacing-2xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.omv-belief-kicker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--secondary-600);
+}
+
+.omv-belief-body {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.8;
+    color: var(--gray-700);
+    max-width: 700px;
+}
+
+/* ── Section heading ──────────────────────────────────────────────── */
+.omv-section {
+    margin-bottom: var(--spacing-2xl);
+}
+
+.omv-section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--secondary-600);
+    margin-bottom: 0.35rem;
+}
+
+.omv-section-title {
+    margin: 0 0 var(--spacing-lg);
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+
+/* ── Pillars grid ─────────────────────────────────────────────────── */
+.omv-pillars-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-md);
+}
+
+.omv-pillar-card {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+.omv-pillar-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-3px);
+}
+
+.omv-pillar-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.omv-pillar-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.3;
+}
+
+.omv-pillar-desc {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--gray-600);
+    line-height: 1.7;
+}
+
+/* ── Promise / Journey ────────────────────────────────────────────── */
+.omv-promise-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-md);
+}
+
+.omv-promise-card {
+    background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-800) 100%);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-xl);
+    display: flex;
+    align-items: center;
+}
+
+.omv-promise-text {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.75;
+    color: rgba(255, 255, 255, 0.95);
+    font-style: italic;
+}
+
+.omv-journey-card {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-xl);
+}
+
+.omv-journey-label {
+    margin: 0 0 var(--spacing-md);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--gray-500);
+}
+
+.omv-journey-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.omv-journey-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+}
+
+.omv-journey-num {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-full);
+    background: var(--primary-100);
+    color: var(--primary-700);
+    font-size: 0.75rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.omv-journey-text {
+    font-size: 0.9rem;
+    color: var(--gray-700);
+    line-height: 1.5;
+    padding-top: 0.4rem;
+}
+
+/* ── Closing card ─────────────────────────────────────────────────── */
+.omv-closing-card {
+    background: linear-gradient(135deg, var(--secondary-700) 0%, var(--secondary-900) 100%);
+    border-radius: var(--radius-2xl);
+    padding: var(--spacing-2xl) var(--spacing-xl);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.omv-closing-icon {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.omv-closing-heading {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: white;
+}
+
+.omv-closing-body {
+    margin: 0;
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.7;
+    max-width: 420px;
+}
+
+.omv-closing-btn {
+    margin-top: var(--spacing-sm);
+    background: white !important;
+    color: var(--secondary-800) !important;
+    font-weight: 700;
+    padding: 0.65rem 2rem;
+    border-radius: var(--radius-full) !important;
+    border: none !important;
+    transition: transform 150ms ease, box-shadow 150ms ease !important;
+}
+
+.omv-closing-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────── */
+[data-theme='dark'] .omv-hero {
+    background: linear-gradient(145deg, var(--gray-100) 0%, var(--gray-200) 100%);
+    border-color: var(--gray-300);
+}
+
+[data-theme='dark'] .omv-highlight-pill {
+    background: var(--gray-200);
+    border-color: var(--gray-300);
+}
+
+[data-theme='dark'] .omv-belief,
+[data-theme='dark'] .omv-pillar-card,
+[data-theme='dark'] .omv-journey-card {
+    background: var(--gray-100);
+    border-color: var(--gray-200);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .omv-pillars-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .omv-promise-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .omv-hero {
+        padding: var(--spacing-xl) var(--spacing-md);
+    }
+
+    .omv-belief {
+        padding: var(--spacing-lg);
+    }
+}

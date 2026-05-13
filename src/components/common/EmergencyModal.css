@@ -1,0 +1,282 @@
+/* ─── Dialog backdrop ─────────────────────────────────────────────────────── */
+.emergency-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    border: none;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+}
+
+/* ─── Modal container ─────────────────────────────────────────────────────── */
+.emergency-modal {
+    background: #ffffff;
+    border-radius: 24px;
+    width: 100%;
+    max-width: 540px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+.emergency-modal-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    padding: 1.375rem 1.375rem 1.125rem;
+    background: linear-gradient(135deg, #c07574 0%, #a85050 100%);
+    border-radius: 24px 24px 0 0;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.emergency-header-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    flex-shrink: 0;
+}
+
+.emergency-header-copy {
+    flex: 1;
+    min-width: 0;
+}
+
+.emergency-header-copy h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0 0 0.2rem;
+    line-height: 1.25;
+}
+
+.emergency-header-copy p {
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.88);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.emergency-close-btn {
+    color: rgba(255, 255, 255, 0.85) !important;
+    flex-shrink: 0;
+    margin-top: -0.25rem;
+}
+
+.emergency-close-btn:hover {
+    color: #ffffff !important;
+    background: rgba(0, 0, 0, 0.14) !important;
+}
+
+/* ─── Body ────────────────────────────────────────────────────────────────── */
+.emergency-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+/* ─── Crisis line card ────────────────────────────────────────────────────── */
+.emergency-line-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.875rem;
+    padding: 0.7rem 0.875rem;
+    border-radius: 12px;
+    background: rgba(192, 117, 116, 0.05);
+    border: 1px solid rgba(192, 117, 116, 0.12);
+    flex-wrap: wrap;
+}
+
+/* 988 pinned card — more prominent */
+.emergency-line-card--pinned {
+    background: rgba(192, 117, 116, 0.1);
+    border-color: rgba(192, 117, 116, 0.28);
+    border-width: 2px;
+}
+
+.emergency-line-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
+.emergency-line-name {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.25;
+}
+
+.emergency-line-detail {
+    font-size: 0.75rem;
+    color: var(--gray-600);
+    line-height: 1.4;
+}
+
+.emergency-line-actions {
+    /* 2-column grid: col 1 = phone button, col 2 = external link icon (or empty)  */
+    /* Phone is always col 1 at the same position — numbers stay vertically aligned */
+    display: grid;
+    grid-template-columns: 1fr 32px;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    width: 188px;
+}
+
+.emergency-call-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.875rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+    background: #8b2e2e;
+    color: #ffffff;
+    border: none;
+    transition: background 0.15s ease;
+    white-space: nowrap;
+    width: 100%;
+}
+
+.emergency-call-btn:hover {
+    background: #721f1f;
+    text-decoration: none;
+    color: #ffffff;
+}
+
+.emergency-link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(89, 140, 143, 0.08);
+    border: 1px solid rgba(89, 140, 143, 0.18);
+    color: var(--secondary-600);
+    text-decoration: none;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+}
+
+.emergency-link-btn:hover {
+    background: rgba(89, 140, 143, 0.15);
+    text-decoration: none;
+}
+
+/* ─── Footer ──────────────────────────────────────────────────────────────── */
+.emergency-modal-footer {
+    padding: 0.75rem 1.25rem 1rem;
+    border-top: 1px solid rgba(192, 117, 116, 0.1);
+    flex-shrink: 0;
+}
+
+.emergency-modal-footer p {
+    font-size: 0.8rem;
+    color: var(--gray-600);
+    text-align: center;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.emergency-modal-footer strong {
+    color: var(--gray-900);
+}
+
+/* ─── Dark mode ───────────────────────────────────────────────────────────── */
+[data-theme="dark"] .emergency-modal {
+    background: var(--bg-surface);
+}
+
+[data-theme="dark"] .emergency-line-card {
+    background: rgba(192, 117, 116, 0.07);
+    border-color: rgba(192, 117, 116, 0.15);
+}
+
+[data-theme="dark"] .emergency-line-name {
+    color: var(--gray-900);
+}
+
+[data-theme="dark"] .emergency-line-detail {
+    color: var(--gray-600);
+}
+
+[data-theme="dark"] .emergency-link-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: var(--gray-800);
+}
+
+[data-theme="dark"] .emergency-link-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .emergency-modal-footer {
+    border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .emergency-modal-footer p {
+    color: var(--gray-600);
+}
+
+[data-theme="dark"] .emergency-modal-footer strong {
+    color: var(--gray-900);
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    .emergency-dialog {
+        padding: 0.75rem;
+        align-items: flex-end;
+    }
+
+    .emergency-modal {
+        max-height: 92vh;
+        border-radius: 20px 20px 0 0;
+    }
+
+    .emergency-modal-header {
+        border-radius: 20px 20px 0 0;
+    }
+
+    .emergency-line-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .emergency-line-actions {
+        width: 100%;
+    }
+
+    .emergency-call-btn {
+        flex: 1;
+        justify-content: center;
+    }
+}

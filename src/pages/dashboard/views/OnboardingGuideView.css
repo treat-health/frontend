@@ -1,0 +1,358 @@
+/* ── Grid intro ───────────────────────────────────────────────────── */
+.ogv-grid-shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+}
+
+.ogv-grid-intro {
+    max-width: 560px;
+}
+
+.ogv-grid-subtitle {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--gray-600);
+    line-height: 1.7;
+}
+
+/* ── Tutorial card grid ───────────────────────────────────────────── */
+.ogv-tutorial-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-md);
+}
+
+.ogv-tutorial-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xl);
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius-xl);
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    transition: box-shadow 200ms ease, transform 200ms ease, border-color 200ms ease;
+}
+
+.ogv-tutorial-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-3px);
+    border-color: var(--gray-200);
+}
+
+.ogv-tutorial-card:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+}
+
+.ogv-card-icon-wrap {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.ogv-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    flex: 1;
+}
+
+.ogv-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+}
+
+.ogv-card-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.3;
+}
+
+.ogv-card-arrow {
+    flex-shrink: 0;
+    color: var(--gray-400);
+    margin-top: 2px;
+    transition: transform 150ms ease, color 150ms ease;
+}
+
+.ogv-tutorial-card:hover .ogv-card-arrow {
+    color: var(--primary-600);
+    transform: translateX(3px);
+}
+
+.ogv-card-summary {
+    margin: 0;
+    font-size: 0.845rem;
+    color: var(--gray-500);
+    line-height: 1.6;
+    flex: 1;
+}
+
+.ogv-step-pill {
+    display: inline-block;
+    margin-top: var(--spacing-sm);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--gray-500);
+    background: var(--gray-100);
+    border-radius: var(--radius-full);
+    padding: 0.2rem 0.65rem;
+    width: fit-content;
+}
+
+/* ── Detail view ──────────────────────────────────────────────────── */
+.ogv-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+}
+
+.ogv-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+    transition: color 150ms ease;
+}
+
+.ogv-back-btn:hover {
+    color: var(--primary-600);
+}
+
+/* ── Detail hero ──────────────────────────────────────────────────── */
+.ogv-detail-hero {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-xl);
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius-2xl);
+    padding: var(--spacing-xl);
+}
+
+.ogv-detail-hero-icon {
+    flex-shrink: 0;
+    width: 80px;
+    height: 80px;
+    border-radius: var(--radius-xl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ogv-detail-hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.ogv-role-pill {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--secondary-700);
+    background: var(--secondary-100);
+    border-radius: var(--radius-full);
+    padding: 0.2rem 0.75rem;
+    width: fit-content;
+}
+
+.ogv-detail-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--gray-900);
+    line-height: 1.2;
+}
+
+.ogv-detail-desc {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--gray-600);
+    line-height: 1.7;
+    max-width: 540px;
+}
+
+/* ── Steps list ───────────────────────────────────────────────────── */
+.ogv-steps-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--gray-400);
+    margin-bottom: calc(-1 * var(--spacing-md));
+}
+
+.ogv-steps-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    counter-reset: none;
+}
+
+.ogv-step-card {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-lg);
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg) var(--spacing-xl);
+    transition: box-shadow 150ms ease;
+}
+
+.ogv-step-card:hover {
+    box-shadow: var(--shadow-sm);
+}
+
+.ogv-step-num {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-full);
+    background: var(--primary-100);
+    color: var(--primary-700);
+    font-size: 0.85rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+}
+
+.ogv-step-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.ogv-step-title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+
+.ogv-step-desc {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--gray-600);
+    line-height: 1.65;
+}
+
+/* ── Tips box ─────────────────────────────────────────────────────── */
+.ogv-tips-box {
+    background: linear-gradient(135deg, var(--primary-50) 0%, var(--secondary-50) 100%);
+    border: 1px solid var(--primary-100);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg) var(--spacing-xl);
+}
+
+.ogv-tips-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--primary-700);
+    margin-bottom: var(--spacing-md);
+}
+
+.ogv-tips-list {
+    margin: 0;
+    padding: 0 0 0 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.ogv-tips-list li {
+    font-size: 0.9rem;
+    color: var(--gray-700);
+    line-height: 1.6;
+}
+
+/* ── Detail footer actions ────────────────────────────────────────── */
+.ogv-detail-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    justify-content: flex-end;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--gray-100);
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────── */
+[data-theme='dark'] .ogv-tutorial-card,
+[data-theme='dark'] .ogv-detail-hero,
+[data-theme='dark'] .ogv-step-card {
+    background: var(--gray-100);
+    border-color: var(--gray-200);
+}
+
+[data-theme='dark'] .ogv-tips-box {
+    background: var(--gray-100);
+    border-color: var(--gray-200);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .ogv-tutorial-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 580px) {
+    .ogv-tutorial-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ogv-detail-hero {
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+
+    .ogv-detail-hero-icon {
+        width: 60px;
+        height: 60px;
+    }
+
+    .ogv-detail-actions {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    .ogv-detail-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}

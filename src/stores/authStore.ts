@@ -28,6 +28,16 @@ export type TreatmentStatus =
     | 'REFER_TO_OUTSIDE_AGENCY';
 
 /**
+ * User account lifecycle status enum
+ */
+export type AccountStatus =
+    | 'ACTIVE'
+    | 'INACTIVE'
+    | 'SUSPENDED'
+    | 'DELETION_REQUESTED'
+    | 'DELETED';
+
+/**
  * User type
  */
 export interface User {
@@ -39,6 +49,10 @@ export interface User {
     role: UserRole;
     state: string | null;
     isActive: boolean;
+    accountStatus: AccountStatus;
+    deletionRequestedAt: string | null;
+    deletedAt: string | null;
+    deletionReason: string | null;
     treatmentStatus?: TreatmentStatus;
     emailVerified: boolean;
     lastLoginAt: string | null;

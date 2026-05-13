@@ -210,6 +210,36 @@
     color: #991b1b;
 }
 
+.status-deletion-requested {
+    background: #ffedd5;
+    color: #9a3412;
+}
+
+.status-deleted {
+    background: var(--gray-200);
+    color: var(--gray-700);
+}
+
+.status-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    max-width: 260px;
+}
+
+.deletion-request-meta {
+    font-size: 0.75rem;
+    color: #9a3412;
+    font-weight: 500;
+}
+
+.deletion-reason-preview {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    line-height: 1.35;
+}
+
 /* Action Buttons */
 .action-buttons {
     display: flex;

@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import { useUserStore } from '../../stores/userStore';
 import { useAuthStore } from '../../stores/authStore';
-import type { UserRole, TreatmentStatus } from '../../stores/authStore';
+import type { AccountStatus, User, UserRole, TreatmentStatus } from '../../stores/authStore';
 import type { CreateUserInput, InviteInfo } from '../../stores/userStore';
 import '../../styles/admin.css';
+
+type UserStatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE' | 'DELETION_REQUESTED';
 
 const ROLES: { value: UserRole; label: string }[] = [
     { value: 'CLIENT', label: 'Client' },
@@ -27,6 +29,35 @@ const TREATMENT_STATUS_OPTIONS: { value: TreatmentStatus; label: string }[] = [
 ];
 
 const STATES = ['CA', 'TX', 'WA', 'TN'];
+
+const USER_STATUS_FILTERS: { value: UserStatusFilter; label: string }[] = [
+    { value: 'ALL', label: 'All Users' },
+    { value: 'ACTIVE', label: 'Active' },
+    { value: 'INACTIVE', label: 'Inactive' },
+    { value: 'DELETION_REQUESTED', label: 'Deletion Requests' },
+];
+
+function getStatusBadge(user: User): { label: string; className: string } {
+    if (user.accountStatus === 'DELETION_REQUESTED') {
+        return { label: 'Deletion Requested', className: 'status-deletion-requested' };
+    }
+
+    if (user.accountStatus === 'DELETED') {
+        return { label: 'Deleted', className: 'status-deleted' };
+    }
+
+    return user.isActive
+        ? { label: 'Active', className: 'status-active' }
+        : { label: 'Inactive', className: 'status-inactive' };
+}
+
+function formatDate(value: string | null): string {
+    return value ? new Date(value).toLocaleDateString() : '—';
+}
+
+function truncateText(value: string, maxLength = 72): string {
+    return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
 
 /**
  * Admin Users Page
@@ -53,6 +84,7 @@ export default function UsersPage() {
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
+    const [statusFilter, setStatusFilter] = useState<UserStatusFilter>('ALL');
     const [currentPage, setCurrentPage] = useState(1);
 
     // Filter out current user from the list
@@ -63,13 +95,24 @@ export default function UsersPage() {
 
     // Fetch users on mount and when filters change
     useEffect(() => {
+        const statusQuery: { isActive?: boolean; accountStatus?: AccountStatus } = {};
+
+        if (statusFilter === 'ACTIVE') {
+            statusQuery.isActive = true;
+        } else if (statusFilter === 'INACTIVE') {
+            statusQuery.isActive = false;
+        } else if (statusFilter === 'DELETION_REQUESTED') {
+            statusQuery.accountStatus = 'DELETION_REQUESTED';
+        }
+
         fetchUsers({
             page: currentPage,
             limit: 10,
             search: searchQuery || undefined,
             role: roleFilter || undefined,
+            ...statusQuery,
         });
-    }, [fetchUsers, currentPage, searchQuery, roleFilter]);
+    }, [fetchUsers, currentPage, searchQuery, roleFilter, statusFilter]);
 
     // Show invite modal when lastInvite changes
     useEffect(() => {
@@ -107,10 +150,10 @@ export default function UsersPage() {
     };
 
     const handleDeleteUser = async (userId: string) => {
-        if (!confirm('Are you sure you want to delete this user?')) return;
+        if (!confirm('This will deactivate the user and revoke active sessions. The database row will be retained. Continue?')) return;
         try {
             await deleteUser(userId);
-            toast.success('User deleted successfully');
+            toast.success('User deactivated successfully');
         } catch (error: any) {
             toast.error(error.message);
         }
@@ -166,18 +209,38 @@ export default function UsersPage() {
                         type="text"
                         placeholder="Search users..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setCurrentPage(1);
+                        }}
                     />
                 </div>
                 <select
                     value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value as UserRole | '')}
+                    onChange={(e) => {
+                        setRoleFilter(e.target.value as UserRole | '');
+                        setCurrentPage(1);
+                    }}
                     className="filter-select"
                 >
                     <option value="">All Roles</option>
                     {ROLES.map((role) => (
                         <option key={role.value} value={role.value}>
                             {role.label}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    value={statusFilter}
+                    onChange={(e) => {
+                        setStatusFilter(e.target.value as UserStatusFilter);
+                        setCurrentPage(1);
+                    }}
+                    className="filter-select"
+                >
+                    {USER_STATUS_FILTERS.map((filter) => (
+                        <option key={filter.value} value={filter.value}>
+                            {filter.label}
                         </option>
                     ))}
                 </select>
@@ -235,9 +298,23 @@ export default function UsersPage() {
                                     </td>
                                     <td>{user.state || '—'}</td>
                                     <td>
-                                        <span className={`status-badge ${user.isActive ? 'status-active' : 'status-inactive'}`}>
-                                            {user.isActive ? 'Active' : 'Inactive'}
-                                        </span>
+                                        <div className="status-cell">
+                                            <span className={`status-badge ${getStatusBadge(user).className}`}>
+                                                {getStatusBadge(user).label}
+                                            </span>
+                                            {user.accountStatus === 'DELETION_REQUESTED' && (
+                                                <>
+                                                    <span className="deletion-request-meta">
+                                                        Requested {formatDate(user.deletionRequestedAt)}
+                                                    </span>
+                                                    {user.deletionReason && (
+                                                        <span className="deletion-reason-preview" title={user.deletionReason}>
+                                                            Reason: {truncateText(user.deletionReason)}
+                                                        </span>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
                                     </td>
                                     <td>
                                         {user.role === 'CLIENT' ? (
@@ -301,7 +378,7 @@ export default function UsersPage() {
                                             </button>
                                             <button
                                                 className="action-btn action-delete"
-                                                title="Delete User"
+                                                title="Deactivate User"
                                                 onClick={() => handleDeleteUser(user.id)}
                                             >
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

@@ -1,0 +1,425 @@
+/* ─── Dialog overlay ─────────────────────────────────────────────────────── */
+.dir-dialog {
+    position: fixed;
+    inset: 0;
+    border: none;
+    background: transparent;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    padding: 1.5rem;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    z-index: 1000;
+}
+
+.dir-dialog::backdrop {
+    background: rgba(10, 15, 20, 0.62);
+    backdrop-filter: blur(14px) saturate(120%);
+}
+
+/* ─── Modal panel ─────────────────────────────────────────────────────────── */
+.dir-modal {
+    width: min(100%, 720px);
+    height: min(88vh, 820px);
+    max-height: min(88vh, 820px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: var(--bg-surface, #fff);
+    animation: dir-modal-in 0.2s ease-out;
+}
+
+@keyframes dir-modal-in {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+.dir-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.5rem 1.5rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+    background: linear-gradient(180deg, rgba(89, 140, 143, 0.06), transparent);
+    flex-shrink: 0;
+}
+
+.dir-modal-header-copy h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--gray-900, #111);
+    line-height: 1.2;
+}
+
+.dir-modal-header-copy p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--gray-600, #555);
+    line-height: 1.5;
+    max-width: 48ch;
+}
+
+.dir-close-btn {
+    flex-shrink: 0;
+    margin-top: -0.125rem;
+}
+
+/* ─── Scrollable body ─────────────────────────────────────────────────────── */
+.dir-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.dir-modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.dir-modal-body::-webkit-scrollbar-thumb {
+    background: rgba(89, 140, 143, 0.22);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+/* ─── Section card ────────────────────────────────────────────────────────── */
+.dir-section {
+    border-radius: 16px;
+    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+    background: var(--bg-card, rgba(248, 250, 252, 0.8));
+    overflow: hidden;
+    transition: box-shadow 0.15s ease;
+    flex-shrink: 0;
+}
+
+.dir-section:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07);
+}
+
+.dir-section-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    padding: 1rem 1.125rem 0.75rem;
+}
+
+.dir-section-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(89, 140, 143, 0.14), rgba(197, 157, 95, 0.12));
+    color: var(--secondary-700, #3d7073);
+}
+
+.dir-section-meta h4 {
+    margin: 0 0 0.2rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--gray-900, #111);
+}
+
+.dir-section-meta p {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--gray-600, #555);
+    line-height: 1.45;
+}
+
+.dir-section-body {
+    border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
+    padding: 0.875rem 1.125rem;
+}
+
+/* ─── Empty state ─────────────────────────────────────────────────────────── */
+.dir-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0;
+}
+
+.dir-empty-state span {
+    font-size: 0.83rem;
+    color: var(--gray-500, #888);
+    font-style: italic;
+    text-align: center;
+    line-height: 1.5;
+}
+
+/* ─── Dark mode ───────────────────────────────────────────────────────────── */
+[data-theme="dark"] .dir-modal {
+    background: var(--bg-surface, #1a1c1e);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .dir-modal-header {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(89, 140, 143, 0.08), transparent);
+}
+
+[data-theme="dark"] .dir-modal-header-copy h3 {
+    color: var(--gray-50, #f5f5f5);
+}
+
+[data-theme="dark"] .dir-modal-header-copy p,
+[data-theme="dark"] .dir-section-meta p,
+[data-theme="dark"] .dir-empty-state span {
+    color: var(--gray-400, #aaa);
+}
+
+[data-theme="dark"] .dir-section {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .dir-section:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .dir-section-body {
+    border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .dir-section-meta h4 {
+    color: var(--gray-100, #eee);
+}
+
+[data-theme="dark"] .dir-contact-card {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .dir-contact-name {
+    color: var(--gray-900);
+}
+
+[data-theme="dark"] .dir-contact-role {
+    color: var(--secondary-400, #7bb8bb);
+}
+
+[data-theme="dark"] .dir-contact-note {
+    color: var(--gray-600);
+}
+
+[data-theme="dark"] .dir-contact-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: var(--gray-800);
+}
+
+[data-theme="dark"] .dir-contact-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .dir-link-item {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: var(--secondary-400, #7bb8bb);
+}
+
+[data-theme="dark"] .dir-link-item:hover {
+    background: rgba(89, 140, 143, 0.12);
+}
+
+/* ─── Contact list ────────────────────────────────────────────────────────── */
+.dir-contact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.dir-contact-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: 12px;
+    background: rgba(89, 140, 143, 0.04);
+    border: 1px solid rgba(89, 140, 143, 0.1);
+    flex-wrap: wrap;
+}
+
+.dir-contact-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
+.dir-contact-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.25;
+}
+
+.dir-contact-role {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--secondary-600);
+}
+
+.dir-contact-note {
+    font-size: 0.78rem;
+    color: var(--gray-600);
+    line-height: 1.4;
+    margin-top: 0.15rem;
+}
+
+.dir-contact-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    flex-shrink: 0;
+    align-items: center;
+}
+
+.dir-contact-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-decoration: none;
+    background: rgba(89, 140, 143, 0.08);
+    border: 1px solid rgba(89, 140, 143, 0.18);
+    color: var(--secondary-700);
+    transition: background 0.15s ease;
+    white-space: nowrap;
+}
+
+.dir-contact-btn:hover {
+    background: rgba(89, 140, 143, 0.15);
+    text-decoration: none;
+}
+
+.dir-contact-btn--email {
+    background: rgba(197, 157, 95, 0.08);
+    border-color: rgba(197, 157, 95, 0.2);
+    color: var(--primary-700);
+}
+
+.dir-contact-btn--email:hover {
+    background: rgba(197, 157, 95, 0.14);
+}
+
+.dir-contact-btn--crisis {
+    background: #fff0f0;
+    border-color: rgba(192, 117, 116, 0.35);
+    color: #7a1f1f;
+    font-weight: 700;
+}
+
+.dir-contact-btn--crisis:hover {
+    background: #fde8e8;
+}
+
+.dir-contact-btn--link {
+    background: rgba(89, 140, 143, 0.06);
+    border-color: rgba(89, 140, 143, 0.14);
+    color: var(--secondary-600);
+}
+
+/* ─── Helpful links list ──────────────────────────────────────────────────── */
+.dir-links-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.dir-link-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.875rem;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--secondary-700);
+    background: rgba(89, 140, 143, 0.05);
+    border: 1px solid rgba(89, 140, 143, 0.12);
+    transition: background 0.15s ease;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.dir-link-item:hover {
+    background: rgba(89, 140, 143, 0.1);
+    text-decoration: none;
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    .dir-dialog {
+        padding: 0.75rem;
+    }
+
+    .dir-modal {
+        width: 100%;
+        height: 94vh;
+        max-height: 94vh;
+        border-radius: 20px;
+    }
+
+    .dir-modal-header {
+        padding: 1.125rem 1.125rem 1rem;
+    }
+
+    .dir-modal-body {
+        padding: 0.75rem 1rem 1rem;
+    }
+
+    .dir-section-header {
+        padding: 0.875rem 1rem 0.625rem;
+    }
+
+    .dir-section-body {
+        padding: 0.75rem 1rem;
+    }
+
+    .dir-contact-card {
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+
+    .dir-contact-actions {
+        width: 100%;
+    }
+}

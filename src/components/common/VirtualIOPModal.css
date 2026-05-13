@@ -1,0 +1,318 @@
+/* ─── Dialog backdrop ─────────────────────────────────────────────────────── */
+.viop-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.52);
+    backdrop-filter: blur(4px);
+    border: none;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+}
+
+/* ─── Modal container ─────────────────────────────────────────────────────── */
+.viop-modal {
+    background: #ffffff;
+    border-radius: 24px;
+    width: 100%;
+    max-width: 580px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.22);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+.viop-modal-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1.375rem 1.375rem 1.125rem;
+    background: linear-gradient(135deg, #598c8f 0%, #3d6e71 100%);
+    border-radius: 24px 24px 0 0;
+    flex-shrink: 0;
+}
+
+.viop-header-copy {
+    flex: 1;
+    min-width: 0;
+}
+
+.viop-header-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(0, 0, 0, 0.18);
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    margin-bottom: 0.45rem;
+}
+
+.viop-header-copy h3 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0 0 0.25rem;
+    line-height: 1.2;
+}
+
+.viop-header-copy p {
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.88);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.viop-close-btn {
+    color: rgba(255, 255, 255, 0.85) !important;
+    flex-shrink: 0;
+    margin-top: -0.2rem;
+}
+
+.viop-close-btn:hover {
+    color: #ffffff !important;
+    background: rgba(0, 0, 0, 0.14) !important;
+}
+
+/* ─── Body ────────────────────────────────────────────────────────────────── */
+.viop-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+    padding: 1.125rem 1.375rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ─── Section ─────────────────────────────────────────────────────────────── */
+.viop-section {
+    display: flex;
+    gap: 0.875rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.viop-section--last {
+    border-bottom: none;
+}
+
+.viop-section-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(89, 140, 143, 0.1);
+    border: 1px solid rgba(89, 140, 143, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--secondary-700, #3d6e71);
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+.viop-section-icon--gold {
+    background: rgba(197, 157, 95, 0.1);
+    border-color: rgba(197, 157, 95, 0.2);
+    color: var(--primary-700, #9a711e);
+}
+
+.viop-section-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.viop-section-content h4 {
+    font-size: 0.925rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin: 0 0 0.45rem;
+    line-height: 1.25;
+}
+
+.viop-section-content p {
+    font-size: 0.85rem;
+    color: var(--gray-700);
+    line-height: 1.55;
+    margin: 0 0 0.6rem;
+}
+
+.viop-section-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* ─── Schedule grid ───────────────────────────────────────────────────────── */
+.viop-schedule-grid {
+    display: flex;
+    gap: 0.75rem;
+    margin: 0.625rem 0;
+    flex-wrap: wrap;
+}
+
+.viop-schedule-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.6rem 0.875rem;
+    border-radius: 12px;
+    background: rgba(89, 140, 143, 0.07);
+    border: 1px solid rgba(89, 140, 143, 0.14);
+    flex: 1 1 130px;
+}
+
+.viop-slot-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--secondary-600, #3d6e71);
+}
+
+.viop-slot-time {
+    font-size: 0.925rem;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+
+.viop-note {
+    font-size: 0.8rem !important;
+    color: var(--gray-600) !important;
+    font-style: italic;
+}
+
+/* ─── Topics list ─────────────────────────────────────────────────────────── */
+.viop-topics-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.viop-topic-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--gray-800);
+    font-weight: 500;
+}
+
+.viop-topic-item::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--secondary-500, #598c8f);
+    flex-shrink: 0;
+}
+
+/* ─── Footer ──────────────────────────────────────────────────────────────── */
+.viop-modal-footer {
+    padding: 0.875rem 1.375rem 1.125rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    display: flex;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+.viop-got-it-btn {
+    min-width: 140px;
+}
+
+/* ─── Dark mode ───────────────────────────────────────────────────────────── */
+[data-theme="dark"] .viop-modal {
+    background: var(--bg-surface);
+}
+
+[data-theme="dark"] .viop-section {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .viop-section-icon {
+    background: rgba(89, 140, 143, 0.12);
+    border-color: rgba(89, 140, 143, 0.22);
+    color: var(--secondary-400, #7bb8bb);
+}
+
+[data-theme="dark"] .viop-section-icon--gold {
+    background: rgba(197, 157, 95, 0.1);
+    border-color: rgba(197, 157, 95, 0.2);
+    color: var(--primary-400, #d4aa6a);
+}
+
+[data-theme="dark"] .viop-section-content h4 {
+    color: var(--gray-900);
+}
+
+[data-theme="dark"] .viop-section-content p {
+    color: var(--gray-600);
+}
+
+[data-theme="dark"] .viop-schedule-slot {
+    background: rgba(89, 140, 143, 0.08);
+    border-color: rgba(89, 140, 143, 0.18);
+}
+
+[data-theme="dark"] .viop-slot-label {
+    color: var(--secondary-400, #7bb8bb);
+}
+
+[data-theme="dark"] .viop-slot-time {
+    color: var(--gray-900);
+}
+
+[data-theme="dark"] .viop-note {
+    color: var(--gray-600) !important;
+}
+
+[data-theme="dark"] .viop-topic-item {
+    color: var(--gray-800);
+}
+
+[data-theme="dark"] .viop-modal-footer {
+    border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    .viop-dialog {
+        padding: 0.75rem;
+        align-items: flex-end;
+    }
+
+    .viop-modal {
+        max-height: 92vh;
+        border-radius: 20px 20px 0 0;
+    }
+
+    .viop-modal-header {
+        border-radius: 20px 20px 0 0;
+        padding: 1.125rem 1.125rem 1rem;
+    }
+
+    .viop-modal-body {
+        padding: 0.875rem 1.125rem;
+    }
+
+    .viop-modal-footer {
+        padding: 0.75rem 1.125rem 1rem;
+    }
+
+    .viop-got-it-btn {
+        width: 100%;
+    }
+}

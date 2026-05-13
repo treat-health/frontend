@@ -22,9 +22,14 @@ import SessionRoom from './pages/session/SessionRoom';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import Layout from './components/layout/Layout';
 import MyIssues from './pages/issues/MyIssues';
+import SupportPage from './pages/support/SupportPage';
 import AdminIssues from './pages/admin/issues/AdminIssues';
 import ProgramFeedbackPage from './pages/feedback/ProgramFeedbackPage';
 import AdminProgramFeedbackPage from './pages/admin/feedback/AdminProgramFeedbackPage';
+import OnboardingGuidePage from './pages/guides/OnboardingGuidePage';
+import FirstDaysPage from './pages/guides/FirstDaysPage';
+import JoinAppointmentGuidePage from './pages/guides/JoinAppointmentGuidePage';
+import VirtualIOPPage from './pages/guides/VirtualIOPPage';
 
 /**
  * Protected Route Component
@@ -168,6 +173,38 @@ export default function App() {
                         </ProtectedRoute>
                     }
                 />
+                <Route
+                    path="/guides/onboarding"
+                    element={
+                        <ProtectedRoute>
+                            <OnboardingGuidePage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/guides/first-days"
+                    element={
+                        <ProtectedRoute>
+                            <FirstDaysPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/guides/join-appointment"
+                    element={
+                        <ProtectedRoute>
+                            <JoinAppointmentGuidePage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/guides/virtual-iop"
+                    element={
+                        <ProtectedRoute>
+                            <VirtualIOPPage />
+                        </ProtectedRoute>
+                    }
+                />
 
                 {/* Session Room Route */}
                 <Route
@@ -279,6 +316,16 @@ export default function App() {
                     element={
                         <ProtectedRoute>
                             <MyIssues />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* Support Route */}
+                <Route
+                    path="/support"
+                    element={
+                        <ProtectedRoute>
+                            <SupportPage />
                         </ProtectedRoute>
                     }
                 />

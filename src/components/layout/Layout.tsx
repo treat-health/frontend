@@ -3,6 +3,9 @@ import {
     LayoutDashboard,
     MessageSquare,
     Calendar,
+    BookOpen,
+    Video,
+    Monitor,
     Users,
     Settings,
     LogOut,
@@ -16,7 +19,9 @@ import {
     Sun,
     Moon,
     HelpCircle,
+    LifeBuoy,
     Sparkles,
+    PhoneCall,
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
@@ -25,6 +30,8 @@ import { useNotificationStore } from '../../stores/notificationStore';
 import { getSocket } from '../../lib/socket';
 import BrandLogo from '../common/BrandLogo';
 import HelpWizard from '../common/HelpWizard';
+import DirectoriesView from '../../pages/dashboard/views/DirectoriesView';
+import EmergencyModal from '../common/EmergencyModal';
 import '../../styles/layout.css';
 import type { AppNotification } from '../../stores/notificationStore';
 
@@ -67,6 +74,7 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                 { path: '/therapist/clients', icon: Users, label: 'My Clients' },
                 { path: '/therapist/appointments', icon: Calendar, label: 'Appointments' },
+                { path: '/support', icon: LifeBuoy, label: 'Support' },
                 ...baseItems,
             ];
 
@@ -75,6 +83,7 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                 { path: '/clients', icon: Users, label: 'Clients' },
                 { path: '/appointments', icon: Calendar, label: 'Appointments' },
+                { path: '/support', icon: LifeBuoy, label: 'Support' },
                 ...baseItems,
             ];
 
@@ -83,6 +92,11 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
             return [
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                 { path: '/appointments', icon: Calendar, label: 'My Appointments' },
+                { path: '/guides/onboarding', icon: BookOpen, label: 'Onboarding Guide' },
+                { path: '/guides/first-days', icon: Calendar, label: 'First Days Overview' },
+                { path: '/guides/join-appointment', icon: Video, label: 'How to Join Appointment' },
+                { path: '/guides/virtual-iop', icon: Monitor, label: 'Virtual IOP' },
+                { path: '/support', icon: LifeBuoy, label: 'Support' },
                 ...baseItems,
             ];
     }
@@ -125,6 +139,8 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
     const [showDropdown, setShowDropdown] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
     const [showHelpWizard, setShowHelpWizard] = useState(false);
+    const [showDirectories, setShowDirectories] = useState(false);
+    const [showEmergency, setShowEmergency] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const notificationPanelRef = useRef<HTMLDivElement | null>(null);
@@ -278,6 +294,21 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
                     ))}
                 </nav>
 
+                {/* Emergency button — client only */}
+                {user?.role === 'CLIENT' && (
+                    <div className="sidebar-emergency-wrapper">
+                        <button
+                            type="button"
+                            className={`sidebar-emergency-btn ${sidebarOpen ? '' : 'collapsed'}`}
+                            onClick={() => setShowEmergency(true)}
+                            title="Crisis & Emergency Resources"
+                        >
+                            <PhoneCall size={18} />
+                            {sidebarOpen && <span>Emergency Resources</span>}
+                        </button>
+                    </div>
+                )}
+
                 {/* Connection Status */}
                 {sidebarOpen && (
                     <div className="sidebar-status">
@@ -326,8 +357,12 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
                     </div>
                     <div className="header-right">
                         {user?.role !== 'ADMIN' && user?.role !== 'PROGRAM_DIRECTOR' && (
-                            <button className="btn btn-icon btn-ghost header-btn" onClick={() => setShowHelpWizard(true)} title="Help & Support">
-                                <HelpCircle size={20} />
+                            <button
+                                className="btn btn-ghost header-btn header-dir-btn"
+                                onClick={() => setShowDirectories(true)}
+                                title="Directories and Resources"
+                            >
+                                <span className="header-dir-label">Directories &amp; Resources</span>
                             </button>
                         )}
                         <button className="btn btn-icon btn-ghost header-btn" onClick={toggleTheme} title="Toggle Dark Mode">
@@ -447,12 +482,17 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
 
                 {/* Page Content */}
                 <main className="app-content">
-                    {children}
+                    {showDirectories
+                        ? <DirectoriesView onClose={() => setShowDirectories(false)} />
+                        : children}
                 </main>
             </div>
 
-            {/* Help & Support Wizard */}
+            {/* Help Wizard (used by Onboarding Guide on dashboard) */}
             <HelpWizard isOpen={showHelpWizard} onClose={() => setShowHelpWizard(false)} />
+            {/* Directories & Resources panel is rendered inline in app-content above */}
+            {/* Crisis & Emergency Resources */}
+            <EmergencyModal isOpen={showEmergency} onClose={() => setShowEmergency(false)} />
         </div>
     );
 }

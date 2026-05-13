@@ -1,0 +1,415 @@
+/* ── Join Guide View ───────────────────────────────────────────────── */
+
+/* Intro ─────────────────────────────────────────────────────────── */
+.jgv-intro {
+    background: linear-gradient(135deg, var(--secondary-700) 0%, #2a5f62 100%);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-10) var(--spacing-10) var(--spacing-8);
+    color: #fff;
+    margin-bottom: var(--spacing-8);
+}
+
+.jgv-intro-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    padding: 4px 14px 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #fff;
+    margin-bottom: var(--spacing-4);
+}
+
+.jgv-intro-headline {
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0 0 var(--spacing-3);
+    color: #fff;
+}
+
+.jgv-intro-body {
+    font-size: 0.97rem;
+    line-height: 1.65;
+    color: rgba(255, 255, 255, 0.85);
+    max-width: 640px;
+    margin: 0;
+}
+
+/* Section chrome ─────────────────────────────────────────────────── */
+.jgv-section {
+    margin-bottom: var(--spacing-10);
+}
+
+.jgv-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--secondary-600);
+    margin-bottom: var(--spacing-1);
+}
+
+.jgv-section-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin: 0 0 var(--spacing-5);
+}
+
+/* Equipment grid ─────────────────────────────────────────────────── */
+.jgv-equipment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-4);
+}
+
+.jgv-equipment-card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-4) var(--spacing-5);
+    transition: box-shadow 0.18s, transform 0.18s;
+}
+
+.jgv-equipment-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.jgv-equipment-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    flex-shrink: 0;
+}
+
+.jgv-equipment-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.jgv-equipment-label {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+
+.jgv-equipment-detail {
+    font-size: 0.78rem;
+    color: var(--gray-500);
+}
+
+.jgv-equipment-check {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.jgv-equipment-check::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -55%) rotate(45deg);
+    width: 5px;
+    height: 8px;
+    border-right: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+}
+
+.jgv-equipment-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: var(--gray-600);
+    background: var(--gray-50);
+    border-left: 3px solid var(--secondary-400);
+    padding: var(--spacing-2) var(--spacing-4);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    margin: 0;
+}
+
+/* Steps list ─────────────────────────────────────────────────────── */
+.jgv-steps-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+    counter-reset: none;
+}
+
+.jgv-step-card {
+    display: flex;
+    gap: var(--spacing-5);
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-5) var(--spacing-6);
+    transition: box-shadow 0.18s, transform 0.18s;
+}
+
+.jgv-step-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.jgv-step-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--secondary-600), var(--secondary-700));
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.jgv-step-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.jgv-step-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin: 0 0 var(--spacing-2);
+}
+
+.jgv-step-desc {
+    font-size: 0.91rem;
+    line-height: 1.65;
+    color: var(--gray-600);
+    margin: 0;
+}
+
+.jgv-step-tip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: var(--spacing-3);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--primary-700);
+    background: var(--primary-50);
+    border: 1px solid var(--primary-200);
+    border-radius: 999px;
+    padding: 3px 12px 3px 8px;
+}
+
+/* Troubleshooting accordion ─────────────────────────────────────── */
+.jgv-accordion-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.jgv-accordion-item {
+    background: var(--gray-50);
+    border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: border-color 0.18s;
+}
+
+.jgv-accordion-item--open {
+    border-color: var(--secondary-300);
+}
+
+.jgv-accordion-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-4);
+    background: none;
+    border: none;
+    padding: var(--spacing-4) var(--spacing-5);
+    cursor: pointer;
+    text-align: left;
+}
+
+.jgv-accordion-q {
+    font-size: 0.93rem;
+    font-weight: 600;
+    color: var(--gray-900);
+    flex: 1;
+}
+
+.jgv-accordion-chevron {
+    color: var(--gray-400);
+    flex-shrink: 0;
+    transition: transform 0.22s ease;
+}
+
+.jgv-accordion-item--open .jgv-accordion-chevron {
+    transform: rotate(180deg);
+    color: var(--secondary-600);
+}
+
+.jgv-accordion-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.28s ease;
+}
+
+.jgv-accordion-item--open .jgv-accordion-body {
+    max-height: 300px;
+}
+
+.jgv-accordion-answer {
+    padding: 0 var(--spacing-5) var(--spacing-4);
+    font-size: 0.91rem;
+    line-height: 1.65;
+    color: var(--gray-600);
+    margin: 0;
+}
+
+/* Footer ─────────────────────────────────────────────────────────── */
+.jgv-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-5);
+    background: linear-gradient(135deg, #f0f7f8 0%, #e8f4f5 100%);
+    border: 1.5px solid var(--secondary-200);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-6) var(--spacing-8);
+    margin-bottom: var(--spacing-2);
+    flex-wrap: wrap;
+}
+
+.jgv-footer-copy {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-4);
+}
+
+.jgv-footer-icon {
+    color: var(--secondary-600);
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.jgv-footer-heading {
+    font-size: 0.97rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin: 0 0 2px;
+}
+
+.jgv-footer-sub {
+    font-size: 0.85rem;
+    color: var(--gray-600);
+    margin: 0;
+    max-width: 380px;
+}
+
+.jgv-footer-actions {
+    display: flex;
+    gap: var(--spacing-3);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+/* ── Dark Mode ─────────────────────────────────────────────────────── */
+[data-theme='dark'] .jgv-section-title {
+    color: var(--gray-100);
+}
+
+[data-theme='dark'] .jgv-equipment-card,
+[data-theme='dark'] .jgv-step-card,
+[data-theme='dark'] .jgv-accordion-item,
+[data-theme='dark'] .jgv-equipment-note {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+[data-theme='dark'] .jgv-equipment-label,
+[data-theme='dark'] .jgv-step-title,
+[data-theme='dark'] .jgv-accordion-q {
+    color: var(--gray-100);
+}
+
+[data-theme='dark'] .jgv-equipment-detail,
+[data-theme='dark'] .jgv-step-desc,
+[data-theme='dark'] .jgv-accordion-answer,
+[data-theme='dark'] .jgv-equipment-note {
+    color: var(--gray-400);
+}
+
+[data-theme='dark'] .jgv-footer {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+}
+
+[data-theme='dark'] .jgv-footer-heading {
+    color: var(--gray-100);
+}
+
+[data-theme='dark'] .jgv-footer-sub {
+    color: var(--gray-400);
+}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    .jgv-intro {
+        padding: var(--spacing-6);
+    }
+
+    .jgv-intro-headline {
+        font-size: 1.3rem;
+    }
+
+    .jgv-equipment-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .jgv-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: var(--spacing-5) var(--spacing-5);
+    }
+
+    .jgv-footer-actions {
+        width: 100%;
+    }
+
+    .jgv-footer-actions .btn {
+        flex: 1;
+    }
+
+    .jgv-step-card {
+        padding: var(--spacing-4);
+    }
+}

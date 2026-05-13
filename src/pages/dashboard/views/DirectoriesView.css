@@ -1,0 +1,322 @@
+/* ── Intro banner ─────────────────────────────────────────────────── */
+.dir-view-intro {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-lg);
+    background: linear-gradient(135deg, var(--secondary-50) 0%, var(--primary-50) 100%);
+    border: 1px solid var(--secondary-100);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg) var(--spacing-xl);
+    margin-bottom: var(--spacing-2xl);
+}
+
+.dir-view-intro-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-lg);
+    background: var(--secondary-100);
+    color: var(--secondary-700);
+}
+
+.dir-view-intro-heading {
+    margin: 0 0 0.3rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+
+.dir-view-intro-body {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--gray-600);
+    line-height: 1.7;
+}
+
+/* ── Section wrapper ──────────────────────────────────────────────── */
+.dir-view-section {
+    margin-bottom: var(--spacing-2xl);
+}
+
+.dir-view-section-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.dir-view-section-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-lg);
+}
+
+.dir-view-section-icon--team  { background: var(--primary-100);   color: var(--primary-700); }
+.dir-view-section-icon--crisis { background: #FEE2E2;              color: #DC2626; }
+.dir-view-section-icon--links  { background: var(--secondary-100); color: var(--secondary-700); }
+
+.dir-view-section-title {
+    margin: 0 0 0.2rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+
+.dir-view-section-sub {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--gray-500);
+}
+
+/* ── Care Team grid ───────────────────────────────────────────────── */
+.dir-view-team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.dir-view-contact-card {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg);
+    transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.dir-view-contact-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--gray-200);
+    transform: translateY(-2px);
+}
+
+/* Avatar circle */
+.dir-view-avatar {
+    flex-shrink: 0;
+    width: 50px;
+    height: 50px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.dir-view-contact-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.dir-view-contact-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.2;
+}
+
+.dir-view-role-badge {
+    display: inline-block;
+    width: fit-content;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 0.18rem 0.6rem;
+    border-radius: var(--radius-full);
+    background: var(--primary-100);
+    color: var(--primary-700);
+}
+
+.dir-view-contact-note {
+    margin: 0.1rem 0 0;
+    font-size: 0.78rem;
+    color: var(--gray-500);
+    line-height: 1.55;
+}
+
+.dir-view-contact-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-sm);
+}
+
+/* ── Shared action button ─────────────────────────────────────────── */
+.dir-view-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.32rem 0.75rem;
+    border-radius: var(--radius-full);
+    text-decoration: none;
+    transition: background 150ms ease, filter 150ms ease;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.dir-view-action-btn--phone {
+    background: var(--primary-100);
+    color: var(--primary-700);
+}
+.dir-view-action-btn--phone:hover { background: var(--primary-200); }
+
+.dir-view-action-btn--email {
+    background: var(--secondary-100);
+    color: var(--secondary-700);
+}
+.dir-view-action-btn--email:hover { background: var(--secondary-200); }
+
+.dir-view-action-btn--crisis {
+    background: #FEE2E2;
+    color: #B91C1C;
+}
+.dir-view-action-btn--crisis:hover { background: #FECACA; }
+
+.dir-view-action-btn--link {
+    background: var(--gray-100);
+    color: var(--gray-700);
+}
+.dir-view-action-btn--link:hover { background: var(--gray-200); }
+
+/* ── Emergency / Crisis lines ─────────────────────────────────────── */
+.dir-view-crisis-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.dir-view-crisis-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-left: 4px solid var(--gray-300);
+    border-radius: var(--radius-lg);
+    flex-wrap: wrap;
+    transition: box-shadow 180ms ease;
+}
+
+.dir-view-crisis-card:hover {
+    box-shadow: var(--shadow-sm);
+}
+
+.dir-view-crisis-card--urgent {
+    background: #FFF8F8;
+    border-color: #FECACA;
+    border-left-color: #DC2626;
+}
+
+.dir-view-crisis-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.dir-view-crisis-name {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 0.25rem;
+}
+
+.dir-view-crisis-detail {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--gray-500);
+    line-height: 1.55;
+}
+
+.dir-view-crisis-actions {
+    /* 2-column grid: col 1 = Website pill (or empty), col 2 = Phone */
+    display: grid;
+    grid-template-columns: 108px 148px;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Phone always in column 2 — keeps numbers in a perfect vertical column
+   regardless of whether a Website pill is present in col 1              */
+.dir-view-crisis-phone {
+    grid-column: 2;
+    width: 148px;
+    justify-content: center;
+    text-align: center;
+}
+
+/* ── Helpful links ────────────────────────────────────────────────── */
+.dir-view-links-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+}
+
+.dir-view-link-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.1rem;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-full);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--secondary-700);
+    text-decoration: none;
+    transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease,
+        transform 150ms ease;
+}
+
+.dir-view-link-pill:hover {
+    background: var(--secondary-50);
+    border-color: var(--secondary-300);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    .dir-view-intro {
+        flex-direction: column;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+    }
+
+    .dir-view-team-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dir-view-crisis-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .dir-view-crisis-actions {
+        width: 100%;
+        min-width: unset;
+        justify-content: flex-start;
+    }
+
+    .dir-view-crisis-phone {
+        min-width: unset;
+    }
+}
