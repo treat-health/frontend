@@ -14,9 +14,10 @@ import type { HealthQuote } from '../../services/quote.service';
 import { FAQS } from './views/FaqView';
 import './DashboardPage.css';
 
-const HERO_MISSION_POINTS = [
+const MISSION_SHORT = 'Welcome to Treat Mental Health’s virtual treatment program. We are committed to providing compassionate, individualized care that integrates seamlessly into your daily life. Our program is designed to meet you where you are, offering a safe, confidential, and accessible environment to focus on your well-being.';
+
+const MISSION_EXPANDED_PARAGRAPHS = [
     'At Treat Mental Health, our core mission is to provide empathetic and exceptional care to anyone entering our digital realm. We believe all individuals have the capacity for growth, and our devoted team of mental health experts is dedicated to guiding you on your path to emotional wellness and healing.',
-    'Welcome to Treat Mental Health’s virtual treatment program. We are committed to providing compassionate, individualized care that integrates seamlessly into your daily life. Our program is designed to meet you where you are, offering a safe, confidential, and accessible environment to focus on your well-being.',
     'With the support of our skilled team of professionals, you will receive evidence-based care tailored to your unique needs—whether you are managing stress, processing trauma, or seeking guidance through other mental health challenges. Our goal is to help you make meaningful progress and foster lasting growth, one step at a time.',
 ] as const;
 
@@ -40,6 +41,7 @@ export default function DashboardPage() {
     const [quote, setQuote] = useState<HealthQuote>(DEFAULT_QUOTE);
     const [isQuoteLoading, setIsQuoteLoading] = useState(true);
     const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+    const [missionExpanded, setMissionExpanded] = useState(false);
 
     useEffect(() => {
         fetchAppointments();
@@ -120,7 +122,7 @@ export default function DashboardPage() {
         <div className="page-content">
             <div className="card dashboard-hero-card">
                 <img
-                    src="https://images.unsplash.com/photo-1573497491208-6b1acb260507?w=1200&q=80&auto=format&fit=crop"
+                    src="/dashboard-hero-bg.jpg"
                     alt=""
                     className="dashboard-hero-bg"
                     aria-hidden="true"
@@ -154,11 +156,24 @@ export default function DashboardPage() {
                             <span>Our Mission</span>
                         </div>
                         <div className="dashboard-hero-mission-body">
-                            {HERO_MISSION_POINTS.map((point) => (
-                                <p key={point} className="dashboard-hero-mission-text">
-                                    {point}
-                                </p>
-                            ))}
+                            <p className="dashboard-hero-mission-text">
+                                {MISSION_SHORT}
+                            </p>
+                            <div className={`dashboard-hero-mission-expand${missionExpanded ? ' dashboard-hero-mission-expand--open' : ''}`} aria-hidden={!missionExpanded}>
+                                <div className="dashboard-hero-mission-expand-inner">
+                                    {MISSION_EXPANDED_PARAGRAPHS.map((p) => (
+                                        <p key={p} className="dashboard-hero-mission-text">{p}</p>
+                                    ))}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="dashboard-hero-mission-toggle"
+                                onClick={() => setMissionExpanded((v) => !v)}
+                                aria-expanded={missionExpanded}
+                            >
+                                {missionExpanded ? 'Show Less ↑' : 'Learn More ↓'}
+                            </button>
                         </div>
                     </div>
                 </div>

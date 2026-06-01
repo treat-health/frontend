@@ -5,7 +5,7 @@
     display: block;
     position: relative;
     overflow: hidden;
-    min-height: 300px;
+    min-height: 320px;
     padding: clamp(1.5rem, 2vw, 2rem);
 }
 
@@ -13,9 +13,22 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(110deg, rgba(22, 28, 45, 0.84) 0%, rgba(34, 44, 66, 0.72) 45%, rgba(60, 77, 111, 0.38) 100%);
+    background: linear-gradient(110deg, rgba(10, 15, 30, 0.78) 0%, rgba(18, 28, 50, 0.64) 50%, rgba(20, 40, 80, 0.34) 100%);
     z-index: 0;
 }
+
+/* .dashboard-hero-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center center;
+    z-index: 0;
+    opacity: 0.72;
+    pointer-events: none;
+    user-select: none;
+} */
 
 .dashboard-hero-bg {
     position: absolute;
@@ -23,9 +36,9 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center 42%;
+    object-position: 50% 30%;
     z-index: 0;
-    opacity: 0.42;
+    opacity: 0.72;
     pointer-events: none;
     user-select: none;
 }
@@ -122,6 +135,54 @@
     color: rgba(255, 255, 255, 0.92);
     line-height: 1.65;
     font-size: 0.98rem;
+}
+
+/* Expandable mission paragraphs */
+.dashboard-hero-mission-expand {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.36s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+}
+
+.dashboard-hero-mission-expand-inner {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.dashboard-hero-mission-expand > * {
+    overflow: hidden;
+}
+
+.dashboard-hero-mission-expand--open {
+    grid-template-rows: 1fr;
+}
+
+.dashboard-hero-mission-expand-inner .dashboard-hero-mission-text:first-child {
+    padding-top: 0.1rem;
+}
+
+/* Learn More / Show Less toggle */
+.dashboard-hero-mission-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.75rem;
+    background: rgba(15, 23, 42, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 999px;
+    color: #ffffff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 0.3rem 0.9rem;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.dashboard-hero-mission-toggle:hover {
+    background: rgba(15, 23, 42, 0.58);
+    border-color: rgba(255, 255, 255, 0.34);
 }
 
 .dashboard-hero-quote-loading {
@@ -383,7 +444,7 @@
 
 @media (max-width: 640px) {
     .dashboard-hero-card {
-        min-height: 0;
+        min-height: 280px;
         padding: 1.25rem;
     }
 
