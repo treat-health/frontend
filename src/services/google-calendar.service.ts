@@ -15,6 +15,16 @@ export interface GoogleCalendarSyncQueueResponse {
     therapistId: string;
     lookaheadDays?: number | null;
     mode?: string;
+    executeNow?: boolean;
+    noSessionsFound?: boolean;
+    eventCount?: number;
+    importedSessions?: number;
+    updatedSessions?: number;
+    createdClients?: number;
+    skippedEvents?: number;
+    warnings?: string[];
+    errors?: Array<{ eventId?: string; email?: string; message: string }>;
+    lastSyncedAt?: string | null;
     queuedAt?: string;
     requestMeta?: {
         ipAddress?: string | null;
@@ -50,10 +60,11 @@ export class GoogleCalendarService {
         return response.data.data;
     }
 
-    async sync(lookaheadDays?: number): Promise<GoogleCalendarSyncQueueResponse> {
+    async sync(lookaheadDays?: number, executeNow = true): Promise<GoogleCalendarSyncQueueResponse> {
         const response = await api.post<ApiResponse<GoogleCalendarSyncQueueResponse>>('/integrations/google/sync', {
             lookaheadDays,
             mode: 'manual',
+            executeNow,
         });
 
         if (!response.data.success || !response.data.data) {

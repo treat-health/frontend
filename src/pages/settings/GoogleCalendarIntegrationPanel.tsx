@@ -301,9 +301,29 @@ export default function GoogleCalendarIntegrationPanel() {
         setIsSyncing(true);
 
         try {
-            const result = await googleCalendarService.sync(parsedLookahead);
-            const jobLabel = result.jobId ? ` (#${result.jobId})` : '';
-            toast.success(`Google Calendar sync queued${jobLabel}`);
+            const result = await googleCalendarService.sync(parsedLookahead, true);
+
+            if (result.executeNow) {
+                if (result.noSessionsFound || result.eventCount === 0) {
+                    toast('No upcoming sessions found in Google Calendar', { icon: '📭' });
+                } else {
+                    const imported = result.importedSessions ?? 0;
+                    const updated = result.updatedSessions ?? 0;
+                    const clients = result.createdClients ?? 0;
+                    toast.success(`Google Calendar synced: ${imported} imported, ${updated} updated, ${clients} clients created`);
+                }
+
+                if ((result.warnings?.length ?? 0) > 0) {
+                    const firstWarning = result.warnings?.[0];
+                    if (firstWarning) {
+                        toast(firstWarning, { icon: 'ℹ️' });
+                    }
+                }
+            } else {
+                const jobLabel = result.jobId ? ` (#${result.jobId})` : '';
+                toast.success(`Google Calendar sync queued${jobLabel}`);
+            }
+
             await loadStatus();
         } catch (syncError: any) {
             const message = syncError?.response?.data?.message || syncError?.message || 'Failed to queue Google Calendar sync';
