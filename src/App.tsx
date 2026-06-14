@@ -218,6 +218,14 @@ export default function App() {
 
                 {/* Therapist Routes */}
                 <Route
+                    path="/therapist/sessions"
+                    element={
+                        <ProtectedRoute>
+                            <TherapistAppointmentsPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
                     path="/therapist/appointments"
                     element={
                         <ProtectedRoute>

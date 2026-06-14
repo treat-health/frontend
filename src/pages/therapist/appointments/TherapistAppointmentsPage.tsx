@@ -5,6 +5,7 @@ import { toast } from 'react-hot-toast';
 import api from '../../../lib/api';
 import { connectSocket, getSocket } from '../../../lib/socket';
 import { schedulingService } from '../../../services/scheduling.service';
+import UnifiedSessionWizard from '../../admin/sessions/wizard/UnifiedSessionWizard';
 import './TherapistAppointmentsPage.css';
 import '../../dashboard/ClientSessionsPage.css'; // Reuse calendar grid base styles
 
@@ -28,6 +29,7 @@ interface ClientSummary {
     firstName: string;
     lastName: string;
     email: string;
+    state?: string | null;
 }
 
 type CalendarData = Record<string, CalendarSession[]>;
@@ -88,6 +90,8 @@ export default function TherapistAppointmentsPage() {
     const [clients, setClients] = useState<ClientSummary[]>([]);
     const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
     const [isLoadingClients, setIsLoadingClients] = useState(false);
+    const [isWizardOpen, setIsWizardOpen] = useState(false);
+    const [calendarRefreshSignal, setCalendarRefreshSignal] = useState(0);
 
     // Popover
     const [popoverDate, setPopoverDate] = useState<Date | null>(null);
@@ -107,8 +111,8 @@ export default function TherapistAppointmentsPage() {
         (async () => {
             setIsLoadingClients(true);
             try {
-                const res = await api.get('/sessions/my-clients');
-                setClients(res.data || []);
+                const res = await api.get('/assignments/my-clients');
+                setClients(res.data?.data || []);
             } catch {
                 setClients([]);
             } finally {
@@ -130,7 +134,7 @@ export default function TherapistAppointmentsPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [monthKey, selectedClientId]);
+    }, [calendarRefreshSignal, monthKey, selectedClientId]);
 
     useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
 
@@ -368,12 +372,17 @@ export default function TherapistAppointmentsPage() {
             {/* ── Calendar Area ── */}
             <div className="therapist-calendar-area">
                 <div className="therapist-calendar-header">
-                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month - 1, 1))}>
-                        <ChevronLeft size={18} />
-                    </button>
-                    <h3 className="therapist-calendar-title">{monthLabel}</h3>
-                    <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month + 1, 1))}>
-                        <ChevronRight size={18} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month - 1, 1))}>
+                            <ChevronLeft size={18} />
+                        </button>
+                        <h3 className="therapist-calendar-title">{monthLabel}</h3>
+                        <button className="calendar-nav-btn" onClick={() => setCurrentMonth(createUtcDate(year, month + 1, 1))}>
+                            <ChevronRight size={18} />
+                        </button>
+                    </div>
+                    <button className="btn btn-primary" onClick={() => setIsWizardOpen(true)}>
+                        Create Session
                     </button>
                 </div>
 
@@ -598,6 +607,18 @@ export default function TherapistAppointmentsPage() {
                         </form>
                     </section>
                 </div>
+            )}
+
+            {isWizardOpen && (
+                <UnifiedSessionWizard
+                    scope="therapist"
+                    onClose={() => setIsWizardOpen(false)}
+                    onSuccess={() => {
+                        setIsWizardOpen(false);
+                        setCalendarRefreshSignal((value) => value + 1);
+                        void fetchCalendar();
+                    }}
+                />
             )}
         </div>
     );

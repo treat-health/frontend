@@ -25,6 +25,7 @@ import {
     mapUtcAvailabilityTemplateToLocalSchedule,
     type AvailabilityDayName,
 } from '../../../settings/availabilityTimezoneUtils';
+import { useAuthStore } from '../../../../stores/authStore';
 
 type TimezonePreviewProps = Readonly<{
     title: string;
@@ -585,7 +586,8 @@ function WeeklyAvailabilityRows({ days, therapistTimezone, adminLocalTimezone }:
     );
 }
 
-function useSelectedTherapistAvailability(therapistId: string | null) {
+function useSelectedTherapistAvailability(therapistId: string | null, scope: 'admin' | 'therapist') {
+    const { user } = useAuthStore();
     const [selectedTherapist, setSelectedTherapist] = useState<TherapistSummary | null>(null);
     const [weeklyTemplate, setWeeklyTemplate] = useState<TherapistAvailabilityTemplateDay[]>([]);
     const [templateLoading, setTemplateLoading] = useState(false);
@@ -607,8 +609,22 @@ function useSelectedTherapistAvailability(therapistId: string | null) {
             setTemplateError(null);
 
             try {
+                const therapistPromise = scope === 'therapist' && user?.id === therapistId
+                    ? Promise.resolve({
+                        data: {
+                            data: {
+                                id: user.id,
+                                firstName: user.firstName,
+                                lastName: user.lastName,
+                                email: user.email,
+                                state: user.state,
+                            } as TherapistSummary,
+                        },
+                    })
+                    : api.get<ApiResponse<TherapistSummary>>(`/users/${therapistId}`);
+
                 const [therapistResponse, templateResponse] = await Promise.all([
-                    api.get<ApiResponse<TherapistSummary>>(`/users/${therapistId}`),
+                    therapistPromise,
                     api.get<ApiResponse<TherapistAvailabilityTemplateDay[]>>(`/scheduling/availability/template/${therapistId}`),
                 ]);
 
@@ -639,7 +655,7 @@ function useSelectedTherapistAvailability(therapistId: string | null) {
         return () => {
             active = false;
         };
-    }, [therapistId]);
+    }, [scope, therapistId, user]);
 
     return {
         selectedTherapist,
@@ -869,7 +885,11 @@ function useRecurringSlotOptions(params: {
     };
 }
 
-export default function Step2Schedule() {
+type Step2ScheduleProps = Readonly<{
+    scope?: 'admin' | 'therapist';
+}>;
+
+export default function Step2Schedule({ scope = 'admin' }: Step2ScheduleProps) {
     const {
         mode,
         setMode,
@@ -897,7 +917,7 @@ export default function Step2Schedule() {
         weeklyTemplate,
         templateLoading,
         templateError,
-    } = useSelectedTherapistAvailability(therapistId);
+    } = useSelectedTherapistAvailability(therapistId, scope);
 
     const {
         customDateSlots,

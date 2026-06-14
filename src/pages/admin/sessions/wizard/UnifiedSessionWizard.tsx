@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Check, ChevronRight } from 'lucide-react';
 import { MAX_SESSION_NOTES_LENGTH, MAX_SESSION_TITLE_LENGTH, useUnifiedSessionStore } from './useUnifiedSessionStore';
 import Step1Details from './Step1Details';
@@ -21,6 +21,7 @@ const normalizeOptionalText = (value: string) => {
 interface Props {
   onClose: () => void;
   onSuccess: () => void;
+  scope?: 'admin' | 'therapist';
 }
 
 const validateStepOne = (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
@@ -132,21 +133,33 @@ const getNextButtonLabel = (step: number, previewStatus: ReturnType<typeof useUn
   return 'Next Step';
 };
 
-export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Props>) {
-  const { step, setStep, reset, previewStatus } = useUnifiedSessionStore();
+export default function UnifiedSessionWizard({ onClose, onSuccess, scope = 'admin' }: Readonly<Props>) {
+  const { step, setStep, reset, previewStatus, setScope } = useUnifiedSessionStore();
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  const previewEndpoint = scope === 'therapist'
+    ? '/therapist/sessions/preview'
+    : '/admin/sessions/preview';
+
+  const bulkCreateEndpoint = scope === 'therapist'
+    ? '/therapist/sessions/bulk-create'
+    : '/admin/sessions/bulk-create';
 
   useEffect(() => {
+    setIsInitialized(false);
     // Fresh slate exactly on mount
     reset();
+    setScope(scope);
+    setIsInitialized(true);
     return () => reset(); // Cleanup strictly on unmount
-  }, [reset]);
+  }, [reset, scope, setScope]);
 
   const generatePreview = async (state: ReturnType<typeof useUnifiedSessionStore.getState>) => {
     try {
       useUnifiedSessionStore.setState({ previewStatus: 'LOADING' });
       const payload = buildSessionPayload(state);
 
-      const res = await api.post('/admin/sessions/preview', payload);
+      const res = await api.post(previewEndpoint, payload);
       useUnifiedSessionStore.setState({
         previewSessions: res.data.sessions,
         previewStatus: res.data.status,
@@ -204,7 +217,7 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Pr
         const toastId = toast.loading('Bulk generating sessions safely...');
         const payload = buildSessionPayload(state);
 
-        await api.post('/admin/sessions/bulk-create', payload);
+        await api.post(bulkCreateEndpoint, payload);
         toast.success('Successfully created sessions!', { id: toastId });
         onSuccess(); // Triggers UI re-render natively
      } catch (err: any) {
@@ -250,10 +263,19 @@ export default function UnifiedSessionWizard({ onClose, onSuccess }: Readonly<Pr
 
         {/* Host Form Body natively */}
         <div className="wizard-body">
-            {step === 1 && <Step1Details />}
-            {step === 2 && <Step2Schedule />}
+          {!isInitialized && (
+            <div style={{display:'flex', alignItems:'center', justifyContent:'center', minHeight: 320, color: 'var(--gray-600)'}}>
+              Preparing session wizard...
+            </div>
+          )}
+          {isInitialized && (
+            <>
+            {step === 1 && <Step1Details scope={scope} />}
+            {step === 2 && <Step2Schedule scope={scope} />}
           {step === 3 && <Step3SessionDetails />}
           {step === 4 && <Step3Preview />}
+            </>
+          )}
         </div>
 
         {/* Global Modal Footers */}

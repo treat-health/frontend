@@ -3,6 +3,7 @@ import { useUnifiedSessionStore } from './useUnifiedSessionStore';
 import api, { type ApiResponse } from '../../../../lib/api';
 import type { UserSummary } from '../types';
 import { toast } from 'react-hot-toast';
+import { useAuthStore } from '../../../../stores/authStore';
 import { AlertCircle, Check, ChevronLeft, ChevronRight, Info, Loader2, MapPin, Search, X } from 'lucide-react';
 import {
   US_STATE_OPTIONS,
@@ -151,7 +152,11 @@ function renderClientListContent({
   );
 }
 
-export default function Step1Details() {
+type Step1DetailsProps = Readonly<{
+  scope?: 'admin' | 'therapist';
+}>;
+
+export default function Step1Details({ scope = 'admin' }: Step1DetailsProps) {
   const {
     type,
     setType,
@@ -164,8 +169,10 @@ export default function Step1Details() {
     therapistId,
     setTherapistId,
   } = useUnifiedSessionStore();
+  const { user } = useAuthStore();
   
   const [clients, setClients] = useState<UserSummary[]>([]);
+  const [assignedClients, setAssignedClients] = useState<UserSummary[]>([]);
   const [therapists, setTherapists] = useState<UserSummary[]>([]);
   const [selectedClientRecords, setSelectedClientRecords] = useState<Record<string, UserSummary>>({});
   const [loadingTherapists, setLoadingTherapists] = useState(true);
@@ -180,8 +187,25 @@ export default function Step1Details() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [clientRequestVersion, setClientRequestVersion] = useState(0);
+  const isTherapistScope = scope === 'therapist';
 
   useEffect(() => {
+    if (isTherapistScope) {
+      if (user?.id) {
+        setTherapistId(user.id);
+        setTherapists([{
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          state: user.state,
+        }]);
+      }
+      setLoadingTherapists(false);
+      return;
+    }
+
     async function fetchTherapists() {
       try {
         const therRes = await api.get<ApiResponse<PaginatedUsersPayload>>('/users', {
@@ -196,12 +220,93 @@ export default function Step1Details() {
       }
     }
     fetchTherapists();
-  }, []);
+  }, [isTherapistScope, setTherapistId, user]);
 
   // Reset page when search or pagesize changes
   useEffect(() => { setPage(1); }, [searchTerm, pageSize, selectedState]);
 
   useEffect(() => {
+    if (!isTherapistScope) {
+      return;
+    }
+
+    async function fetchAssignedClients() {
+      setLoadingClients(true);
+      setClientError(null);
+
+      try {
+        const response = await api.get<ApiResponse<UserSummary[]>>('/assignments/my-clients');
+        const fetchedClients = response.data?.data || [];
+
+        setAssignedClients(fetchedClients);
+        setSelectedClientRecords(prev => {
+          const next = { ...prev };
+          for (const client of fetchedClients) {
+            if (clientIds.includes(client.id)) {
+              next[client.id] = client;
+            }
+          }
+          return next;
+        });
+      } catch (err) {
+        console.error('Failed to load assigned clients for therapist wizard', err);
+        setAssignedClients([]);
+        setClientError('Failed to load your assigned clients.');
+      } finally {
+        setLoadingClients(false);
+      }
+    }
+
+    fetchAssignedClients();
+  }, [clientIds, isTherapistScope]);
+
+  useEffect(() => {
+    if (!isTherapistScope) {
+      return;
+    }
+
+    const filteredClients = assignedClients.filter((client) => {
+      if (selectedState && client.state !== selectedState) {
+        return false;
+      }
+
+      if (!searchTerm) {
+        return true;
+      }
+
+      const haystack = `${client.firstName} ${client.lastName} ${client.email}`.toLowerCase();
+      return haystack.includes(searchTerm.toLowerCase());
+    });
+
+    const nextTotalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
+    const safePage = Math.min(page, nextTotalPages);
+    if (safePage !== page) {
+      setPage(safePage);
+      return;
+    }
+
+    const pageStart = (safePage - 1) * pageSize;
+    const paginatedClients = filteredClients.slice(pageStart, pageStart + pageSize);
+
+    setClients(paginatedClients);
+    setTotalClients(filteredClients.length);
+    setTotalPages(nextTotalPages);
+    setSelectedClientRecords(prev => {
+      const next = { ...prev };
+      for (const client of paginatedClients) {
+        if (clientIds.includes(client.id)) {
+          next[client.id] = client;
+        }
+      }
+      return next;
+    });
+  }, [assignedClients, clientIds, isTherapistScope, page, pageSize, searchTerm, selectedState]);
+
+  useEffect(() => {
+    if (isTherapistScope) {
+      return;
+    }
+
     async function fetchClients() {
       if (!selectedState) {
         setClients([]);
@@ -248,7 +353,7 @@ export default function Step1Details() {
     }
 
     fetchClients();
-  }, [clientIds, clientRequestVersion, page, pageSize, searchTerm, selectedState]);
+  }, [clientIds, clientRequestVersion, isTherapistScope, page, pageSize, searchTerm, selectedState]);
 
   const selectedClients = useMemo(
     () => clientIds.map(id => selectedClientRecords[id]).filter(Boolean),
@@ -346,7 +451,7 @@ export default function Step1Details() {
     <div className="wizard-step-content animate-fade-in" style={{ overflow: 'hidden', position: 'relative' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 20 }}>
           <h3 style={{ margin: 0, color: 'var(--gray-900)' }}>Session Details</h3>
-          <p style={{ margin: 0, color: 'var(--gray-600)', fontSize: 14 }}>Select the therapist, clients, and type of session.</p>
+          <p style={{ margin: 0, color: 'var(--gray-600)', fontSize: 14 }}>{isTherapistScope ? 'Select your assigned clients and the type of session.' : 'Select the therapist, clients, and type of session.'}</p>
       </div>
 
       <div style={{ display: 'flex', gap: 24, flex: 1, overflow: 'hidden' }}>
@@ -366,12 +471,18 @@ export default function Step1Details() {
 
               <div className="wizard-form-group">
                  <label htmlFor="wizard-therapist">Assigned Therapist</label>
-                  <select id="wizard-therapist" className="wizard-select" value={therapistId || ''} onChange={(e) => setTherapistId(e.target.value)} disabled={loadingTherapists}>
-                    <option value="">-- Select a Therapist --</option>
-                    {therapists.map(t => (
+                  {isTherapistScope ? (
+                    <div className="wizard-input" style={{ display: 'flex', alignItems: 'center', minHeight: 44, background: 'var(--gray-50)', color: 'var(--gray-800)', fontWeight: 600 }}>
+                     {user ? `${user.firstName} ${user.lastName}` : 'Loading therapist...'}
+                    </div>
+                  ) : (
+                    <select id="wizard-therapist" className="wizard-select" value={therapistId || ''} onChange={(e) => setTherapistId(e.target.value)} disabled={loadingTherapists}>
+                     <option value="">-- Select a Therapist --</option>
+                     {therapists.map(t => (
                        <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
-                    ))}
-                 </select>
+                     ))}
+                   </select>
+                  )}
               </div>
 
                 <div className="wizard-form-group">

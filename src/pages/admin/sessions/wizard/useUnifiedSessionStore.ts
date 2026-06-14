@@ -9,6 +9,7 @@ import {
 export const MAX_SESSION_TITLE_LENGTH = 150;
 export const MAX_SESSION_NOTES_LENGTH = 2000;
 
+export type WizardScope = 'admin' | 'therapist';
 export type SessionType = 'INDIVIDUAL_THERAPY' | 'GROUP_THERAPY' | 'PSYCHIATRIC_EVAL' | 'PSYCHIATRIC_FOLLOWUP' | 'BPS_ASSESSMENT' | 'INTAKE_CALL';
 export type SchedulingMode = 'CUSTOM_DATES' | 'RECURRING';
 export type RecurrenceType = 'WEEKLY' | 'MONTHLY';
@@ -76,6 +77,7 @@ export interface ScheduleRulesValidation {
 }
 
 interface UnifiedSessionState {
+  scope: WizardScope;
   step: number;
   type: SessionType;
   title: string;
@@ -97,6 +99,7 @@ interface UnifiedSessionState {
   scheduleRulesValidation: ScheduleRulesValidation;
 
   // Actions
+  setScope: (scope: WizardScope) => void;
   setStep: (step: number) => void;
   setType: (type: SessionType) => void;
   setTitle: (title: string) => void;
@@ -149,6 +152,7 @@ const buildDefaultCustomDate = (): CustomDateParam => {
 };
 
 export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
+  scope: 'admin',
   step: 1,
   type: 'INDIVIDUAL_THERAPY',
   title: '',
@@ -167,6 +171,7 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   previewSummary: null,
   scheduleRulesValidation: { ...defaultScheduleRulesValidation },
 
+  setScope: (scope) => set({ scope }),
   setStep: (step) => set({ step }),
   setType: (type) => set({ type, clientIds: [] }),
   setTitle: (title) => set({ title }),
@@ -220,6 +225,7 @@ export const useUnifiedSessionStore = create<UnifiedSessionState>((set) => ({
   }),
 
   reset: () => set({
+    scope: 'admin',
     step: 1,
     type: 'INDIVIDUAL_THERAPY',
     title: '',

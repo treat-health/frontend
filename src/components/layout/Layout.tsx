@@ -73,7 +73,7 @@ function getNavItemsForRole(role: string, totalUnread: number): NavItem[] {
             return [
                 { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                 { path: '/therapist/clients', icon: Users, label: 'My Clients' },
-                { path: '/therapist/appointments', icon: Calendar, label: 'Appointments' },
+                { path: '/therapist/sessions', icon: Calendar, label: 'Sessions' },
                 { path: '/support', icon: LifeBuoy, label: 'Support' },
                 ...baseItems,
             ];
@@ -110,7 +110,7 @@ function getNotificationTargetPath(notification: AppNotification, role?: string)
 
     if (notification.appointmentId) {
         if (role === 'ADMIN' || role === 'PROGRAM_DIRECTOR') return '/admin/sessions';
-        if (role === 'THERAPIST') return '/therapist/appointments';
+        if (role === 'THERAPIST') return '/therapist/sessions';
         return '/appointments';
     }
 
