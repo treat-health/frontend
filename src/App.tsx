@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
@@ -30,6 +30,14 @@ import OnboardingGuidePage from './pages/guides/OnboardingGuidePage';
 import FirstDaysPage from './pages/guides/FirstDaysPage';
 import JoinAppointmentGuidePage from './pages/guides/JoinAppointmentGuidePage';
 import VirtualIOPPage from './pages/guides/VirtualIOPPage';
+
+function SettingsIntegrationRedirect() {
+    const location = useLocation();
+    const nextSearch = new URLSearchParams(location.search);
+    nextSearch.set('tab', 'integrations');
+
+    return <Navigate to={{ pathname: '/settings', search: `?${nextSearch.toString()}` }} replace />;
+}
 
 /**
  * Protected Route Component
@@ -300,6 +308,15 @@ export default function App() {
                 />
 
                 {/* Settings Route (all roles) */}
+                <Route
+                    path="/settings/integrations"
+                    element={
+                        <ProtectedRoute>
+                            <SettingsIntegrationRedirect />
+                        </ProtectedRoute>
+                    }
+                />
+
                 <Route
                     path="/settings"
                     element={

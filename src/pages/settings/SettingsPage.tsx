@@ -14,9 +14,12 @@ import {
     Loader2,
     Settings,
     Trash2,
+    Calendar,
+    type LucideIcon,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
+import type { User as AuthUser } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import api from '../../lib/api';
 import type { ApiResponse } from '../../lib/api';
@@ -29,15 +32,17 @@ import {
     getBrowserTimezone,
     mapUtcAvailabilityTemplateToLocalSchedule,
 } from './availabilityTimezoneUtils';
+import GoogleCalendarIntegrationPanel from './GoogleCalendarIntegrationPanel';
 import './SettingsPage.css';
 
-type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability' | 'system';
+type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability' | 'integrations' | 'system';
 
 function isSettingsTab(value: string | null): value is SettingsTab {
     return value === 'profile'
         || value === 'security'
         || value === 'notifications'
         || value === 'availability'
+        || value === 'integrations'
         || value === 'system';
 }
 
@@ -96,6 +101,302 @@ const removeWindowFromSchedule = (
 const formatRoleLabel = (role: string) =>
     role.replaceAll('_', ' ').toLowerCase().replaceAll(/\b\w/g, (char) => char.toUpperCase());
 
+const GOOGLE_INTEGRATION_ROLES = new Set(['THERAPIST', 'PROGRAM_DIRECTOR', 'PSYCHIATRIC_PROVIDER', 'ADMIN']);
+
+type SettingsTabConfig = {
+    id: SettingsTab;
+    label: string;
+    icon: LucideIcon;
+};
+
+const createSettingsTab = (id: SettingsTab, label: string, icon: LucideIcon): SettingsTabConfig => ({
+    id,
+    label,
+    icon,
+});
+
+function useSettingsTabSync(
+    searchParams: URLSearchParams,
+    tabs: SettingsTabConfig[],
+    activeTab: SettingsTab,
+    setActiveTab: (tab: SettingsTab) => void,
+) {
+    useEffect(() => {
+        const requestedTab = searchParams.get('tab');
+        const allowedTabIds = new Set(tabs.map((tab) => tab.id));
+
+        if (requestedTab && isSettingsTab(requestedTab) && allowedTabIds.has(requestedTab)) {
+            if (requestedTab !== activeTab) {
+                setActiveTab(requestedTab);
+            }
+            return;
+        }
+
+        if (!allowedTabIds.has(activeTab)) {
+            setActiveTab('profile');
+        }
+    }, [searchParams, tabs, activeTab, setActiveTab]);
+}
+
+function useGoogleCalendarQueryNotifications(searchParams: URLSearchParams, setSearchParams: ReturnType<typeof useSearchParams>[1]) {
+    useEffect(() => {
+        const connected = searchParams.get('googleConnected');
+        const syncError = searchParams.get('googleSyncError');
+
+        if (connected === 'true') {
+            toast.success('Google Calendar connected successfully');
+        }
+
+        if (syncError) {
+            toast.error(`Google Calendar connection failed: ${syncError}`);
+        }
+
+        if (connected || syncError) {
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.delete('googleConnected');
+            nextParams.delete('googleSyncError');
+            setSearchParams(nextParams, { replace: true });
+        }
+    }, [searchParams, setSearchParams]);
+}
+
+function AvailabilitySettingsSection({
+    user,
+    therapistStateTimezone,
+    browserTimezone,
+    schedule,
+    isLoadingAvailability,
+    isSavingAvailability,
+    getAvailabilitySummary,
+    handleAddWindow,
+    handleWindowChange,
+    handleRemoveWindow,
+    handleSaveAvailability,
+}: Readonly<{
+    user: AuthUser | null;
+    therapistStateTimezone: string;
+    browserTimezone: string;
+    schedule: DayAvailability[];
+    isLoadingAvailability: boolean;
+    isSavingAvailability: boolean;
+    getAvailabilitySummary: (windows: AvailabilityWindow[]) => string;
+    handleAddWindow: (dayIndex: number) => void;
+    handleWindowChange: (dayIndex: number, windowId: string, field: keyof AvailabilityWindow, value: string) => void;
+    handleRemoveWindow: (dayIndex: number, windowId: string) => void;
+    handleSaveAvailability: () => Promise<void>;
+}>) {
+    if (user?.role !== 'THERAPIST') {
+        return null;
+    }
+
+    return (
+        <div className="settings-section">
+            <div className="section-header" style={{ paddingBottom: '0.5rem' }}>
+                <h2>Availability Schedule</h2>
+                <p>Set your weekly recurring working hours in your therapist state timezone. Browser local time and stored UTC are shown as previews.</p>
+            </div>
+
+            <div className="settings-form" style={{ paddingTop: '0.1rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--primary-50)', color: 'var(--primary-color)', fontWeight: 600, fontSize: 12 }}>
+                        Therapist state: {user?.state || 'Not set'}
+                    </div>
+                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
+                        Scheduling timezone: {therapistStateTimezone}
+                    </div>
+                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
+                        Browser timezone: {browserTimezone}
+                    </div>
+                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
+                        Storage timezone: UTC
+                    </div>
+                </div>
+
+                <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', fontSize: 13, lineHeight: 1.5 }}>
+                    Availability is edited using your therapist state timezone. The backend still stores the saved windows in UTC. If you later change states, the displayed schedule will follow the new state timezone mapping.
+                </div>
+
+                {isLoadingAvailability ? (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '2rem', justifyContent: 'center', color: 'var(--gray-500)' }}>
+                        <Loader2 size={16} className="spin" />
+                        <span>Loading your schedule...</span>
+                    </div>
+                ) : (
+                    <div className="availability-list" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {schedule.map((day, index) => (
+                            <div key={day.dayOfWeek} style={{ display: 'grid', gap: '1rem', padding: '1rem', border: `1px solid ${day.windows.length > 0 ? 'var(--secondary-color)' : 'var(--gray-200)'}`, borderRadius: '8px', backgroundColor: day.windows.length > 0 ? 'var(--bg-surface)' : 'var(--gray-50)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                    <div>
+                                        <span style={{ fontWeight: 600, fontSize: '14px', color: day.windows.length > 0 ? 'var(--gray-900)' : 'var(--gray-500)' }}>
+                                        {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()}
+                                        </span>
+                                        <div style={{ marginTop: 4, fontSize: 12, color: 'var(--gray-500)' }}>
+                                            {getAvailabilitySummary(day.windows)}
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={() => handleAddWindow(index)}
+                                        style={{ padding: '8px 12px', fontSize: 13 }}
+                                    >
+                                        <PlusCircle size={16} style={{ marginRight: 6 }} />
+                                        Add Window
+                                    </button>
+                                </div>
+
+                                {day.windows.length === 0 ? (
+                                    <div style={{ fontSize: 13, color: 'var(--gray-500)', padding: '0.25rem 0 0.5rem' }}>
+                                        No working hours configured for this day yet.
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'grid', gap: 12 }}>
+                                        {day.windows.map((window, windowIndex) => (
+                                            <div key={window.localId} style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid var(--gray-200)', borderRadius: 8, background: 'var(--gray-50)' }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto minmax(120px, 1fr) auto', gap: 10, alignItems: 'center' }}>
+                                                    <input
+                                                        type="time"
+                                                        value={window.startTime}
+                                                        onChange={(e) => handleWindowChange(index, window.localId, 'startTime', e.target.value)}
+                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
+                                                        aria-label={`${day.dayOfWeek} window ${windowIndex + 1} start time`}
+                                                    />
+                                                    <span style={{ color: 'var(--gray-500)', fontWeight: 500, fontSize: '14px', textAlign: 'center' }}>to</span>
+                                                    <input
+                                                        type="time"
+                                                        value={window.endTime}
+                                                        onChange={(e) => handleWindowChange(index, window.localId, 'endTime', e.target.value)}
+                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
+                                                        aria-label={`${day.dayOfWeek} window ${windowIndex + 1} end time`}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        className="btn-icon"
+                                                        onClick={() => handleRemoveWindow(index, window.localId)}
+                                                        style={{ color: 'var(--error-500)' }}
+                                                        aria-label={`Remove ${day.dayOfWeek} window ${windowIndex + 1}`}
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
+
+                                                <div style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--gray-600)' }}>
+                                                    <div>
+                                                        <strong style={{ color: 'var(--gray-800)' }}>State time ({therapistStateTimezone})</strong>: {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()} • {window.startTime} – {window.endTime}
+                                                    </div>
+                                                    {(() => {
+                                                        const browserPreview = buildAvailabilityPreview(day.dayOfWeek as any, window, therapistStateTimezone, browserTimezone);
+                                                        const utcPreview = buildAvailabilityPreview(day.dayOfWeek as any, window, therapistStateTimezone, 'UTC');
+
+                                                        return (
+                                                            <>
+                                                                <div>
+                                                                    <strong style={{ color: 'var(--gray-800)' }}>Browser local</strong>: {browserPreview ? `${browserPreview.dayLabel} • ${browserPreview.rangeLabel} (${browserPreview.abbreviation})` : 'Unavailable'}
+                                                                </div>
+                                                                <div>
+                                                                    <strong style={{ color: 'var(--gray-800)' }}>Stored UTC</strong>: {utcPreview ? `${utcPreview.dayLabel} • ${utcPreview.rangeLabel} (${utcPreview.abbreviation})` : 'Unavailable'}
+                                                                </div>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div className="form-actions" style={{ marginTop: '2rem' }}>
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleSaveAvailability}
+                        disabled={isSavingAvailability || isLoadingAvailability}
+                    >
+                        {isSavingAvailability ? (
+                            <Loader2 size={16} className="spin" />
+                        ) : (
+                            <Save size={16} />
+                        )}
+                        {isSavingAvailability ? 'Saving...' : 'Save Availability'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function SystemSettingsSection({
+    isLoadingSys,
+    sysSettings,
+    setSysSettings,
+    isSavingSys,
+    handleSaveSystemSettings,
+}: Readonly<{
+    isLoadingSys: boolean;
+    sysSettings: Record<string, string>;
+    setSysSettings: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+    isSavingSys: boolean;
+    handleSaveSystemSettings: () => Promise<void>;
+}>) {
+    return (
+        <div className="settings-section">
+            <div className="section-header">
+                <h2>System Settings</h2>
+                <p>Configure application-wide defaults</p>
+            </div>
+
+            {isLoadingSys ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+                    <Loader2 size={24} className="spin" />
+                </div>
+            ) : (
+                <div className="settings-form">
+                    <div className="form-group">
+                        <label htmlFor="settings-reminder-first">First Reminder (minutes before session)</label>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
+                            Common values: 60 = 1 hour, 120 = 2 hours, 30 = 30 min
+                        </p>
+                        <input
+                            id="settings-reminder-first"
+                            type="number"
+                            min={5}
+                            max={1440}
+                            value={sysSettings['reminder_minutes_first'] || '60'}
+                            onChange={(e) => setSysSettings(prev => ({ ...prev, reminder_minutes_first: e.target.value }))}
+                            style={{ maxWidth: '200px' }}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="settings-reminder-second">Second Reminder (minutes before session)</label>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
+                            Common values: 1440 = 24 hours, 720 = 12 hours
+                        </p>
+                        <input
+                            id="settings-reminder-second"
+                            type="number"
+                            min={5}
+                            max={2880}
+                            value={sysSettings['reminder_minutes_second'] || '1440'}
+                            onChange={(e) => setSysSettings(prev => ({ ...prev, reminder_minutes_second: e.target.value }))}
+                            style={{ maxWidth: '200px' }}
+                        />
+                    </div>
+
+                    <div className="form-actions">
+                        <button className="btn btn-primary" onClick={handleSaveSystemSettings} disabled={isSavingSys}>
+                            {isSavingSys ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+                            {isSavingSys ? 'Saving...' : 'Save System Settings'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 const visuallyHiddenStyle = {
     position: 'absolute' as const,
     width: 1,
@@ -106,6 +407,50 @@ const visuallyHiddenStyle = {
     clip: 'rect(0, 0, 0, 0)',
     whiteSpace: 'nowrap' as const,
     border: 0,
+};
+
+const getProfileValidationError = (firstName: string, lastName: string) => {
+    if (!firstName.trim() || !lastName.trim()) {
+        return 'First name and last name are required';
+    }
+
+    return null;
+};
+
+const getPasswordValidationError = (currentPassword: string, newPassword: string, confirmPassword: string) => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        return 'All password fields are required';
+    }
+
+    if (newPassword.length < 8) {
+        return 'New password must be at least 8 characters';
+    }
+
+    if (newPassword !== confirmPassword) {
+        return 'New passwords do not match';
+    }
+
+    return null;
+};
+
+const validateAvailabilityTemplate = (schedule: DayAvailability[]) => {
+    for (const day of schedule) {
+        const sorted = [...day.windows].sort((left, right) => left.startTime.localeCompare(right.startTime));
+
+        for (let index = 0; index < sorted.length; index += 1) {
+            const current = sorted[index];
+
+            if (current.startTime >= current.endTime) {
+                return `${day.dayOfWeek} has a window where the end time must be after the start time.`;
+            }
+
+            if (index > 0 && current.startTime < sorted[index - 1].endTime) {
+                return `${day.dayOfWeek} has overlapping availability windows.`;
+            }
+        }
+    }
+
+    return null;
 };
 
 /**
@@ -151,6 +496,7 @@ export default function SettingsPage() {
         [user?.state, state],
     );
     const browserTimezone = useMemo(() => getBrowserTimezone(), []);
+    const canAccessGoogleIntegration = Boolean(user?.role && GOOGLE_INTEGRATION_ROLES.has(user.role));
 
     useEffect(() => {
         if (user) {
@@ -234,24 +580,8 @@ export default function SettingsPage() {
         setSchedule((current) => removeWindowFromSchedule(current, dayIndex, windowId));
     };
 
-    const validateAvailabilityTemplate = () => {
-        for (const day of schedule) {
-            const sorted = [...day.windows].sort((left, right) => left.startTime.localeCompare(right.startTime));
-            for (let index = 0; index < sorted.length; index += 1) {
-                const current = sorted[index];
-                if (current.startTime >= current.endTime) {
-                    return `${day.dayOfWeek} has a window where the end time must be after the start time.`;
-                }
-                if (index > 0 && current.startTime < sorted[index - 1].endTime) {
-                    return `${day.dayOfWeek} has overlapping availability windows.`;
-                }
-            }
-        }
-        return null;
-    };
-
     const handleSaveAvailability = async () => {
-        const validationError = validateAvailabilityTemplate();
+        const validationError = validateAvailabilityTemplate(schedule);
         if (validationError) {
             toast.error(validationError);
             return;
@@ -278,8 +608,9 @@ export default function SettingsPage() {
     };
 
     const handleSaveProfile = async () => {
-        if (!firstName.trim() || !lastName.trim()) {
-            toast.error('First name and last name are required');
+        const validationError = getProfileValidationError(firstName, lastName);
+        if (validationError) {
+            toast.error(validationError);
             return;
         }
 
@@ -307,16 +638,9 @@ export default function SettingsPage() {
     };
 
     const handleChangePassword = async () => {
-        if (!currentPassword || !newPassword || !confirmPassword) {
-            toast.error('All password fields are required');
-            return;
-        }
-        if (newPassword.length < 8) {
-            toast.error('New password must be at least 8 characters');
-            return;
-        }
-        if (newPassword !== confirmPassword) {
-            toast.error('New passwords do not match');
+        const validationError = getPasswordValidationError(currentPassword, newPassword, confirmPassword);
+        if (validationError) {
+            toast.error(validationError);
             return;
         }
 
@@ -342,34 +666,24 @@ export default function SettingsPage() {
         }
     };
 
-    const TABS = useMemo(() => [
-        { id: 'profile' as SettingsTab, label: 'Profile', icon: User },
-        { id: 'security' as SettingsTab, label: 'Security', icon: Lock },
-        { id: 'notifications' as SettingsTab, label: 'Notifications', icon: Bell },
-        ...(user?.role === 'THERAPIST' ? [{ id: 'availability' as SettingsTab, label: 'Availability', icon: Clock }] : []),
-        ...(user?.role === 'ADMIN' ? [{ id: 'system' as SettingsTab, label: 'System', icon: Settings }] : []),
-    ], [user?.role]);
+    const TABS = useMemo<SettingsTabConfig[]>(() => [
+        createSettingsTab('profile', 'Profile', User),
+        createSettingsTab('security', 'Security', Lock),
+        createSettingsTab('notifications', 'Notifications', Bell),
+        ...(user?.role === 'THERAPIST' ? [createSettingsTab('availability', 'Availability', Clock)] : []),
+        ...(canAccessGoogleIntegration ? [createSettingsTab('integrations', 'Integrations', Calendar)] : []),
+        ...(user?.role === 'ADMIN' ? [createSettingsTab('system', 'System', Settings)] : []),
+    ], [canAccessGoogleIntegration, user?.role]);
 
-    useEffect(() => {
-        const requestedTab = searchParams.get('tab');
-        const allowedTabIds = new Set(TABS.map((tab) => tab.id));
-
-        if (requestedTab && isSettingsTab(requestedTab) && allowedTabIds.has(requestedTab)) {
-            if (requestedTab !== activeTab) {
-                setActiveTab(requestedTab);
-            }
-            return;
-        }
-
-        if (!allowedTabIds.has(activeTab)) {
-            setActiveTab('profile');
-        }
-    }, [searchParams, TABS, activeTab]);
+    useSettingsTabSync(searchParams, TABS, activeTab, setActiveTab);
+    useGoogleCalendarQueryNotifications(searchParams, setSearchParams);
 
     const handleTabChange = (tab: SettingsTab) => {
         setActiveTab(tab);
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set('tab', tab);
+        nextParams.delete('googleConnected');
+        nextParams.delete('googleSyncError');
         setSearchParams(nextParams, { replace: true });
     };
 
@@ -678,198 +992,45 @@ export default function SettingsPage() {
                     )}
 
                     {/* Availability Tab (Therapists Only) */}
-                    {activeTab === 'availability' && user?.role === 'THERAPIST' && (
+                    {activeTab === 'availability' && (
+                        <AvailabilitySettingsSection
+                            user={user}
+                            therapistStateTimezone={therapistStateTimezone}
+                            browserTimezone={browserTimezone}
+                            schedule={schedule}
+                            isLoadingAvailability={isLoadingAvailability}
+                            isSavingAvailability={isSavingAvailability}
+                            getAvailabilitySummary={getAvailabilitySummary}
+                            handleAddWindow={handleAddWindow}
+                            handleWindowChange={handleWindowChange}
+                            handleRemoveWindow={handleRemoveWindow}
+                            handleSaveAvailability={handleSaveAvailability}
+                        />
+                    )}
+
+                    {/* Integrations Tab */}
+                    {activeTab === 'integrations' && canAccessGoogleIntegration && (
                         <div className="settings-section">
-                            <div className="section-header" style={{ paddingBottom: '0.5rem' }}>
-                                <h2>Availability Schedule</h2>
-                                <p>Set your weekly recurring working hours in your therapist state timezone. Browser local time and stored UTC are shown as previews.</p>
+                            <div className="section-header">
+                                <h2>Integrations</h2>
+                                <p>Connect external calendars and automation tools</p>
                             </div>
 
-                            <div className="settings-form" style={{ paddingTop: '0.1rem' }}>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--primary-50)', color: 'var(--primary-color)', fontWeight: 600, fontSize: 12 }}>
-                                        Therapist state: {user?.state || 'Not set'}
-                                    </div>
-                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
-                                        Scheduling timezone: {therapistStateTimezone}
-                                    </div>
-                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
-                                        Browser timezone: {browserTimezone}
-                                    </div>
-                                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--gray-700)', fontWeight: 600, fontSize: 12 }}>
-                                        Storage timezone: UTC
-                                    </div>
-                                </div>
-
-                                <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', fontSize: 13, lineHeight: 1.5 }}>
-                                    Availability is edited using your therapist state timezone. The backend still stores the saved windows in UTC. If you later change states, the displayed schedule will follow the new state timezone mapping.
-                                </div>
-
-                                {isLoadingAvailability ? (
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '2rem', justifyContent: 'center', color: 'var(--gray-500)' }}>
-                                        <Loader2 size={16} className="spin" />
-                                        <span>Loading your schedule...</span>
-                                    </div>
-                                ) : (
-                                    <div className="availability-list" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                        {schedule.map((day, index) => (
-                                            <div key={day.dayOfWeek} style={{ display: 'grid', gap: '1rem', padding: '1rem', border: `1px solid ${day.windows.length > 0 ? 'var(--secondary-color)' : 'var(--gray-200)'}`, borderRadius: '8px', backgroundColor: day.windows.length > 0 ? 'var(--bg-surface)' : 'var(--gray-50)' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                                                    <div>
-                                                        <span style={{ fontWeight: 600, fontSize: '14px', color: day.windows.length > 0 ? 'var(--gray-900)' : 'var(--gray-500)' }}>
-                                                        {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()}
-                                                        </span>
-                                                        <div style={{ marginTop: 4, fontSize: 12, color: 'var(--gray-500)' }}>
-                                                            {getAvailabilitySummary(day.windows)}
-                                                        </div>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-secondary"
-                                                        onClick={() => handleAddWindow(index)}
-                                                        style={{ padding: '8px 12px', fontSize: 13 }}
-                                                    >
-                                                        <PlusCircle size={16} style={{ marginRight: 6 }} />
-                                                        Add Window
-                                                    </button>
-                                                </div>
-
-                                                {day.windows.length === 0 ? (
-                                                    <div style={{ fontSize: 13, color: 'var(--gray-500)', padding: '0.25rem 0 0.5rem' }}>
-                                                        No working hours configured for this day yet.
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ display: 'grid', gap: 12 }}>
-                                                        {day.windows.map((window, windowIndex) => (
-                                                            <div key={window.localId} style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid var(--gray-200)', borderRadius: 8, background: 'var(--gray-50)' }}>
-                                                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto minmax(120px, 1fr) auto', gap: 10, alignItems: 'center' }}>
-                                                                    <input
-                                                                        type="time"
-                                                                        value={window.startTime}
-                                                                        onChange={(e) => handleWindowChange(index, window.localId, 'startTime', e.target.value)}
-                                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
-                                                                        aria-label={`${day.dayOfWeek} window ${windowIndex + 1} start time`}
-                                                                    />
-                                                                    <span style={{ color: 'var(--gray-500)', fontWeight: 500, fontSize: '14px', textAlign: 'center' }}>to</span>
-                                                                    <input
-                                                                        type="time"
-                                                                        value={window.endTime}
-                                                                        onChange={(e) => handleWindowChange(index, window.localId, 'endTime', e.target.value)}
-                                                                        style={{ padding: '8px', border: '1px solid var(--gray-300)', borderRadius: '6px', fontSize: '14px', background: 'var(--bg-surface)', color: 'var(--gray-900)' }}
-                                                                        aria-label={`${day.dayOfWeek} window ${windowIndex + 1} end time`}
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        className="btn-icon"
-                                                                        onClick={() => handleRemoveWindow(index, window.localId)}
-                                                                        style={{ color: 'var(--error-500)' }}
-                                                                        aria-label={`Remove ${day.dayOfWeek} window ${windowIndex + 1}`}
-                                                                    >
-                                                                        <Trash2 size={18} />
-                                                                    </button>
-                                                                </div>
-
-                                                                <div style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--gray-600)' }}>
-                                                                    <div>
-                                                                        <strong style={{ color: 'var(--gray-800)' }}>State time ({therapistStateTimezone})</strong>: {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()} • {window.startTime} – {window.endTime}
-                                                                    </div>
-                                                                    {(() => {
-                                                                        const browserPreview = buildAvailabilityPreview(day.dayOfWeek as any, window, therapistStateTimezone, browserTimezone);
-                                                                        const utcPreview = buildAvailabilityPreview(day.dayOfWeek as any, window, therapistStateTimezone, 'UTC');
-
-                                                                        return (
-                                                                            <>
-                                                                                <div>
-                                                                                    <strong style={{ color: 'var(--gray-800)' }}>Browser local</strong>: {browserPreview ? `${browserPreview.dayLabel} • ${browserPreview.rangeLabel} (${browserPreview.abbreviation})` : 'Unavailable'}
-                                                                                </div>
-                                                                                <div>
-                                                                                    <strong style={{ color: 'var(--gray-800)' }}>Stored UTC</strong>: {utcPreview ? `${utcPreview.dayLabel} • ${utcPreview.rangeLabel} (${utcPreview.abbreviation})` : 'Unavailable'}
-                                                                                </div>
-                                                                            </>
-                                                                        );
-                                                                    })()}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                <div className="form-actions" style={{ marginTop: '2rem' }}>
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={handleSaveAvailability}
-                                        disabled={isSavingAvailability || isLoadingAvailability}
-                                    >
-                                        {isSavingAvailability ? (
-                                            <Loader2 size={16} className="spin" />
-                                        ) : (
-                                            <Save size={16} />
-                                        )}
-                                        {isSavingAvailability ? 'Saving...' : 'Save Availability'}
-                                    </button>
-                                </div>
+                            <div className="settings-form settings-integrations-form">
+                                <GoogleCalendarIntegrationPanel />
                             </div>
                         </div>
                     )}
 
                     {/* System Tab (Admin Only) */}
                     {activeTab === 'system' && user?.role === 'ADMIN' && (
-                        <div className="settings-section">
-                            <div className="section-header">
-                                <h2>System Settings</h2>
-                                <p>Configure application-wide defaults</p>
-                            </div>
-
-                            {isLoadingSys ? (
-                                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-                                    <Loader2 size={24} className="spin" />
-                                </div>
-                            ) : (
-                                <div className="settings-form">
-                                    <div className="form-group">
-                                        <label htmlFor="settings-reminder-first">First Reminder (minutes before session)</label>
-                                        <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
-                                            Common values: 60 = 1 hour, 120 = 2 hours, 30 = 30 min
-                                        </p>
-                                        <input
-                                            id="settings-reminder-first"
-                                            type="number"
-                                            min={5}
-                                            max={1440}
-                                            value={sysSettings['reminder_minutes_first'] || '60'}
-                                            onChange={(e) => setSysSettings(prev => ({ ...prev, reminder_minutes_first: e.target.value }))}
-                                            style={{ maxWidth: '200px' }}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label htmlFor="settings-reminder-second">Second Reminder (minutes before session)</label>
-                                        <p style={{ fontSize: '0.8rem', color: 'var(--gray-500)', margin: '0 0 0.5rem' }}>
-                                            Common values: 1440 = 24 hours, 720 = 12 hours
-                                        </p>
-                                        <input
-                                            id="settings-reminder-second"
-                                            type="number"
-                                            min={5}
-                                            max={2880}
-                                            value={sysSettings['reminder_minutes_second'] || '1440'}
-                                            onChange={(e) => setSysSettings(prev => ({ ...prev, reminder_minutes_second: e.target.value }))}
-                                            style={{ maxWidth: '200px' }}
-                                        />
-                                    </div>
-
-                                    <div className="form-actions">
-                                        <button className="btn btn-primary" onClick={handleSaveSystemSettings} disabled={isSavingSys}>
-                                            {isSavingSys ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-                                            {isSavingSys ? 'Saving...' : 'Save System Settings'}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                        <SystemSettingsSection
+                            isLoadingSys={isLoadingSys}
+                            sysSettings={sysSettings}
+                            setSysSettings={setSysSettings}
+                            isSavingSys={isSavingSys}
+                            handleSaveSystemSettings={handleSaveSystemSettings}
+                        />
                     )}
                 </div>
             </div>
