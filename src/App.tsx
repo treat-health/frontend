@@ -6,6 +6,8 @@ import QuestionnairePage from './pages/questionnaire/QuestionnairePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import InvitePage from './pages/auth/InvitePage';
+import ActivateAccountPage from './pages/auth/ActivateAccountPage';
+import ActivationRequestPage from './pages/auth/ActivationRequestPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import RoleBasedDashboard from './pages/RoleBasedDashboard';
 import MessagesPage from './pages/messages/MessagesPage';
@@ -44,6 +46,7 @@ function SettingsIntegrationRedirect() {
  */
 function ProtectedRoute({ children }: Readonly<{ children: React.ReactNode }>) {
     const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
+    const location = useLocation();
 
     useEffect(() => {
         checkAuth();
@@ -64,7 +67,11 @@ function ProtectedRoute({ children }: Readonly<{ children: React.ReactNode }>) {
     }
 
     if (!isAuthenticated) {
-        return <Navigate to="/login" replace />;
+        const returnTo = `${location.pathname}${location.search}${location.hash}`;
+        const params = new URLSearchParams();
+        params.set('returnTo', returnTo);
+
+        return <Navigate to={{ pathname: '/login', search: `?${params.toString()}` }} replace />;
     }
 
     return <Layout>{children}</Layout>;
@@ -75,9 +82,15 @@ function ProtectedRoute({ children }: Readonly<{ children: React.ReactNode }>) {
  */
 function PublicRoute({ children }: Readonly<{ children: React.ReactNode }>) {
     const { isAuthenticated } = useAuthStore();
+    const location = useLocation();
 
     if (isAuthenticated) {
-        return <Navigate to="/dashboard" replace />;
+        const returnTo = new URLSearchParams(location.search).get('returnTo');
+        const safeReturnTo = returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')
+            ? returnTo
+            : '/dashboard';
+
+        return <Navigate to={safeReturnTo} replace />;
     }
 
     return <>{children}</>;
@@ -152,6 +165,22 @@ export default function App() {
                     element={
                         <PublicRoute>
                             <ForgotPasswordPage />
+                        </PublicRoute>
+                    }
+                />
+                <Route
+                    path="/activate-account"
+                    element={
+                        <PublicRoute>
+                            <ActivateAccountPage />
+                        </PublicRoute>
+                    }
+                />
+                <Route
+                    path="/activate-account/request"
+                    element={
+                        <PublicRoute>
+                            <ActivationRequestPage />
                         </PublicRoute>
                     }
                 />

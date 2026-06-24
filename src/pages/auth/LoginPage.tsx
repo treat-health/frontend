@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Heart, Shield, Users, Clock } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import toast from 'react-hot-toast';
@@ -11,6 +11,7 @@ import BrandLogo from '../../components/common/BrandLogo';
  */
 export default function LoginPage() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { login, isLoading, error, clearError } = useAuthStore();
 
     const [email, setEmail] = useState('');
@@ -24,7 +25,9 @@ export default function LoginPage() {
         try {
             await login({ email, password });
             toast.success('Welcome back!');
-            navigate('/dashboard');
+            const returnTo = searchParams.get('returnTo');
+            const safeReturnTo = returnTo && returnTo.startsWith('/') ? returnTo : '/dashboard';
+            navigate(safeReturnTo);
         } catch (err: any) {
             toast.error(err.message || 'Login failed');
         }
@@ -166,7 +169,7 @@ export default function LoginPage() {
                             {isLoading ? (
                                 <>
                                     <span className="spinner" />
-                                    Signing in...
+                                    <span>Signing in...</span>
                                 </>
                             ) : (
                                 'Sign in'
@@ -175,7 +178,7 @@ export default function LoginPage() {
                     </form>
 
                     <div className="auth-footer">
-                        Don't have an account?{' '}
+                        <span>Don't have an account? </span>
                         <span style={{ fontWeight: 500 }}>Contact your administrator</span>
                         {/* <Link to="/register">Create one now</Link> */}
                     </div>
