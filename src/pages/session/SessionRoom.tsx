@@ -16,7 +16,7 @@ const TREAT_HEALTH_LOGO_URL = 'https://afjfaedsjbyjfjkquira.supabase.co/storage/
 const TREAT_HEALTH_NAME_URL = 'https://afjfaedsjbyjfjkquira.supabase.co/storage/v1/object/public/treat-health-bucket/Treat-health-logo-white-health-name.png';
 
 const ROOM_OPEN_EARLY_MINUTES = 15;
-const ROOM_REJOIN_GRACE_MINUTES = 5; // Enterprise: 5-min grace period for reconnection after session end
+const ROOM_REJOIN_GRACE_MINUTES = 0;
 const SESSION_TAB_LOCK_TTL_MS = 15000;
 const AUTO_RETRY_BASE_DELAY_MS = 2000;
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
@@ -577,10 +577,10 @@ function renderPreJoinStage(params: {
 
         if (sessionDetails?.status === 'COMPLETED') {
             completedTitle = 'Session Completed';
-            completedMessage = 'This session has ended and is permanently closed.';
+                completedMessage = 'This session has ended and the secure room is closed.';
         } else if (isGraceWindowExpired) {
             completedTitle = 'Session Window Closed';
-            completedMessage = 'The secure rejoin window has ended for this session.';
+                completedMessage = 'The secure room closed at the scheduled end time.';
         }
 
         return <SessionStatusScreen title={completedTitle} message={completedMessage} onClose={onCloseDashboard} />;
