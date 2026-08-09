@@ -210,6 +210,11 @@
     color: #991b1b;
 }
 
+.status-pending-invite {
+    background: #fef3c7;
+    color: #92400e;
+}
+
 .status-deletion-requested {
     background: #ffedd5;
     color: #9a3412;
