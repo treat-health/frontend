@@ -6,7 +6,7 @@ import type { AccountStatus, User, UserRole, TreatmentStatus } from '../../store
 import type { CreateUserInput, InviteInfo } from '../../stores/userStore';
 import '../../styles/admin.css';
 
-type UserStatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE' | 'DELETION_REQUESTED';
+type UserStatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE' | 'PENDING_INVITE' | 'DELETION_REQUESTED';
 
 const ROLES: { value: UserRole; label: string }[] = [
     { value: 'CLIENT', label: 'Client' },
@@ -34,6 +34,7 @@ const USER_STATUS_FILTERS: { value: UserStatusFilter; label: string }[] = [
     { value: 'ALL', label: 'All Users' },
     { value: 'ACTIVE', label: 'Active' },
     { value: 'INACTIVE', label: 'Inactive' },
+    { value: 'PENDING_INVITE', label: 'Pending Invite' },
     { value: 'DELETION_REQUESTED', label: 'Deletion Requests' },
 ];
 
@@ -44,6 +45,10 @@ function getStatusBadge(user: User): { label: string; className: string } {
 
     if (user.accountStatus === 'DELETED') {
         return { label: 'Deleted', className: 'status-deleted' };
+    }
+
+    if (!user.emailVerified) {
+        return { label: 'Pending Invite', className: 'status-pending-invite' };
     }
 
     return user.isActive
@@ -95,12 +100,14 @@ export default function UsersPage() {
 
     // Fetch users on mount and when filters change
     useEffect(() => {
-        const statusQuery: { isActive?: boolean; accountStatus?: AccountStatus } = {};
+        const statusQuery: { isActive?: boolean; accountStatus?: AccountStatus; emailVerified?: boolean } = {};
 
         if (statusFilter === 'ACTIVE') {
             statusQuery.isActive = true;
         } else if (statusFilter === 'INACTIVE') {
             statusQuery.isActive = false;
+        } else if (statusFilter === 'PENDING_INVITE') {
+            statusQuery.emailVerified = false;
         } else if (statusFilter === 'DELETION_REQUESTED') {
             statusQuery.accountStatus = 'DELETION_REQUESTED';
         }

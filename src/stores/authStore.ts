@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api, { tokenStorage } from '../lib/api';
 import type { ApiResponse } from '../lib/api';
+import mfaService from '../services/mfa.service';
 
 /**
  * User role enum
@@ -99,9 +100,15 @@ interface AuthState {
     isAuthenticated: boolean;
     isLoading: boolean;
     error: string | null;
+    // MFA challenge state
+    mfaPending: boolean;
+    mfaSetupPending: boolean;
+    mfaToken: string | null;
 
     // Actions
     login: (credentials: LoginCredentials) => Promise<void>;
+    verifyMfa: (code: string) => Promise<void>;
+    clearMfa: () => void;
     register: (data: RegisterData) => Promise<void>;
     logout: () => Promise<void>;
     checkAuth: () => Promise<void>;
@@ -119,16 +126,42 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             isLoading: false,
             error: null,
+            mfaPending: false,
+            mfaSetupPending: false,
+            mfaToken: null,
 
             login: async (credentials: LoginCredentials) => {
                 set({ isLoading: true, error: null });
                 try {
-                    const response = await api.post<ApiResponse<AuthResponse>>('/auth/login', credentials);
+                    const response = await api.post<ApiResponse<any>>('/auth/login', credentials);
 
                     if (response.data.success && response.data.data) {
-                        const { user, tokens } = response.data.data;
+                        const data = response.data.data;
+
+                        // MFA setup required
+                        if (data.requiresMfaSetup === true) {
+                            set({
+                                mfaSetupPending: true,
+                                mfaToken: data.mfaToken,
+                                isLoading: false,
+                            });
+                            return;
+                        }
+
+                        // MFA challenge — backend returned mfaToken instead of full tokens
+                        if (data.requiresMfa === true) {
+                            set({
+                                mfaPending: true,
+                                mfaToken: data.mfaToken,
+                                isLoading: false,
+                            });
+                            return;
+                        }
+
+                        // Normal login — store tokens and user
+                        const { user, tokens } = data;
                         tokenStorage.setTokens(tokens.accessToken, tokens.refreshToken);
-                        set({ user, isAuthenticated: true, isLoading: false });
+                        set({ user, isAuthenticated: true, isLoading: false, mfaPending: false, mfaSetupPending: false, mfaToken: null });
                     } else {
                         throw new Error(response.data.message || 'Login failed');
                     }
@@ -138,6 +171,25 @@ export const useAuthStore = create<AuthState>()(
                     throw new Error(message);
                 }
             },
+
+            verifyMfa: async (code: string) => {
+                const mfaToken = (useAuthStore.getState() as AuthState).mfaToken;
+                if (!mfaToken) throw new Error('No MFA session active. Please log in again.');
+
+                set({ isLoading: true, error: null });
+                try {
+                    const result = await mfaService.verify(mfaToken, code);
+                    const { user, tokens } = result as any;
+                    tokenStorage.setTokens(tokens.accessToken, tokens.refreshToken);
+                    set({ user, isAuthenticated: true, isLoading: false, mfaPending: false, mfaSetupPending: false, mfaToken: null });
+                } catch (error: any) {
+                    const message = error.response?.data?.message || error.message || 'Invalid code';
+                    set({ error: message, isLoading: false });
+                    throw new Error(message);
+                }
+            },
+
+            clearMfa: () => set({ mfaPending: false, mfaSetupPending: false, mfaToken: null, error: null }),
 
             register: async (data: RegisterData) => {
                 set({ isLoading: true, error: null });

@@ -33,6 +33,8 @@ import {
     mapUtcAvailabilityTemplateToLocalSchedule,
 } from './availabilityTimezoneUtils';
 import GoogleCalendarIntegrationPanel from './GoogleCalendarIntegrationPanel';
+import MfaSettingsPanel from './MfaSettingsPanel';
+import mfaService from '../../services/mfa.service';
 import './SettingsPage.css';
 
 type SettingsTab = 'profile' | 'security' | 'notifications' | 'availability' | 'integrations' | 'system';
@@ -228,7 +230,7 @@ function AvailabilitySettingsSection({
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                                     <div>
                                         <span style={{ fontWeight: 600, fontSize: '14px', color: day.windows.length > 0 ? 'var(--gray-900)' : 'var(--gray-500)' }}>
-                                        {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()}
+                                            {day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()}
                                         </span>
                                         <div style={{ marginTop: 4, fontSize: 12, color: 'var(--gray-500)' }}>
                                             {getAvailabilitySummary(day.windows)}
@@ -452,6 +454,93 @@ const validateAvailabilityTemplate = (schedule: DayAvailability[]) => {
 
     return null;
 };
+
+const ALL_ROLES = [
+    { id: 'THERAPIST', label: 'Therapist' },
+    { id: 'CLIENT', label: 'Client' },
+    { id: 'ADMIN', label: 'Admin' },
+    { id: 'ADMISSIONS_REP', label: 'Admissions Rep' },
+    { id: 'CARE_COORDINATOR', label: 'Care Coordinator' },
+    { id: 'PROGRAM_DIRECTOR', label: 'Program Director' },
+    { id: 'INSURANCE_TEAM', label: 'Insurance Team' },
+    { id: 'PSYCHIATRIC_PROVIDER', label: 'Psychiatric Provider' },
+] as const;
+
+function AdminMfaRoleToggles() {
+    const [requiredRoles, setRequiredRoles] = useState<string[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState<string | null>(null);
+
+    useEffect(() => {
+        mfaService.getAdminSettings()
+            .then((data) => setRequiredRoles(data.requiredRoles))
+            .catch(() => toast.error('Failed to load MFA role settings'))
+            .finally(() => setIsLoading(false));
+    }, []);
+
+    const handleToggle = async (roleId: string, enabled: boolean) => {
+        setIsSaving(roleId);
+        const next = enabled
+            ? [...requiredRoles, roleId]
+            : requiredRoles.filter((r) => r !== roleId);
+        try {
+            const result = await mfaService.setAdminSettings(next);
+            setRequiredRoles(result.requiredRoles);
+            toast.success(`MFA ${enabled ? 'required' : 'optional'} for ${ALL_ROLES.find(r => r.id === roleId)?.label ?? roleId}`);
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || 'Failed to save MFA settings');
+        } finally {
+            setIsSaving(null);
+        }
+    };
+
+    return (
+        <div className="settings-section" style={{ marginTop: '2rem' }}>
+            <div className="section-header">
+                <h2>MFA Role Requirements</h2>
+                <p>Toggle which roles must use Multi-Factor Authentication to log in</p>
+            </div>
+            {isLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '1rem', color: 'var(--gray-500)' }}>
+                    <Loader2 size={16} className="spin" />
+                    <span>Loading MFA settings...</span>
+                </div>
+            ) : (
+                <div className="settings-form">
+                    {ALL_ROLES.map((role) => {
+                        const isEnabled = requiredRoles.includes(role.id);
+                        const saving = isSaving === role.id;
+                        return (
+                            <div key={role.id} className="notif-item" style={{ borderBottom: '1px solid var(--gray-100)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
+                                <div className="notif-info">
+                                    <span className="notif-title">{role.label}</span>
+                                    <span className="notif-desc">
+                                        {isEnabled ? 'MFA is required for this role' : 'MFA is optional for this role'}
+                                    </span>
+                                </div>
+                                {saving ? (
+                                    <Loader2 size={18} className="spin" style={{ color: 'var(--primary-color)' }} />
+                                ) : (
+                                    <label className="toggle-switch">
+                                        <span style={visuallyHiddenStyle}>
+                                            {isEnabled ? 'Disable' : 'Enable'} MFA requirement for {role.label}
+                                        </span>
+                                        <input
+                                            type="checkbox"
+                                            checked={isEnabled}
+                                            onChange={(e) => handleToggle(role.id, e.target.checked)}
+                                        />
+                                        <span className="toggle-slider" />
+                                    </label>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
 
 /**
  * Settings Page — Profile, Security, and Notification Preferences
@@ -813,83 +902,95 @@ export default function SettingsPage() {
 
                     {/* Security Tab */}
                     {activeTab === 'security' && (
-                        <div className="settings-section">
-                            <div className="section-header">
-                                <h2>Security</h2>
-                                <p>Manage your password and account security</p>
-                            </div>
+                        <>
+                            <div className="settings-section">
+                                <div className="section-header">
+                                    <h2>Password</h2>
+                                    <p>Change your account password</p>
+                                </div>
 
-                            <div className="settings-form">
-                                <div className="form-group">
-                                    <label htmlFor="settings-current-password">Current Password</label>
-                                    <div className="password-input">
-                                        <input
-                                            id="settings-current-password"
-                                            type={showCurrentPassword ? 'text' : 'password'}
-                                            value={currentPassword}
-                                            onChange={(e) => setCurrentPassword(e.target.value)}
-                                            placeholder="Enter current password"
-                                        />
+                                <div className="settings-form">
+                                    <div className="form-group">
+                                        <label htmlFor="settings-current-password">Current Password</label>
+                                        <div className="password-input">
+                                            <input
+                                                id="settings-current-password"
+                                                type={showCurrentPassword ? 'text' : 'password'}
+                                                value={currentPassword}
+                                                onChange={(e) => setCurrentPassword(e.target.value)}
+                                                placeholder="Enter current password"
+                                            />
+                                            <button
+                                                type="button"
+                                                className="password-toggle"
+                                                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                            >
+                                                {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label htmlFor="settings-new-password">New Password</label>
+                                        <div className="password-input">
+                                            <input
+                                                id="settings-new-password"
+                                                type={showNewPassword ? 'text' : 'password'}
+                                                value={newPassword}
+                                                onChange={(e) => setNewPassword(e.target.value)}
+                                                placeholder="Enter new password (min 8 characters)"
+                                            />
+                                            <button
+                                                type="button"
+                                                className="password-toggle"
+                                                onClick={() => setShowNewPassword(!showNewPassword)}
+                                            >
+                                                {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label htmlFor="settings-confirm-password">Confirm New Password</label>
+                                        <div className="password-input">
+                                            <input
+                                                id="settings-confirm-password"
+                                                type="password"
+                                                value={confirmPassword}
+                                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                                placeholder="Confirm new password"
+                                            />
+                                            {confirmPassword && newPassword === confirmPassword && (
+                                                <CheckCircle size={16} className="password-match" />
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="form-actions">
                                         <button
-                                            type="button"
-                                            className="password-toggle"
-                                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                            className="btn btn-primary"
+                                            onClick={handleChangePassword}
+                                            disabled={isChangingPassword}
                                         >
-                                            {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                            {isChangingPassword ? (
+                                                <div className="spinner spinner-small" />
+                                            ) : (
+                                                <Lock size={16} />
+                                            )}
+                                            {isChangingPassword ? 'Changing...' : 'Change Password'}
                                         </button>
                                     </div>
                                 </div>
-                                <div className="form-group">
-                                    <label htmlFor="settings-new-password">New Password</label>
-                                    <div className="password-input">
-                                        <input
-                                            id="settings-new-password"
-                                            type={showNewPassword ? 'text' : 'password'}
-                                            value={newPassword}
-                                            onChange={(e) => setNewPassword(e.target.value)}
-                                            placeholder="Enter new password (min 8 characters)"
-                                        />
-                                        <button
-                                            type="button"
-                                            className="password-toggle"
-                                            onClick={() => setShowNewPassword(!showNewPassword)}
-                                        >
-                                            {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="settings-confirm-password">Confirm New Password</label>
-                                    <div className="password-input">
-                                        <input
-                                            id="settings-confirm-password"
-                                            type="password"
-                                            value={confirmPassword}
-                                            onChange={(e) => setConfirmPassword(e.target.value)}
-                                            placeholder="Confirm new password"
-                                        />
-                                        {confirmPassword && newPassword === confirmPassword && (
-                                            <CheckCircle size={16} className="password-match" />
-                                        )}
-                                    </div>
-                                </div>
+                            </div>
 
-                                <div className="form-actions">
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={handleChangePassword}
-                                        disabled={isChangingPassword}
-                                    >
-                                        {isChangingPassword ? (
-                                            <div className="spinner spinner-small" />
-                                        ) : (
-                                            <Lock size={16} />
-                                        )}
-                                        {isChangingPassword ? 'Changing...' : 'Change Password'}
-                                    </button>
+                            <div className="settings-section" style={{ marginTop: '1rem' }}>
+                                <div className="section-header">
+                                    <h2>Two-Factor Authentication (MFA)</h2>
+                                    <p>Use an Authenticator App to generate time-based codes for extra security.</p>
+                                </div>
+                                <div className="settings-form">
+                                    <MfaSettingsPanel />
                                 </div>
                             </div>
-                        </div>
+                        </>
                     )}
 
                     {/* Notifications Tab */}
@@ -1024,13 +1125,16 @@ export default function SettingsPage() {
 
                     {/* System Tab (Admin Only) */}
                     {activeTab === 'system' && user?.role === 'ADMIN' && (
-                        <SystemSettingsSection
-                            isLoadingSys={isLoadingSys}
-                            sysSettings={sysSettings}
-                            setSysSettings={setSysSettings}
-                            isSavingSys={isSavingSys}
-                            handleSaveSystemSettings={handleSaveSystemSettings}
-                        />
+                        <>
+                            <SystemSettingsSection
+                                isLoadingSys={isLoadingSys}
+                                sysSettings={sysSettings}
+                                setSysSettings={setSysSettings}
+                                isSavingSys={isSavingSys}
+                                handleSaveSystemSettings={handleSaveSystemSettings}
+                            />
+                            <AdminMfaRoleToggles />
+                        </>
                     )}
                 </div>
             </div>

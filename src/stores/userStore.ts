@@ -58,6 +58,7 @@ export interface ListUsersQuery {
     treatmentStatus?: TreatmentStatus;
     state?: string;
     isActive?: boolean;
+    emailVerified?: boolean;
     search?: string;
     sortBy?: 'createdAt' | 'firstName' | 'lastName' | 'email';
     sortOrder?: 'asc' | 'desc';
@@ -109,6 +110,7 @@ export const useUserStore = create<UserState>()((set, _get) => ({
             if (query.treatmentStatus) params.append('treatmentStatus', query.treatmentStatus);
             if (query.state) params.append('state', query.state);
             if (query.isActive !== undefined) params.append('isActive', String(query.isActive));
+            if (query.emailVerified !== undefined) params.append('emailVerified', String(query.emailVerified));
             if (query.search) params.append('search', query.search);
             if (query.sortBy) params.append('sortBy', query.sortBy);
             if (query.sortOrder) params.append('sortOrder', query.sortOrder);
