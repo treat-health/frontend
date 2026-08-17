@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Smartphone, ShieldCheck, ShieldOff, QrCode, Loader2, CheckCircle2, Copy } from 'lucide-react';
+import { Smartphone, ShieldCheck, ShieldOff, QrCode, Loader2, CheckCircle2, Copy, HelpCircle, ChevronDown, ChevronUp, ExternalLink, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import mfaService from '../../services/mfa.service';
 
@@ -19,6 +19,7 @@ export default function MfaSettingsPanel() {
     const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isDisabling, setIsDisabling] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
 
     useEffect(() => {
         loadStatus();
@@ -185,6 +186,90 @@ export default function MfaSettingsPanel() {
         );
     }
 
+    const renderHelpGuide = () => (
+        <div style={{
+            marginTop: '0.75rem',
+            border: '1px solid var(--primary-200, #bfdbfe)',
+            borderRadius: 'var(--radius-lg)',
+            background: 'var(--bg-surface, #ffffff)',
+            overflow: 'hidden',
+        }}>
+            <button
+                type="button"
+                onClick={() => setShowHelp(!showHelp)}
+                style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'space-between',
+                    padding: '0.75rem 1rem',
+                    background: 'var(--primary-50, #eff6ff)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--primary-800, #1e40af)',
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    textAlign: 'left',
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <HelpCircle size={17} style={{ color: 'var(--primary-color)' }} />
+                    <span>Need help? What is an Authenticator App & how to install one</span>
+                </div>
+                {showHelp ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+
+            {showHelp && (
+                <div style={{ padding: '1rem 1.25rem', fontSize: '0.84rem', color: 'var(--gray-700)', lineHeight: 1.55 }}>
+                    <p style={{ margin: '0 0 0.75rem 0' }}>
+                        An <strong>Authenticator App</strong> is a free mobile app on your phone (like Google Authenticator or Microsoft Authenticator). It generates a temporary 6-digit code every 30 seconds to ensure only you can access your private health information.
+                    </p>
+
+                    <div style={{ fontWeight: 600, color: 'var(--gray-900)', marginBottom: '0.5rem' }}>
+                        1. Recommended Authenticator Apps (Free to download):
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
+                        <div style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-md)', background: 'var(--gray-50)' }}>
+                            <strong style={{ color: 'var(--gray-900)', display: 'block', fontSize: '0.8125rem' }}>Google Authenticator</strong>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', display: 'flex', gap: 8, marginTop: 4 }}>
+                                <a href="https://apps.apple.com/app/google-authenticator/id388497605" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>iOS App Store <ExternalLink size={10} /></a>
+                                <span>•</span>
+                                <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>Google Play <ExternalLink size={10} /></a>
+                            </div>
+                        </div>
+
+                        <div style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-md)', background: 'var(--gray-50)' }}>
+                            <strong style={{ color: 'var(--gray-900)', display: 'block', fontSize: '0.8125rem' }}>Microsoft Authenticator</strong>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', display: 'flex', gap: 8, marginTop: 4 }}>
+                                <a href="https://apps.apple.com/app/microsoft-authenticator/id983155283" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>iOS App Store <ExternalLink size={10} /></a>
+                                <span>•</span>
+                                <a href="https://play.google.com/store/apps/details?id=com.azure.authenticator" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>Google Play <ExternalLink size={10} /></a>
+                            </div>
+                        </div>
+
+                        <div style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-md)', background: 'var(--gray-50)' }}>
+                            <strong style={{ color: 'var(--gray-900)', display: 'block', fontSize: '0.8125rem' }}>Twilio Authy / Apple Passwords</strong>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: 4 }}>
+                                Built into iPhone (Settings &gt; Passwords) or download Authy from app stores.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ fontWeight: 600, color: 'var(--gray-900)', marginBottom: '0.5rem' }}>
+                        2. Easy Step-by-Step Instructions:
+                    </div>
+                    <ol style={{ paddingLeft: '1.25rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        <li><strong>Install an app:</strong> Open your phone's App Store (iPhone) or Google Play Store (Android) and search for <em>Google Authenticator</em> or <em>Microsoft Authenticator</em>.</li>
+                        <li><strong>Add a new account:</strong> Open the app on your phone and tap the <strong>"+" (Plus)</strong> button or select "Add Account".</li>
+                        <li><strong>Scan the QR code:</strong> Select "Scan a QR code" in your app, then point your phone camera at the QR code pattern displayed on this web page.</li>
+                        <li><strong>Enter the 6-digit code:</strong> Your authenticator app will display a temporary 6-digit number. Type that number into the boxes on this page and click <strong>Activate MFA</strong>.</li>
+                    </ol>
+                </div>
+            )}
+        </div>
+    );
+
     /* ── Setup flow: QR code + 6-digit confirm ── */
     if (isSettingUp && qrCodeDataUrl) {
         return (
@@ -287,6 +372,8 @@ export default function MfaSettingsPanel() {
                         </button>
                     </div>
                 </div>
+
+                {renderHelpGuide()}
             </div>
         );
     }
@@ -329,6 +416,8 @@ export default function MfaSettingsPanel() {
                 <Smartphone size={15} />
                 Enable Authenticator App
             </button>
+
+            {renderHelpGuide()}
         </div>
     );
 }
