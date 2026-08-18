@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api, { tokenStorage } from '../lib/api';
 import type { ApiResponse } from '../lib/api';
-import mfaService from '../services/mfa.service';
+import mfaService, { emailOtpService } from '../services/mfa.service';
 
 /**
  * User role enum
@@ -104,15 +104,20 @@ interface AuthState {
     mfaPending: boolean;
     mfaSetupPending: boolean;
     mfaToken: string | null;
+    // Email OTP gate state (first login)
+    emailOtpPending: boolean;
 
     // Actions
     login: (credentials: LoginCredentials) => Promise<void>;
+    verifyEmailOtp: (code: string) => Promise<void>;
+    resendEmailOtp: () => Promise<void>;
     verifyMfa: (code: string) => Promise<void>;
     clearMfa: () => void;
     register: (data: RegisterData) => Promise<void>;
     logout: () => Promise<void>;
     checkAuth: () => Promise<void>;
     clearError: () => void;
+    setUser: (user: User, tokens: { accessToken: string; refreshToken: string }) => void;
 }
 
 /**
@@ -128,6 +133,7 @@ export const useAuthStore = create<AuthState>()(
             mfaPending: false,
             mfaSetupPending: false,
             mfaToken: null,
+            emailOtpPending: false,
 
             login: async (credentials: LoginCredentials) => {
                 set({ isLoading: true, error: null });
@@ -136,6 +142,16 @@ export const useAuthStore = create<AuthState>()(
 
                     if (response.data.success && response.data.data) {
                         const data = response.data.data;
+
+                        // ── Email OTP gate (first-ever login) ──────────────────
+                        if (data.requiresEmailOtp === true) {
+                            set({
+                                emailOtpPending: true,
+                                mfaToken: data.mfaToken,
+                                isLoading: false,
+                            });
+                            return;
+                        }
 
                         // MFA setup required
                         if (data.requiresMfaSetup === true) {
@@ -160,7 +176,7 @@ export const useAuthStore = create<AuthState>()(
                         // Normal login — store tokens and user
                         const { user, tokens } = data;
                         tokenStorage.setTokens(tokens.accessToken, tokens.refreshToken);
-                        set({ user, isAuthenticated: true, isLoading: false, mfaPending: false, mfaSetupPending: false, mfaToken: null });
+                        set({ user, isAuthenticated: true, isLoading: false, mfaPending: false, mfaSetupPending: false, emailOtpPending: false, mfaToken: null });
                     } else {
                         throw new Error(response.data.message || 'Login failed');
                     }
@@ -169,6 +185,39 @@ export const useAuthStore = create<AuthState>()(
                     set({ error: message, isLoading: false });
                     throw new Error(message);
                 }
+            },
+
+            verifyEmailOtp: async (code: string) => {
+                const mfaToken = (useAuthStore.getState() as AuthState).mfaToken;
+                if (!mfaToken) throw new Error('No OTP session active. Please log in again.');
+
+                set({ isLoading: true, error: null });
+                try {
+                    const result = await emailOtpService.verify(mfaToken, code);
+
+                    // After email OTP, backend may still require TOTP challenge (if already set up)
+                    if (result.requiresMfa) {
+                        set({ emailOtpPending: false, mfaPending: true, mfaToken: result.mfaToken!, isLoading: false });
+                        return;
+                    }
+
+                    // Full tokens issued — user goes to dashboard
+                    const { user, tokens, mfaSetupRecommended } = result as any;
+                    tokenStorage.setTokens(tokens.accessToken, tokens.refreshToken);
+                    set({ user, isAuthenticated: true, isLoading: false, emailOtpPending: false, mfaToken: null, error: null });
+                    // Return the nudge flag so LoginPage can show a toast after navigating
+                    return mfaSetupRecommended as boolean | undefined;
+                } catch (error: any) {
+                    const message = error.response?.data?.message || error.message || 'Invalid code';
+                    set({ error: message, isLoading: false });
+                    throw new Error(message);
+                }
+            },
+
+            resendEmailOtp: async () => {
+                const mfaToken = (useAuthStore.getState() as AuthState).mfaToken;
+                if (!mfaToken) throw new Error('No OTP session active. Please log in again.');
+                await emailOtpService.resend(mfaToken);
             },
 
             verifyMfa: async (code: string) => {
@@ -188,7 +237,7 @@ export const useAuthStore = create<AuthState>()(
                 }
             },
 
-            clearMfa: () => set({ mfaPending: false, mfaSetupPending: false, mfaToken: null, error: null }),
+            clearMfa: () => set({ mfaPending: false, mfaSetupPending: false, emailOtpPending: false, mfaToken: null, error: null }),
 
             register: async (data: RegisterData) => {
                 set({ isLoading: true, error: null });
@@ -244,6 +293,11 @@ export const useAuthStore = create<AuthState>()(
             },
 
             clearError: () => set({ error: null }),
+
+            setUser: (user: User, tokens: { accessToken: string; refreshToken: string }) => {
+                tokenStorage.setTokens(tokens.accessToken, tokens.refreshToken);
+                set({ user, isAuthenticated: true, isLoading: false, error: null });
+            },
         }),
         {
             name: 'auth-storage',

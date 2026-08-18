@@ -273,49 +273,52 @@ export default function Layout({ children }: Readonly<LayoutProps>) {
                     </Link>
                 </div>
 
-                {/* Navigation */}
-                <nav className="sidebar-nav">
-                    {navItems.map((item) => (
-                        <Link
-                            key={item.path}
-                            to={item.path}
-                            className={`nav-item ${location.pathname.startsWith(item.path) ? 'active' : ''}`}
-                        >
-                            <item.icon size={20} />
-                            {sidebarOpen && (
-                                <>
-                                    <span>{item.label}</span>
-                                    {item.badge && item.badge > 0 && (
-                                        <span className="nav-badge">{item.badge > 99 ? '99+' : item.badge}</span>
-                                    )}
-                                </>
-                            )}
-                        </Link>
-                    ))}
-                </nav>
+                {/* Scrollable middle container */}
+                <div className="sidebar-scroll-content">
+                    {/* Navigation */}
+                    <nav className="sidebar-nav">
+                        {navItems.map((item) => (
+                            <Link
+                                key={item.path}
+                                to={item.path}
+                                className={`nav-item ${location.pathname.startsWith(item.path) ? 'active' : ''}`}
+                            >
+                                <item.icon size={20} />
+                                {sidebarOpen && (
+                                    <>
+                                        <span>{item.label}</span>
+                                        {item.badge && item.badge > 0 && (
+                                            <span className="nav-badge">{item.badge > 99 ? '99+' : item.badge}</span>
+                                        )}
+                                    </>
+                                )}
+                            </Link>
+                        ))}
+                    </nav>
 
-                {/* Emergency button — client only */}
-                {user?.role === 'CLIENT' && (
-                    <div className="sidebar-emergency-wrapper">
-                        <button
-                            type="button"
-                            className={`sidebar-emergency-btn ${sidebarOpen ? '' : 'collapsed'}`}
-                            onClick={() => setShowEmergency(true)}
-                            title="Crisis & Emergency Resources"
-                        >
-                            <PhoneCall size={18} />
-                            {sidebarOpen && <span>Emergency Resources</span>}
-                        </button>
-                    </div>
-                )}
+                    {/* Emergency button — client only */}
+                    {user?.role === 'CLIENT' && (
+                        <div className="sidebar-emergency-wrapper">
+                            <button
+                                type="button"
+                                className={`sidebar-emergency-btn ${sidebarOpen ? '' : 'collapsed'}`}
+                                onClick={() => setShowEmergency(true)}
+                                title="Crisis & Emergency Resources"
+                            >
+                                <PhoneCall size={18} />
+                                {sidebarOpen && <span>Emergency Resources</span>}
+                            </button>
+                        </div>
+                    )}
 
-                {/* Connection Status */}
-                {sidebarOpen && (
-                    <div className="sidebar-status">
-                        <span className={`status-dot ${isConnected ? 'online' : ''}`} />
-                        <span>{isConnected ? 'Connected' : 'Connecting...'}</span>
-                    </div>
-                )}
+                    {/* Connection Status */}
+                    {sidebarOpen && (
+                        <div className="sidebar-status">
+                            <span className={`status-dot ${isConnected ? 'online' : ''}`} />
+                            <span>{isConnected ? 'Connected' : 'Connecting...'}</span>
+                        </div>
+                    )}
+                </div>
 
                 {/* User */}
                 <div className="sidebar-user">

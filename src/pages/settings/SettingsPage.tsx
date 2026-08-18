@@ -937,7 +937,7 @@ export default function SettingsPage() {
                                                 type={showNewPassword ? 'text' : 'password'}
                                                 value={newPassword}
                                                 onChange={(e) => setNewPassword(e.target.value)}
-                                                placeholder="Enter new password (min 8 characters)"
+                                                placeholder="Enter new password (Min. 8 characters, incl. uppercase, lowercase, number & symbol)"
                                             />
                                             <button
                                                 type="button"

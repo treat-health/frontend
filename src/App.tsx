@@ -6,6 +6,7 @@ import QuestionnairePage from './pages/questionnaire/QuestionnairePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import InvitePage from './pages/auth/InvitePage';
+import CalendarActivatePage from './pages/auth/CalendarActivatePage';
 import ActivateAccountPage from './pages/auth/ActivateAccountPage';
 import ActivationRequestPage from './pages/auth/ActivationRequestPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
@@ -406,6 +407,16 @@ export default function App() {
 
                 {/* Public Invite Accept Route */}
                 <Route path="/invite/:token" element={<InvitePage />} />
+
+                {/* Public Calendar Import Activation Route */}
+                <Route
+                    path="/activate"
+                    element={
+                        <PublicRoute>
+                            <CalendarActivatePage />
+                        </PublicRoute>
+                    }
+                />
 
                 {/* Catch-all redirect */}
                 <Route path="*" element={<Navigate to="/" replace />} />

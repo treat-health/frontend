@@ -1,91 +1,42 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../../lib/api';
 import logoImage from '../../assets/logo.png';
+import { useAuthStore } from '../../stores/authStore';
 import type { ApiResponse } from '../../lib/api';
-import type { User } from '../../stores/authStore';
 import './InvitePage.css';
 
-interface InviteValidation {
-    valid: boolean;
-    expired: boolean;
-    alreadyAccepted: boolean;
-    user?: {
-        email: string;
-        firstName: string;
-        lastName: string;
-        emailVerified?: boolean;
+interface ActivateResponse {
+    user: any;
+    tokens: {
+        accessToken: string;
+        refreshToken: string;
     };
-    expiresAt?: string;
-}
-
-function resolveSafeReturnTo(value: string | null): string {
-    if (!value) {
-        return '/dashboard';
-    }
-
-    const normalized = value.trim();
-    if (!normalized.startsWith('/') || normalized.startsWith('//')) {
-        return '/dashboard';
-    }
-
-    return normalized;
 }
 
 /**
- * Invite Accept Page - Public page for accepting invites
+ * CalendarActivatePage - Public page for clients imported via Google Calendar to activate their accounts and set a password.
  */
-export default function InvitePage() {
-    const { token } = useParams<{ token: string }>();
-    const navigate = useNavigate();
+export default function CalendarActivatePage() {
     const [searchParams] = useSearchParams();
+    const token = searchParams.get('token');
+    const navigate = useNavigate();
+    const { setUser } = useAuthStore();
 
-    const [isValidating, setIsValidating] = useState(true);
+    const [status, setStatus] = useState<'loading' | 'missing' | 'form' | 'invalid' | 'already_used' | 'expired'>('loading');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [validation, setValidation] = useState<InviteValidation | null>(null);
-    const [error, setError] = useState<string | null>(null);
 
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
 
-    const isOnboardingInvite = validation?.user?.emailVerified === false;
-    const pageTitle = isOnboardingInvite ? 'Set your password' : 'Reset your password';
-    const pageSubtitle = isOnboardingInvite
-        ? `Welcome to Treat Health, ${validation?.user?.firstName}. Create your password to activate your account.`
-        : `Hi ${validation?.user?.firstName}, choose a new password to reset access to your account.`;
-    const submitLabel = isOnboardingInvite ? 'Set Password & Get Started' : 'Reset password';
-    const submittingLabel = isOnboardingInvite ? 'Setting password...' : 'Resetting password...';
-    const footerPrompt = isOnboardingInvite ? 'Already set your password?' : 'Remembered your password?';
-    const safeReturnTo = resolveSafeReturnTo(searchParams.get('returnTo'));
-    const loginHref = `/login?returnTo=${encodeURIComponent(safeReturnTo)}`;
-    const activationRequestHref = `/activate-account/request?returnTo=${encodeURIComponent(safeReturnTo)}`;
-
-    // Validate token on mount
     useEffect(() => {
-        const validateToken = async () => {
-            if (!token) {
-                setError('Invalid invite link');
-                setIsValidating(false);
-                return;
-            }
-
-            try {
-                const response = await api.get<ApiResponse<InviteValidation>>(`/invite/${token}`);
-                if (response.data.success && response.data.data) {
-                    setValidation(response.data.data);
-                } else {
-                    setError(response.data.message || 'Invalid invite link');
-                }
-            } catch (err: any) {
-                setError(err.response?.data?.message || 'Failed to validate invite');
-            } finally {
-                setIsValidating(false);
-            }
-        };
-
-        validateToken();
+        if (!token) {
+            setStatus('missing');
+        } else {
+            setStatus('form');
+        }
     }, [token]);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -101,42 +52,63 @@ export default function InvitePage() {
             return;
         }
 
+        // Validate password complexity to match backend passwordRegex
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+        if (!passwordRegex.test(password)) {
+            toast.error('Password must contain uppercase, lowercase, number, and special character');
+            return;
+        }
+
         setIsSubmitting(true);
         try {
-            const response = await api.post<ApiResponse<User>>(`/invite/${token}/accept`, {
+            const response = await api.post<ApiResponse<ActivateResponse>>('/auth/activate-calendar-import', {
+                token,
                 password,
-                confirmPassword,
             });
 
-            if (response.data.success) {
-                toast.success('Account activated! You can now log in.');
-                navigate(loginHref);
+            if (response.data.success && response.data.data) {
+                const { user, tokens } = response.data.data;
+                setUser(user, tokens);
+                toast.success('Account activated! Welcome to Treat Health.');
+                navigate('/dashboard');
             } else {
                 throw new Error(response.data.message || 'Failed to activate account');
             }
         } catch (err: any) {
-            toast.error(err.response?.data?.message || err.message || 'Failed to activate account');
+            const errorCode = err.response?.data?.code;
+            const statusCode = err.response?.status;
+
+            if (statusCode === 401 || errorCode === 'INVALID_TOKEN') {
+                setStatus('invalid');
+            } else if (statusCode === 410 && errorCode === 'TOKEN_ALREADY_USED') {
+                setStatus('already_used');
+            } else if (statusCode === 410 && errorCode === 'TOKEN_EXPIRED') {
+                setStatus('expired');
+            } else {
+                const message = err.response?.data?.message || err.message || 'Failed to activate account';
+                toast.error(message);
+            }
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    // Loading state
-    if (isValidating) {
+    // Loading State
+    if (status === 'loading') {
         return (
             <div className="invite-page">
                 <div className="invite-card">
                     <div className="invite-loading">
                         <div className="spinner" />
-                        <p>Validating your invite...</p>
+                        <p>Verifying your activation link…</p>
                     </div>
                 </div>
             </div>
         );
     }
 
-    // Error state
-    if (error || !validation) {
+    // Token Missing State
+    if (status === 'missing') {
         return (
             <div className="invite-page">
                 <div className="invite-card">
@@ -148,9 +120,9 @@ export default function InvitePage() {
                                 <path d="M9 9l6 6" />
                             </svg>
                         </div>
-                        <h2>Invalid Invite</h2>
-                        <p>{error || 'This invite link is not valid.'}</p>
-                        <Link to={loginHref} className="btn btn-primary">
+                        <h2>Invalid Activation Link</h2>
+                        <p>Invalid activation link</p>
+                        <Link to="/login" className="btn btn-primary">
                             Go to Login
                         </Link>
                     </div>
@@ -159,8 +131,32 @@ export default function InvitePage() {
         );
     }
 
-    // Already accepted
-    if (validation.alreadyAccepted) {
+    // Token Invalid State
+    if (status === 'invalid') {
+        return (
+            <div className="invite-page">
+                <div className="invite-card">
+                    <div className="invite-error">
+                        <div className="error-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M15 9l-6 6" />
+                                <path d="M9 9l6 6" />
+                            </svg>
+                        </div>
+                        <h2>Invalid Link</h2>
+                        <p>Activation link not found</p>
+                        <Link to="/login" className="btn btn-primary">
+                            Go to Login
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Already Used State
+    if (status === 'already_used') {
         return (
             <div className="invite-page">
                 <div className="invite-card">
@@ -172,9 +168,9 @@ export default function InvitePage() {
                             </svg>
                         </div>
                         <h2>Already Activated</h2>
-                        <p>This invite has already been used. You can log in with your email and password.</p>
-                        <Link to={loginHref} className="btn btn-primary">
-                            Go to Login
+                        <p>Account already activated</p>
+                        <Link to="/login" className="btn btn-primary">
+                            Log in
                         </Link>
                     </div>
                 </div>
@@ -182,8 +178,8 @@ export default function InvitePage() {
         );
     }
 
-    // Expired
-    if (validation.expired) {
+    // Expired State
+    if (status === 'expired') {
         return (
             <div className="invite-page">
                 <div className="invite-card">
@@ -194,18 +190,9 @@ export default function InvitePage() {
                                 <polyline points="12 6 12 12 16 14" />
                             </svg>
                         </div>
-                        <h2>Invite Expired</h2>
-                        <p>
-                            {isOnboardingInvite
-                                ? 'This activation link has expired. Request a new activation email to continue.'
-                                : 'This invite link has expired. Please contact your administrator to request a new one.'}
-                        </p>
-                        {isOnboardingInvite && (
-                            <Link to={activationRequestHref} className="btn btn-primary">
-                                Request new activation email
-                            </Link>
-                        )}
-                        <Link to={loginHref} className="btn btn-secondary">
+                        <h2>Activation Link Expired</h2>
+                        <p>This link has expired (links are valid for 7 days). Please contact your care coordinator for a new one.</p>
+                        <Link to="/login" className="btn btn-secondary">
                             Go to Login
                         </Link>
                     </div>
@@ -214,7 +201,7 @@ export default function InvitePage() {
         );
     }
 
-    // Valid - show password form
+    // Valid - Show Password Form
     return (
         <div className="invite-page">
             <div className="invite-card">
@@ -228,32 +215,21 @@ export default function InvitePage() {
                 </div>
 
                 <div className="invite-body">
-                    <h1>{pageTitle}</h1>
+                    <h1>Activate Account</h1>
                     <p className="invite-subtitle">
-                        {pageSubtitle}
+                        Enter a strong password to activate the account associated with this link.
                     </p>
 
                     <form onSubmit={handleSubmit} className="invite-form">
                         <div className="form-group">
-                            <label htmlFor="invite-email">Email</label>
-                            <input
-                                id="invite-email"
-                                type="email"
-                                value={validation.user?.email || ''}
-                                disabled
-                                className="input-disabled"
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label htmlFor="invite-password">Password</label>
+                            <label htmlFor="activate-password">New Password</label>
                             <div className="password-input">
                                 <input
-                                    id="invite-password"
+                                    id="activate-password"
                                     type={showPassword ? 'text' : 'password'}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="Enter your password"
+                                    placeholder="Enter your new password"
                                     required
                                     minLength={8}
                                 />
@@ -261,6 +237,7 @@ export default function InvitePage() {
                                     type="button"
                                     className="password-toggle"
                                     onClick={() => setShowPassword(!showPassword)}
+                                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                                 >
                                     {showPassword ? (
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -275,13 +252,13 @@ export default function InvitePage() {
                                     )}
                                 </button>
                             </div>
-                            <span className="input-hint">Must be at least 8 characters and include uppercase, lowercase, a number, and a special character.</span>
+                            <span className="input-hint">Must contain uppercase, lowercase, number, and special character</span>
                         </div>
 
                         <div className="form-group">
-                            <label htmlFor="invite-confirm-password">Confirm Password</label>
+                            <label htmlFor="activate-confirm-password">Confirm Password</label>
                             <input
-                                id="invite-confirm-password"
+                                id="activate-confirm-password"
                                 type={showPassword ? 'text' : 'password'}
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -298,17 +275,17 @@ export default function InvitePage() {
                             {isSubmitting ? (
                                 <>
                                     <div className="spinner spinner-small" />
-                                    {submittingLabel}
+                                    Activating account...
                                 </>
                             ) : (
-                                submitLabel
+                                'Activate Account'
                             )}
                         </button>
                     </form>
                 </div>
 
                 <div className="invite-footer">
-                    <p>{footerPrompt} <Link to={loginHref}>Log in</Link></p>
+                    <p>Already set your password? <Link to="/login">Log in</Link></p>
                 </div>
             </div>
         </div>

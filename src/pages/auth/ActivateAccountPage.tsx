@@ -248,7 +248,7 @@ export default function ActivateAccountPage() {
                                     )}
                                 </button>
                             </div>
-                            <span className="input-hint">Must be at least 8 characters</span>
+                            <span className="input-hint">Must be at least 8 characters and include uppercase, lowercase, a number, and a special character.</span>
                         </div>
 
                         <div className="form-group">
