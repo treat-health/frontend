@@ -109,7 +109,7 @@ interface AuthState {
 
     // Actions
     login: (credentials: LoginCredentials) => Promise<void>;
-    verifyEmailOtp: (code: string) => Promise<void>;
+    verifyEmailOtp: (code: string) => Promise<boolean | undefined>;
     resendEmailOtp: () => Promise<void>;
     verifyMfa: (code: string) => Promise<void>;
     clearMfa: () => void;
