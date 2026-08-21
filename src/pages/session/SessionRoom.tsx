@@ -3661,10 +3661,14 @@ export default function SessionRoom() {
             // SDK-level muteAudio/unmuteAudio — keeps the track published but silences it
             if (meeting) {
                 try {
-                    if (nextMuted) {
-                        meeting.muteAudio?.();
-                    } else {
-                        meeting.unmuteAudio?.();
+                    const result: unknown = nextMuted ? meeting.muteAudio?.() : meeting.unmuteAudio?.();
+                    if (result && typeof (result as any).catch === 'function') {
+                        (result as any).catch((sdkErr: unknown) => {
+                            console.error('[SessionRoom] toggle:mute:SDK_ASYNC_ERROR', {
+                                nextMuted,
+                                error: sdkErr instanceof Error ? sdkErr.message : sdkErr,
+                            });
+                        });
                     }
                 } catch (sdkErr) {
                     console.error('[SessionRoom] toggle:mute:SDK_ERROR', {
@@ -3690,47 +3694,52 @@ export default function SessionRoom() {
         });
     };
 
-    const toggleVideo = () => {
+    const toggleVideo = async () => {
         const meeting = roomRef.current;
+        const currentVideoOff = isVideoOff;
+        const nextVideoOff = !currentVideoOff;
 
-        setIsVideoOff((prev) => {
-            const nextVideoOff = !prev;
-            desiredVideoEnabledRef.current = !nextVideoOff;
+        desiredVideoEnabledRef.current = !nextVideoOff;
+        setIsVideoOff(nextVideoOff);
 
-            console.info('[SessionRoom] toggle:video:before', {
-                wasVideoOff: prev,
-                willBeVideoOff: nextVideoOff,
-                hasMeeting: !!meeting,
-            });
+        console.info('[SessionRoom] toggle:video', {
+            wasVideoOff: currentVideoOff,
+            willBeVideoOff: nextVideoOff,
+            hasMeeting: !!meeting,
+        });
 
-            // SDK-level stop/start video (properly unpublishes/republishes the video track)
-            if (meeting) {
-                try {
-                    if (nextVideoOff) {
-                        meeting.stopVideo?.();
-                    } else {
-                        meeting.startVideo?.();
-                    }
-                } catch (sdkErr) {
-                    console.error('[SessionRoom] toggle:video:SDK_ERROR', {
-                        nextVideoOff,
-                        error: sdkErr instanceof Error ? sdkErr.message : sdkErr,
-                    });
-                }
-            }
+        const videoTracks = localStreamRef.current?.getVideoTracks() ?? [];
 
+        if (videoTracks.length > 0) {
+            // Enterprise track-level toggle: Disabling track.enabled stops video capture without triggering
+            // WebRTC SDP renegotiation. Calling Metered SDK's stopVideo()/startVideo() forces renegotiation
+            // which triggers the Chrome 115+ Simulcast RID extension error:
+            // "The media section with MID='0' negotiates simulcast but does not negotiate the RID RTP header extension"
             syncLocalVideoTrackState(!nextVideoOff);
+        } else if (meeting && !nextVideoOff) {
+            // Fallback: If no local video track exists yet, call startVideo() to acquire one from the SDK
+            try {
+                const res = meeting.startVideo?.();
+                if (res && typeof (res as any).catch === 'function') {
+                    await (res as any);
+                }
+            } catch (sdkErr: unknown) {
+                console.error('[SessionRoom] toggle:video:start_fallback_failed', sdkErr);
+                toast.error('Could not access camera. Please verify device permissions and try again.');
+                desiredVideoEnabledRef.current = false;
+                setIsVideoOff(true);
+                syncLocalVideoTrackState(false);
+            }
+        }
 
-            console.info('[SessionRoom] toggle:video:after', {
-                nowVideoOff: nextVideoOff,
-                localVideoTracks: (localStreamRef.current?.getVideoTracks() ?? []).map((track) => ({
-                    id: track.id,
-                    enabled: track.enabled,
-                    muted: track.muted,
-                    readyState: track.readyState,
-                })),
-            });
-            return nextVideoOff;
+        console.info('[SessionRoom] toggle:video:after', {
+            nowVideoOff: nextVideoOff,
+            localVideoTracks: (localStreamRef.current?.getVideoTracks() ?? []).map((track) => ({
+                id: track.id,
+                enabled: track.enabled,
+                muted: track.muted,
+                readyState: track.readyState,
+            })),
         });
     };
 
