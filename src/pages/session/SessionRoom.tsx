@@ -21,7 +21,7 @@ const SESSION_TAB_LOCK_TTL_MS = 15000;
 const AUTO_RETRY_BASE_DELAY_MS = 2000;
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const MAX_GROUP_SESSION_PARTICIPANTS = 50;
-const MAX_REMOTE_TILES_PER_PAGE = 9;
+const MAX_REMOTE_TILES_PER_PAGE = 15;
 const MAX_SIMULTANEOUS_ACTIVE_SPEAKERS = 4;
 const ACTIVE_SPEAKER_THRESHOLD = 15;
 const ACTIVE_SPEAKER_HOLD_MS = 900;
@@ -2829,6 +2829,7 @@ export default function SessionRoom() {
         localVideo.style.width = '100%';
         localVideo.style.height = '100%';
         localVideo.style.objectFit = 'cover';
+        localVideo.style.objectPosition = 'center center';
         localVideo.style.transform = 'scaleX(-1)';
         localVideo.style.display = 'block';
 
@@ -3992,7 +3993,7 @@ export default function SessionRoom() {
                         </div>
                     </div>
                 ) : (
-                    <div className={`video-grid tiles-${Math.min(visibleTileCount, 10)}`}>
+                    <div className={`video-grid tiles-${Math.min(visibleTileCount, 16)}`}>
                         {orderedVisibleParticipants.map((participant) => renderParticipantTile(participant))}
                     </div>
                 )}
