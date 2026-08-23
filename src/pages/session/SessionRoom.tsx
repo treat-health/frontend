@@ -1205,9 +1205,30 @@ function useMeteredJoinEffect(params: {
                 };
 
                 const ensureVideoElement = (participantKey: string, track: MediaStreamTrack) => {
-                    const existingElement = document.getElementById(`metered-remote-video-${participantKey}`);
-                    const existingTrackId = (existingElement as HTMLVideoElement | null)?.dataset.trackId;
-                    if (existingElement && existingTrackId === track.id) return;
+                    const existingElement = document.getElementById(`metered-remote-video-${participantKey}`) as HTMLVideoElement | null;
+                    const existingTrackId = existingElement?.dataset.trackId;
+
+                    if (existingElement && existingTrackId === track.id) {
+                        // Same track reused (e.g. after video toggle off/on): the video element still exists
+                        // but the browser may have paused/frozen decoding when the track was muted.
+                        // Always force a play() resume and re-attach to the visible tile if it drifted.
+                        const visibleTileContainer = document.getElementById(`video-tile-${participantKey}`);
+                        if (visibleTileContainer && existingElement.parentElement !== visibleTileContainer) {
+                            visibleTileContainer.appendChild(existingElement);
+                        }
+                        existingElement.play().catch(() => undefined);
+                        console.info('[SessionRoom] video:element_resumed', {
+                            joinAttemptId,
+                            participantKey,
+                            trackId: track.id,
+                            trackEnabled: track.enabled,
+                            trackMuted: track.muted,
+                            paused: existingElement.paused,
+                        });
+                        return;
+                    }
+
+                    // Different track or no element — create fresh
                     detachElementMedia(existingElement);
                     existingElement?.remove();
                     const remoteVideo = document.createElement('video');
@@ -1506,10 +1527,11 @@ function useMeteredJoinEffect(params: {
 
                     const existingTracks = participantTrackMap.get(identityKey) ?? {};
                     if (trackType === 'video' && mediaTrack) {
-                        if (existingTracks.videoTrackId !== mediaTrack.id) {
-                            ensureVideoElement(stableParticipantKey, mediaTrack);
-                            participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: mediaTrack.id });
-                        }
+                        // Always call ensureVideoElement on every remoteTrackStarted for video.
+                        // Even if the track ID is unchanged (toggle off→on cycle), the <video> element
+                        // may be paused/frozen and needs a .play() resume + tile re-attachment.
+                        ensureVideoElement(stableParticipantKey, mediaTrack);
+                        participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: mediaTrack.id });
                         upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasVideo: true, lastTrackAt: Date.now() }, stableParticipantKey);
                     } else if (trackType === 'audio' && mediaTrack) {
                         if (existingTracks.audioTrackId !== mediaTrack.id) {
@@ -2816,6 +2838,20 @@ export default function SessionRoom() {
         setLocalVideoContainer((current) => (current === node ? current : node));
     }, []);
 
+    const bindRemoteVideoTileContainer = useCallback((node: HTMLDivElement | null, participantId: string) => {
+        if (!node) return;
+        const cachedVideoElement = remoteStreamsRef.current.get(`video-${participantId}`);
+        const videoEl = (document.getElementById(`metered-remote-video-${participantId}`) || cachedVideoElement) as HTMLVideoElement | null;
+        if (videoEl && videoEl.parentElement !== node) {
+            node.appendChild(videoEl);
+            videoEl.play().catch(() => undefined);
+            console.info('[SessionRoom] video:element_attached_via_ref_callback', {
+                participantKey: participantId,
+                trackId: videoEl.dataset.trackId,
+            });
+        }
+    }, []);
+
     const ensureLocalPreviewElement = useCallback(() => {
         if (localPreviewElementRef.current) {
             return localPreviewElementRef.current;
@@ -3709,29 +3745,10 @@ export default function SessionRoom() {
             hasMeeting: !!meeting,
         });
 
-        const videoTracks = localStreamRef.current?.getVideoTracks() ?? [];
-
-        if (videoTracks.length > 0) {
-            // Enterprise track-level toggle: Disabling track.enabled stops video capture without triggering
-            // WebRTC SDP renegotiation. Calling Metered SDK's stopVideo()/startVideo() forces renegotiation
-            // which triggers the Chrome 115+ Simulcast RID extension error:
-            // "The media section with MID='0' negotiates simulcast but does not negotiate the RID RTP header extension"
-            syncLocalVideoTrackState(!nextVideoOff);
-        } else if (meeting && !nextVideoOff) {
-            // Fallback: If no local video track exists yet, call startVideo() to acquire one from the SDK
-            try {
-                const res = meeting.startVideo?.();
-                if (res && typeof (res as any).catch === 'function') {
-                    await (res as any);
-                }
-            } catch (sdkErr: unknown) {
-                console.error('[SessionRoom] toggle:video:start_fallback_failed', sdkErr);
-                toast.error('Could not access camera. Please verify device permissions and try again.');
-                desiredVideoEnabledRef.current = false;
-                setIsVideoOff(true);
-                syncLocalVideoTrackState(false);
-            }
-        }
+        // Track-level toggle: Disabling/enabling track.enabled updates video capture without triggering
+        // WebRTC SDP renegotiation. Calling Metered SDK's stopVideo()/startVideo() after join forces renegotiation
+        // which triggers the Chrome 115+ Simulcast RID extension error and crashes the peer connection.
+        syncLocalVideoTrackState(!nextVideoOff);
 
         console.info('[SessionRoom] toggle:video:after', {
             nowVideoOff: nextVideoOff,
@@ -3898,7 +3915,11 @@ export default function SessionRoom() {
             <div key={`${variant}-${participant.id}`} className={tileClassName}>
                 {participant.kind === 'local'
                     ? <div ref={bindLocalVideoContainer} className="tile-video-container" />
-                    : <div id={`video-tile-${participant.id}`} className="tile-video-container" />}
+                    : <div
+                        id={`video-tile-${participant.id}`}
+                        ref={(node) => bindRemoteVideoTileContainer(node, participant.id)}
+                        className="tile-video-container"
+                      />}
                 {!participant.hasVideo && (
                     <div className="tile-avatar-placeholder">
                         <div className="tile-avatar">{participant.initials}</div>
