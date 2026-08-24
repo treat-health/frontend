@@ -3497,7 +3497,6 @@ export default function SessionRoom() {
         const container = videoGridRef.current;
         if (!container || isTwoParticipantGroupLayout || shouldRenderSpotlightLayout) return;
 
-        const TILE_ASPECT = 16 / 9;
         const GAP_PX = 6; // matches CSS gap: 0.6rem ≈ 6px at 10px root
 
         function computeStyle(w: number, h: number, n: number): React.CSSProperties {
@@ -4080,7 +4079,7 @@ export default function SessionRoom() {
                         </div>
                     </div>
                 ) : (
-                    <div className={`video-grid tiles-${Math.min(visibleTileCount, 16)}`}>
+                    <div ref={videoGridRef} style={gridStyle} className={`video-grid tiles-${Math.min(visibleTileCount, 16)}`}>
                         {orderedVisibleParticipants.map((participant) => renderParticipantTile(participant))}
                     </div>
                 )}
