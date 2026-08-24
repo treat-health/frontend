@@ -1238,7 +1238,8 @@ function useMeteredJoinEffect(params: {
                     remoteVideo.muted = false;
                     remoteVideo.style.width = '100%';
                     remoteVideo.style.height = '100%';
-                    remoteVideo.style.objectFit = 'cover';
+                    remoteVideo.style.objectFit = 'contain';
+                    remoteVideo.style.objectPosition = 'center center';
                     remoteVideo.srcObject = new MediaStream([track]);
                     remoteVideo.dataset.trackId = track.id;
 
@@ -2693,6 +2694,7 @@ export default function SessionRoom() {
     const [sidebarParticipantSearch, setSidebarParticipantSearch] = useState('');
     const [isSpeakerSpotlightMode, setIsSpeakerSpotlightMode] = useState(true);
     const [raisedHands, setRaisedHands] = useState<SessionRaisedHandState[]>([]);
+    const [gridStyle, setGridStyle] = useState<React.CSSProperties>({});
 
     // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
@@ -2705,6 +2707,7 @@ export default function SessionRoom() {
     const disconnectIntentRef = useRef<'LEAVE' | 'COMPLETE' | null>(null);
     const desiredAudioEnabledRef = useRef(true);
     const desiredVideoEnabledRef = useRef(true);
+    const videoGridRef = useRef<HTMLDivElement | null>(null);
     const presenceRefreshAbortRef = useRef(false);
     const sessionDetailsRef = useRef<SessionDetails | null>(null);
     const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
@@ -3485,6 +3488,69 @@ export default function SessionRoom() {
         });
     }, [remoteParticipants, isInRoom, isLoading, isSpeakerSpotlightMode, shouldHardPinTherapist, spotlightParticipantId]);
 
+    // ── Dynamic grid layout (Zoom/Meet style) ──────────────────────────────────
+    // Watch the grid container with a ResizeObserver and recompute the optimal
+    // column count whenever the container dimensions or tile count changes.
+    // Algorithm: iterate all possible column counts and pick the one that
+    // maximises the actual rendered tile area (tile width × tile height).
+    useLayoutEffect(() => {
+        const container = videoGridRef.current;
+        if (!container || isTwoParticipantGroupLayout || shouldRenderSpotlightLayout) return;
+
+        const TILE_ASPECT = 16 / 9;
+        const GAP_PX = 6; // matches CSS gap: 0.6rem ≈ 6px at 10px root
+
+        function computeStyle(w: number, h: number, n: number): React.CSSProperties {
+            if (n <= 0) return {};
+            let bestCols = 1;
+            let bestArea = 0;
+
+            for (let cols = 1; cols <= n; cols++) {
+                const rows = Math.ceil(n / cols);
+                const totalGapW = GAP_PX * (cols - 1);
+                const totalGapH = GAP_PX * (rows - 1);
+                const cellW = (w - totalGapW) / cols;
+                const cellH = (h - totalGapH) / rows;
+                // Tile is constrained to cell; video uses contain so no crop
+                const area = cellW * cellH;
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestCols = cols;
+                }
+            }
+
+            const bestRows = Math.ceil(n / bestCols);
+            return {
+                gridTemplateColumns: `repeat(${bestCols}, minmax(0, 1fr))`,
+                gridTemplateRows: `repeat(${bestRows}, minmax(0, 1fr))`,
+            };
+        }
+
+        // Store latest tile count in a ref so the observer closure stays fresh
+        const tileCountRef = { current: visibleTileCount };
+        tileCountRef.current = visibleTileCount;
+
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    setGridStyle(computeStyle(width, height, tileCountRef.current));
+                }
+            }
+        });
+
+        observer.observe(container);
+
+        // Also compute immediately with current size
+        const { width, height } = container.getBoundingClientRect();
+        if (width > 0 && height > 0) {
+            setGridStyle(computeStyle(width, height, visibleTileCount));
+        }
+
+        return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visibleTileCount, isTwoParticipantGroupLayout, shouldRenderSpotlightLayout]);
+
     // Active speaker detection via audio level analysis
     useEffect(() => {
         if (!isInRoom) {
@@ -3925,8 +3991,8 @@ export default function SessionRoom() {
                         <div className="tile-avatar">{participant.initials}</div>
                     </div>
                 )}
-                <div className={`tile-role-badge ${participant.isTherapist ? 'therapist' : participant.isSpeaking ? 'speaking' : ''}`}>
-                    {participant.isTherapist ? 'Therapist' : participant.roleLabel}
+                <div className={`tile-role-badge ${participant.isTherapist || participant.roleLabel === 'therapist' ? 'therapist' : participant.isSpeaking ? 'speaking' : ''}`}>
+                    {participant.isTherapist || participant.roleLabel === 'therapist' ? 'Therapist' : participant.roleLabel}
                 </div>
                 {participant.isHandRaised && (
                     <div className={`tile-hand-badge ${participant.isTherapist ? 'therapist' : ''}`}>
