@@ -21,7 +21,7 @@ const SESSION_TAB_LOCK_TTL_MS = 15000;
 const AUTO_RETRY_BASE_DELAY_MS = 2000;
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const MAX_GROUP_SESSION_PARTICIPANTS = 50;
-const MAX_REMOTE_TILES_PER_PAGE = 9;
+const MAX_REMOTE_TILES_PER_PAGE = 15;
 const MAX_SIMULTANEOUS_ACTIVE_SPEAKERS = 4;
 const ACTIVE_SPEAKER_THRESHOLD = 15;
 const ACTIVE_SPEAKER_HOLD_MS = 900;
@@ -1205,9 +1205,30 @@ function useMeteredJoinEffect(params: {
                 };
 
                 const ensureVideoElement = (participantKey: string, track: MediaStreamTrack) => {
-                    const existingElement = document.getElementById(`metered-remote-video-${participantKey}`);
-                    const existingTrackId = (existingElement as HTMLVideoElement | null)?.dataset.trackId;
-                    if (existingElement && existingTrackId === track.id) return;
+                    const existingElement = document.getElementById(`metered-remote-video-${participantKey}`) as HTMLVideoElement | null;
+                    const existingTrackId = existingElement?.dataset.trackId;
+
+                    if (existingElement && existingTrackId === track.id) {
+                        // Same track reused (e.g. after video toggle off/on): the video element still exists
+                        // but the browser may have paused/frozen decoding when the track was muted.
+                        // Always force a play() resume and re-attach to the visible tile if it drifted.
+                        const visibleTileContainer = document.getElementById(`video-tile-${participantKey}`);
+                        if (visibleTileContainer && existingElement.parentElement !== visibleTileContainer) {
+                            visibleTileContainer.appendChild(existingElement);
+                        }
+                        existingElement.play().catch(() => undefined);
+                        console.info('[SessionRoom] video:element_resumed', {
+                            joinAttemptId,
+                            participantKey,
+                            trackId: track.id,
+                            trackEnabled: track.enabled,
+                            trackMuted: track.muted,
+                            paused: existingElement.paused,
+                        });
+                        return;
+                    }
+
+                    // Different track or no element — create fresh
                     detachElementMedia(existingElement);
                     existingElement?.remove();
                     const remoteVideo = document.createElement('video');
@@ -1217,7 +1238,8 @@ function useMeteredJoinEffect(params: {
                     remoteVideo.muted = false;
                     remoteVideo.style.width = '100%';
                     remoteVideo.style.height = '100%';
-                    remoteVideo.style.objectFit = 'cover';
+                    remoteVideo.style.objectFit = 'contain';
+                    remoteVideo.style.objectPosition = 'center center';
                     remoteVideo.srcObject = new MediaStream([track]);
                     remoteVideo.dataset.trackId = track.id;
 
@@ -1506,10 +1528,11 @@ function useMeteredJoinEffect(params: {
 
                     const existingTracks = participantTrackMap.get(identityKey) ?? {};
                     if (trackType === 'video' && mediaTrack) {
-                        if (existingTracks.videoTrackId !== mediaTrack.id) {
-                            ensureVideoElement(stableParticipantKey, mediaTrack);
-                            participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: mediaTrack.id });
-                        }
+                        // Always call ensureVideoElement on every remoteTrackStarted for video.
+                        // Even if the track ID is unchanged (toggle off→on cycle), the <video> element
+                        // may be paused/frozen and needs a .play() resume + tile re-attachment.
+                        ensureVideoElement(stableParticipantKey, mediaTrack);
+                        participantTrackMap.set(identityKey, { ...existingTracks, videoTrackId: mediaTrack.id });
                         upsertRemoteParticipant(effectiveSourceId, displayName, rawParticipantId, { hasVideo: true, lastTrackAt: Date.now() }, stableParticipantKey);
                     } else if (trackType === 'audio' && mediaTrack) {
                         if (existingTracks.audioTrackId !== mediaTrack.id) {
@@ -2671,6 +2694,7 @@ export default function SessionRoom() {
     const [sidebarParticipantSearch, setSidebarParticipantSearch] = useState('');
     const [isSpeakerSpotlightMode, setIsSpeakerSpotlightMode] = useState(true);
     const [raisedHands, setRaisedHands] = useState<SessionRaisedHandState[]>([]);
+    const [gridStyle, setGridStyle] = useState<React.CSSProperties>({});
 
     // WebRTC Refs (provider-agnostic)
     const localVideoRef = useRef<HTMLDivElement>(null);
@@ -2683,6 +2707,7 @@ export default function SessionRoom() {
     const disconnectIntentRef = useRef<'LEAVE' | 'COMPLETE' | null>(null);
     const desiredAudioEnabledRef = useRef(true);
     const desiredVideoEnabledRef = useRef(true);
+    const videoGridRef = useRef<HTMLDivElement | null>(null);
     const presenceRefreshAbortRef = useRef(false);
     const sessionDetailsRef = useRef<SessionDetails | null>(null);
     const [attentionAdapter, setAttentionAdapter] = useState<AttentionRoomAdapter | null>(null);
@@ -2816,6 +2841,20 @@ export default function SessionRoom() {
         setLocalVideoContainer((current) => (current === node ? current : node));
     }, []);
 
+    const bindRemoteVideoTileContainer = useCallback((node: HTMLDivElement | null, participantId: string) => {
+        if (!node) return;
+        const cachedVideoElement = remoteStreamsRef.current.get(`video-${participantId}`);
+        const videoEl = (document.getElementById(`metered-remote-video-${participantId}`) || cachedVideoElement) as HTMLVideoElement | null;
+        if (videoEl && videoEl.parentElement !== node) {
+            node.appendChild(videoEl);
+            videoEl.play().catch(() => undefined);
+            console.info('[SessionRoom] video:element_attached_via_ref_callback', {
+                participantKey: participantId,
+                trackId: videoEl.dataset.trackId,
+            });
+        }
+    }, []);
+
     const ensureLocalPreviewElement = useCallback(() => {
         if (localPreviewElementRef.current) {
             return localPreviewElementRef.current;
@@ -2829,6 +2868,7 @@ export default function SessionRoom() {
         localVideo.style.width = '100%';
         localVideo.style.height = '100%';
         localVideo.style.objectFit = 'cover';
+        localVideo.style.objectPosition = 'center center';
         localVideo.style.transform = 'scaleX(-1)';
         localVideo.style.display = 'block';
 
@@ -3448,6 +3488,68 @@ export default function SessionRoom() {
         });
     }, [remoteParticipants, isInRoom, isLoading, isSpeakerSpotlightMode, shouldHardPinTherapist, spotlightParticipantId]);
 
+    // ── Dynamic grid layout (Zoom/Meet style) ──────────────────────────────────
+    // Watch the grid container with a ResizeObserver and recompute the optimal
+    // column count whenever the container dimensions or tile count changes.
+    // Algorithm: iterate all possible column counts and pick the one that
+    // maximises the actual rendered tile area (tile width × tile height).
+    useLayoutEffect(() => {
+        const container = videoGridRef.current;
+        if (!container || isTwoParticipantGroupLayout || shouldRenderSpotlightLayout) return;
+
+        const GAP_PX = 6; // matches CSS gap: 0.6rem ≈ 6px at 10px root
+
+        function computeStyle(w: number, h: number, n: number): React.CSSProperties {
+            if (n <= 0) return {};
+            let bestCols = 1;
+            let bestArea = 0;
+
+            for (let cols = 1; cols <= n; cols++) {
+                const rows = Math.ceil(n / cols);
+                const totalGapW = GAP_PX * (cols - 1);
+                const totalGapH = GAP_PX * (rows - 1);
+                const cellW = (w - totalGapW) / cols;
+                const cellH = (h - totalGapH) / rows;
+                // Tile is constrained to cell; video uses contain so no crop
+                const area = cellW * cellH;
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestCols = cols;
+                }
+            }
+
+            const bestRows = Math.ceil(n / bestCols);
+            return {
+                gridTemplateColumns: `repeat(${bestCols}, minmax(0, 1fr))`,
+                gridTemplateRows: `repeat(${bestRows}, minmax(0, 1fr))`,
+            };
+        }
+
+        // Store latest tile count in a ref so the observer closure stays fresh
+        const tileCountRef = { current: visibleTileCount };
+        tileCountRef.current = visibleTileCount;
+
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    setGridStyle(computeStyle(width, height, tileCountRef.current));
+                }
+            }
+        });
+
+        observer.observe(container);
+
+        // Also compute immediately with current size
+        const { width, height } = container.getBoundingClientRect();
+        if (width > 0 && height > 0) {
+            setGridStyle(computeStyle(width, height, visibleTileCount));
+        }
+
+        return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visibleTileCount, isTwoParticipantGroupLayout, shouldRenderSpotlightLayout]);
+
     // Active speaker detection via audio level analysis
     useEffect(() => {
         if (!isInRoom) {
@@ -3661,10 +3763,14 @@ export default function SessionRoom() {
             // SDK-level muteAudio/unmuteAudio — keeps the track published but silences it
             if (meeting) {
                 try {
-                    if (nextMuted) {
-                        meeting.muteAudio?.();
-                    } else {
-                        meeting.unmuteAudio?.();
+                    const result: unknown = nextMuted ? meeting.muteAudio?.() : meeting.unmuteAudio?.();
+                    if (result && typeof (result as any).catch === 'function') {
+                        (result as any).catch((sdkErr: unknown) => {
+                            console.error('[SessionRoom] toggle:mute:SDK_ASYNC_ERROR', {
+                                nextMuted,
+                                error: sdkErr instanceof Error ? sdkErr.message : sdkErr,
+                            });
+                        });
                     }
                 } catch (sdkErr) {
                     console.error('[SessionRoom] toggle:mute:SDK_ERROR', {
@@ -3690,47 +3796,33 @@ export default function SessionRoom() {
         });
     };
 
-    const toggleVideo = () => {
+    const toggleVideo = async () => {
         const meeting = roomRef.current;
+        const currentVideoOff = isVideoOff;
+        const nextVideoOff = !currentVideoOff;
 
-        setIsVideoOff((prev) => {
-            const nextVideoOff = !prev;
-            desiredVideoEnabledRef.current = !nextVideoOff;
+        desiredVideoEnabledRef.current = !nextVideoOff;
+        setIsVideoOff(nextVideoOff);
 
-            console.info('[SessionRoom] toggle:video:before', {
-                wasVideoOff: prev,
-                willBeVideoOff: nextVideoOff,
-                hasMeeting: !!meeting,
-            });
+        console.info('[SessionRoom] toggle:video', {
+            wasVideoOff: currentVideoOff,
+            willBeVideoOff: nextVideoOff,
+            hasMeeting: !!meeting,
+        });
 
-            // SDK-level stop/start video (properly unpublishes/republishes the video track)
-            if (meeting) {
-                try {
-                    if (nextVideoOff) {
-                        meeting.stopVideo?.();
-                    } else {
-                        meeting.startVideo?.();
-                    }
-                } catch (sdkErr) {
-                    console.error('[SessionRoom] toggle:video:SDK_ERROR', {
-                        nextVideoOff,
-                        error: sdkErr instanceof Error ? sdkErr.message : sdkErr,
-                    });
-                }
-            }
+        // Track-level toggle: Disabling/enabling track.enabled updates video capture without triggering
+        // WebRTC SDP renegotiation. Calling Metered SDK's stopVideo()/startVideo() after join forces renegotiation
+        // which triggers the Chrome 115+ Simulcast RID extension error and crashes the peer connection.
+        syncLocalVideoTrackState(!nextVideoOff);
 
-            syncLocalVideoTrackState(!nextVideoOff);
-
-            console.info('[SessionRoom] toggle:video:after', {
-                nowVideoOff: nextVideoOff,
-                localVideoTracks: (localStreamRef.current?.getVideoTracks() ?? []).map((track) => ({
-                    id: track.id,
-                    enabled: track.enabled,
-                    muted: track.muted,
-                    readyState: track.readyState,
-                })),
-            });
-            return nextVideoOff;
+        console.info('[SessionRoom] toggle:video:after', {
+            nowVideoOff: nextVideoOff,
+            localVideoTracks: (localStreamRef.current?.getVideoTracks() ?? []).map((track) => ({
+                id: track.id,
+                enabled: track.enabled,
+                muted: track.muted,
+                readyState: track.readyState,
+            })),
         });
     };
 
@@ -3888,14 +3980,18 @@ export default function SessionRoom() {
             <div key={`${variant}-${participant.id}`} className={tileClassName}>
                 {participant.kind === 'local'
                     ? <div ref={bindLocalVideoContainer} className="tile-video-container" />
-                    : <div id={`video-tile-${participant.id}`} className="tile-video-container" />}
+                    : <div
+                        id={`video-tile-${participant.id}`}
+                        ref={(node) => bindRemoteVideoTileContainer(node, participant.id)}
+                        className="tile-video-container"
+                      />}
                 {!participant.hasVideo && (
                     <div className="tile-avatar-placeholder">
                         <div className="tile-avatar">{participant.initials}</div>
                     </div>
                 )}
-                <div className={`tile-role-badge ${participant.isTherapist ? 'therapist' : participant.isSpeaking ? 'speaking' : ''}`}>
-                    {participant.isTherapist ? 'Therapist' : participant.roleLabel}
+                <div className={`tile-role-badge ${participant.isTherapist || participant.roleLabel === 'therapist' ? 'therapist' : participant.isSpeaking ? 'speaking' : ''}`}>
+                    {participant.isTherapist || participant.roleLabel === 'therapist' ? 'Therapist' : participant.roleLabel}
                 </div>
                 {participant.isHandRaised && (
                     <div className={`tile-hand-badge ${participant.isTherapist ? 'therapist' : ''}`}>
@@ -3983,7 +4079,7 @@ export default function SessionRoom() {
                         </div>
                     </div>
                 ) : (
-                    <div className={`video-grid tiles-${Math.min(visibleTileCount, 10)}`}>
+                    <div ref={videoGridRef} style={gridStyle} className={`video-grid tiles-${Math.min(visibleTileCount, 16)}`}>
                         {orderedVisibleParticipants.map((participant) => renderParticipantTile(participant))}
                     </div>
                 )}
