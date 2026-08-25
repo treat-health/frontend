@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Smartphone, ShieldCheck, ShieldOff, QrCode, Loader2, CheckCircle2, Copy, HelpCircle, ChevronDown, ChevronUp, ExternalLink, Download } from 'lucide-react';
+import { Smartphone, ShieldCheck, ShieldOff, QrCode, Loader2, CheckCircle2, Copy, HelpCircle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import mfaService from '../../services/mfa.service';
 
@@ -201,7 +201,7 @@ export default function MfaSettingsPanel() {
                     width: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    justify: 'space-between',
+                    justifyContent: 'space-between',
                     padding: '0.75rem 1rem',
                     background: 'var(--primary-50, #eff6ff)',
                     border: 'none',
