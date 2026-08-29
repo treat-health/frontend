@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.treatmh.treat_health",
+      "sha256_cert_fingerprints": [
+        "A5:E8:68:60:20:01:B6:DF:05:84:66:CE:76:02:B1:E0:FD:1E:C9:5A:56:1A:3C:4F:CF:C4:A3:10:9D:AF:4B:32",
+        "A5:E8:68:60:20:01:B6:DF:05:84:66:CE:76:02:B1:E0:FD:1E:C9:5A:56:1A:3C:4F:CF:C4:A3:10:9D:AF:4B:32"
+      ]
+    }
+  }
+]

@@ -6,3 +6,9 @@
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . /index.html [L]
 </IfModule>
+
+<IfModule mod_headers.c>
+  <FilesMatch "^apple-app-site-association$">
+    Header set Content-Type "application/json"
+  </FilesMatch>
+</IfModule>
