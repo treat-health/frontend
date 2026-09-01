@@ -5,7 +5,7 @@
       {
         "appID": "V355FT8BUL.com.treatmh.treatHealth",
         "paths": [
-          "/"
+          "*"
         ]
       }
     ]
